@@ -1,0 +1,123 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    // Collection: expenses
+    // Document ID: {expenseId}
+    // Fields:
+    //   - local: string (required)
+    //   - value: number (required)
+    //   - date: string (required)
+    //   - category: string (required)
+    //   - paymentMethod: string (required)
+    //   - installments: number (optional)
+    //   - donor: string (optional)
+    //   - observation: string (optional)
+    //   - createdAt: string (required)
+    //   - createdBy: string (required)
+    //
+    // Collection: incomes
+    // Document ID: {incomeId}
+    // Fields:
+    //   - description: string (required)
+    //   - value: number (required)
+    //   - date: string (required)
+    //   - createdAt: string (required)
+    //   - createdBy: string (required)
+    //
+    // Collection: payments
+    // Document ID: {paymentId}
+    // Fields:
+    //   - person: string (required)
+    //   - value: number (required)
+    //   - date: string (required)
+    //   - createdAt: string (required)
+    //   - createdBy: string (required)
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && request.auth.token.email == 'mccley.1@gmail.com';
+    }
+
+    function isAnonymous() {
+      return isAuthenticated() && request.auth.token.firebase.sign_in_provider == 'anonymous';
+    }
+
+    function isAuthorized() {
+      return isAdmin() || isAnonymous() || true; // Allow public access for shared link
+    }
+
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    function isValidExpense(data) {
+      return hasRequiredFields(['local', 'value', 'date', 'category', 'paymentMethod', 'createdAt', 'createdBy']) &&
+             data.local is string && data.local.size() > 0 && data.local.size() < 200 &&
+             data.value is number && data.value > 0 &&
+             data.date is string && data.date.size() <= 20 &&
+             data.category is string && data.category.size() < 50 &&
+             data.paymentMethod is string && data.paymentMethod.size() < 50 &&
+             data.createdAt is string && data.createdAt.size() <= 30 &&
+             data.createdBy is string && data.createdBy.size() < 100 &&
+             (!('installments' in data) || (data.installments is number && data.installments > 0)) &&
+             (!('donor' in data) || (data.donor is string && data.donor.size() < 50)) &&
+             (!('observation' in data) || (data.observation is string && data.observation.size() < 500));
+    }
+
+    function isValidIncome(data) {
+      return hasRequiredFields(['description', 'value', 'date', 'createdAt', 'createdBy']) &&
+             data.description is string && data.description.size() > 0 && data.description.size() < 200 &&
+             data.value is number && data.value > 0 &&
+             data.date is string && data.date.size() <= 20 &&
+             data.createdAt is string && data.createdAt.size() <= 30 &&
+             data.createdBy is string && data.createdBy.size() < 100 &&
+             (!('isCaixa' in data) || data.isCaixa is bool);
+    }
+
+    function isValidPayment(data) {
+      return hasRequiredFields(['person', 'value', 'date', 'createdAt', 'createdBy']) &&
+             data.person is string && data.person.size() > 0 && data.person.size() < 50 &&
+             data.value is number && data.value > 0 &&
+             data.date is string && data.date.size() <= 20 &&
+             data.createdAt is string && data.createdAt.size() <= 30 &&
+             data.createdBy is string && data.createdBy.size() < 100;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /expenses/{expenseId} {
+      allow read: if isAuthorized();
+      allow create: if isAuthorized() && isValidExpense(request.resource.data);
+      allow update: if isAuthorized() && isValidExpense(request.resource.data);
+      allow delete: if isAuthorized();
+    }
+
+    match /incomes/{incomeId} {
+      allow read: if isAdmin();
+      allow create: if isAdmin() && isValidIncome(request.resource.data);
+      allow update: if isAdmin() && isValidIncome(request.resource.data);
+      allow delete: if isAdmin();
+    }
+
+    match /payments/{paymentId} {
+      allow read: if isAdmin();
+      allow create: if isAdmin() && isValidPayment(request.resource.data);
+      allow update: if isAdmin() && isValidPayment(request.resource.data);
+      allow delete: if isAdmin();
+    }
+  }
+}

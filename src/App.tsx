@@ -1,0 +1,397 @@
+import React, { useState, useEffect, useMemo } from 'react';
+import { 
+  LayoutDashboard, 
+  ArrowUpCircle, 
+  ArrowDownCircle, 
+  FileText, 
+  Settings, 
+  Info,
+  Wallet,
+  LogOut
+} from 'lucide-react';
+import { 
+  format, 
+  addMonths, 
+  getDate 
+} from 'date-fns';
+import { AppState, Expense, Income, Payment, Category, Person } from './types';
+import { NavItem } from './components/ui/NavItem';
+import { Dashboard } from './components/Dashboard';
+import { ExpensesTab } from './components/ExpensesTab';
+import { IncomesTab } from './components/IncomesTab';
+import { ReportsTab } from './components/ReportsTab';
+import { Login } from './components/Login';
+import { auth, db } from './firebase';
+import { onAuthStateChanged, signInAnonymously, signOut } from 'firebase/auth';
+import { collection, onSnapshot, addDoc, deleteDoc, doc, query, orderBy, updateDoc } from 'firebase/firestore';
+
+const CATEGORIES: Category[] = ['Combustível', 'Documentação', 'Material', 'Mão de Obra', 'Monitoramento'];
+const PEOPLE: Person[] = ['Mccley', 'Jan', 'Saulo'];
+
+export default function App() {
+  const [activeTab, setActiveTab] = useState('inicio');
+  const [isSharedMode, setIsSharedMode] = useState(false);
+  const [user, setUser] = useState<any>(null);
+  const [isAuthReady, setIsAuthReady] = useState(false);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const shared = params.get('shared') === 'true';
+    if (shared) {
+      setIsSharedMode(true);
+      if (!['inicio', 'saidas'].includes(activeTab)) {
+        setActiveTab('inicio');
+      }
+    }
+
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+      if (currentUser) {
+        setUser(currentUser);
+      } else {
+        setUser(null);
+        if (shared) {
+          try {
+            await signInAnonymously(auth);
+          } catch (error) {
+            console.error("Error signing in anonymously:", error);
+          }
+        }
+      }
+      setIsAuthReady(true);
+    });
+
+    return () => unsubscribe();
+  }, [activeTab]);
+
+  const [state, setState] = useState<AppState>({ expenses: [], incomes: [], payments: [] });
+
+  useEffect(() => {
+    if (!isAuthReady) return;
+
+    const expensesQ = query(collection(db, 'expenses'), orderBy('createdAt', 'desc'));
+    const incomesQ = query(collection(db, 'incomes'), orderBy('createdAt', 'desc'));
+    const paymentsQ = query(collection(db, 'payments'), orderBy('createdAt', 'desc'));
+
+    const unsubExpenses = onSnapshot(expensesQ, (snapshot) => {
+      const expensesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Expense));
+      setState(prev => ({ ...prev, expenses: expensesData }));
+    });
+
+    let unsubIncomes = () => {};
+    let unsubPayments = () => {};
+
+    if (!isSharedMode) {
+      unsubIncomes = onSnapshot(incomesQ, (snapshot) => {
+        const incomesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Income));
+        setState(prev => ({ ...prev, incomes: incomesData }));
+      });
+
+      unsubPayments = onSnapshot(paymentsQ, (snapshot) => {
+        const paymentsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Payment));
+        setState(prev => ({ ...prev, payments: paymentsData }));
+      });
+    }
+
+    return () => {
+      unsubExpenses();
+      unsubIncomes();
+      unsubPayments();
+    };
+  }, [isAuthReady, isSharedMode]);
+
+  // --- Calculations ---
+
+  const totalSpent = useMemo(() => {
+    return state.expenses.reduce((acc, exp) => acc + exp.value, 0);
+  }, [state.expenses]);
+
+  const totalDonations = useMemo(() => {
+    return state.expenses
+      .filter(e => e.paymentMethod === 'doação')
+      .reduce((acc, e) => acc + e.value, 0);
+  }, [state.expenses]);
+
+  const caixaBalance = useMemo(() => {
+    const totalCaixaIncomes = state.incomes
+      .filter(i => i.isCaixa)
+      .reduce((acc, i) => acc + i.value, 0);
+    const totalCaixaExpenses = state.expenses
+      .filter(e => e.paymentMethod === 'Caixa')
+      .reduce((acc, e) => acc + e.value, 0);
+    return totalCaixaIncomes - totalCaixaExpenses;
+  }, [state.incomes, state.expenses]);
+
+  const categoryTotals = useMemo(() => {
+    const totals: Record<string, number> = {};
+    state.expenses.forEach(e => {
+      totals[e.category] = (totals[e.category] || 0) + e.value;
+    });
+    return Object.entries(totals)
+      .map(([name, value]) => ({ name, value }))
+      .filter(c => c.value > 0)
+      .sort((a, b) => b.value - a.value);
+  }, [state.expenses]);
+
+  const cardInstallmentsByMonth = useMemo(() => {
+    const monthlyTotals: Record<string, number> = {};
+    const currentMonthKey = format(new Date(), 'yyyy-MM');
+    
+    state.expenses.filter(e => e.paymentMethod === 'Cartão' || e.paymentMethod === 'cartão').forEach(exp => {
+      const [yearStr, monthStr, dayStr] = exp.date.split('-');
+      const year = parseInt(yearStr, 10);
+      const month = parseInt(monthStr, 10) - 1;
+      const day = parseInt(dayStr, 10);
+      
+      const installments = Number(exp.installments) || 1;
+      const value = Number(exp.value) || 0;
+      const valuePerInstallment = value / installments;
+      
+      // Compras entre dia 29 do mês vigente e 28 do mês seguinte
+      // caem na fatura do mês seguinte (o mês que se encerrou no dia 28).
+      let startMonthOffset = day > 28 ? 1 : 0;
+      
+      for (let i = 0; i < installments; i++) {
+        const installmentDate = new Date(year, month + startMonthOffset + i, 1);
+        const monthKey = format(installmentDate, 'yyyy-MM');
+        monthlyTotals[monthKey] = (monthlyTotals[monthKey] || 0) + valuePerInstallment;
+      }
+    });
+
+    if (!monthlyTotals[currentMonthKey]) {
+      monthlyTotals[currentMonthKey] = 0;
+    }
+
+    return Object.entries(monthlyTotals)
+      .map(([month, total]) => ({ month, total }))
+      .filter(item => item.month >= currentMonthKey)
+      .sort((a, b) => a.month.localeCompare(b.month));
+  }, [state.expenses]);
+
+  const totalIncome = useMemo(() => {
+    return state.incomes.reduce((acc, inc) => acc + inc.value, 0);
+  }, [state.incomes]);
+
+  const totalPayments = useMemo(() => {
+    return state.payments.reduce((acc, pay) => acc + pay.value, 0);
+  }, [state.payments]);
+
+  const totalDebt = totalIncome - totalPayments;
+
+  const individualStats = useMemo(() => {
+    const baseShare = totalIncome / 3;
+    return PEOPLE.map(person => {
+      const paid = state.payments.filter(p => p.person === person).reduce((acc, p) => acc + p.value, 0);
+      return {
+        name: person,
+        share: baseShare,
+        paid,
+        debt: baseShare - paid
+      };
+    });
+  }, [totalIncome, state.payments]);
+
+  // --- Handlers ---
+
+  const addExpense = async (expense: Omit<Expense, 'id'>) => {
+    try {
+      const cleanExpense = Object.fromEntries(Object.entries(expense).filter(([_, v]) => v !== undefined));
+      await addDoc(collection(db, 'expenses'), {
+        ...cleanExpense,
+        createdAt: new Date().toISOString(),
+        createdBy: user?.uid || 'anonymous'
+      });
+    } catch (error) {
+      console.error("Error adding expense: ", error);
+      alert("Erro ao adicionar despesa. Verifique suas permissões.");
+    }
+  };
+
+  const editExpense = async (id: string, expense: Partial<Omit<Expense, 'id'>>) => {
+    try {
+      const cleanExpense = Object.fromEntries(Object.entries(expense).filter(([_, v]) => v !== undefined));
+      await updateDoc(doc(db, 'expenses', id), cleanExpense);
+    } catch (error) {
+      console.error("Error editing expense: ", error);
+      alert("Erro ao editar despesa. Verifique suas permissões.");
+    }
+  };
+
+  const addIncome = async (income: Omit<Income, 'id'>) => {
+    try {
+      await addDoc(collection(db, 'incomes'), {
+        ...income,
+        createdAt: new Date().toISOString(),
+        createdBy: user?.uid || 'anonymous'
+      });
+    } catch (error) {
+      console.error("Error adding income: ", error);
+      alert("Erro ao adicionar entrada. Verifique suas permissões.");
+    }
+  };
+
+  const addPayment = async (payment: Omit<Payment, 'id'>) => {
+    try {
+      await addDoc(collection(db, 'payments'), {
+        ...payment,
+        createdAt: new Date().toISOString(),
+        createdBy: user?.uid || 'anonymous'
+      });
+    } catch (error) {
+      console.error("Error adding payment: ", error);
+      alert("Erro ao adicionar pagamento. Verifique suas permissões.");
+    }
+  };
+
+  const deleteExpense = async (id: string) => {
+    try {
+      await deleteDoc(doc(db, 'expenses', id));
+    } catch (error) {
+      console.error("Error deleting expense: ", error);
+      alert("Erro ao deletar despesa. Verifique suas permissões.");
+    }
+  };
+
+  const editIncome = async (id: string, income: Partial<Omit<Income, 'id'>>) => {
+    try {
+      const cleanIncome = Object.fromEntries(Object.entries(income).filter(([_, v]) => v !== undefined));
+      await updateDoc(doc(db, 'incomes', id), cleanIncome);
+    } catch (error) {
+      console.error("Error editing income: ", error);
+      alert("Erro ao editar entrada. Verifique suas permissões.");
+    }
+  };
+
+  const deleteIncome = async (id: string) => {
+    try {
+      await deleteDoc(doc(db, 'incomes', id));
+    } catch (error) {
+      console.error("Error deleting income: ", error);
+      alert("Erro ao deletar entrada. Verifique suas permissões.");
+    }
+  };
+
+  const deletePayment = async (id: string) => {
+    try {
+      await deleteDoc(doc(db, 'payments', id));
+    } catch (error) {
+      console.error("Error deleting payment: ", error);
+      alert("Erro ao deletar pagamento. Verifique suas permissões.");
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+    } catch (error) {
+      console.error("Error signing out: ", error);
+    }
+  };
+
+  const formatCurrency = (value: number) => {
+    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
+  };
+
+  if (!isAuthReady) {
+    return <div className="min-h-screen flex items-center justify-center bg-[#f5f5f5] text-black">Carregando...</div>;
+  }
+
+  if (!user && !isSharedMode) {
+    return <Login />;
+  }
+
+  return (
+    <div className="min-h-screen bg-[#f5f5f5] text-black font-sans">
+      {/* Sidebar / Navigation */}
+      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-black/5 px-4 py-2 flex justify-around items-center z-50 md:top-0 md:bottom-auto md:flex-col md:w-64 md:h-screen md:border-t-0 md:border-r md:justify-start md:py-8 md:gap-4">
+        <div className="hidden md:flex items-center gap-3 mb-8 px-4 w-full">
+          <div className="w-10 h-10 bg-emerald-500 rounded-xl flex items-center justify-center text-white shadow-lg shadow-emerald-500/20">
+            <Wallet size={24} />
+          </div>
+          <h1 className="text-xl font-bold tracking-tight">Casa do Lago</h1>
+        </div>
+
+        <NavItem icon={<LayoutDashboard size={20} />} label="Início" active={activeTab === 'inicio'} onClick={() => setActiveTab('inicio')} />
+        <NavItem icon={<ArrowDownCircle size={20} />} label="Saídas" active={activeTab === 'saidas'} onClick={() => setActiveTab('saidas')} />
+        
+        {!isSharedMode && (
+          <>
+            <NavItem icon={<ArrowUpCircle size={20} />} label="Entradas" active={activeTab === 'entradas'} onClick={() => setActiveTab('entradas')} />
+            <NavItem icon={<FileText size={20} />} label="Relatórios" active={activeTab === 'relatorios'} onClick={() => setActiveTab('relatorios')} />
+            <NavItem icon={<Settings size={20} />} label="Config" active={activeTab === 'config'} onClick={() => setActiveTab('config')} />
+            <NavItem icon={<Info size={20} />} label="Sobre" active={activeTab === 'sobre'} onClick={() => setActiveTab('sobre')} />
+            
+            <div className="mt-auto hidden md:block w-full px-4 pb-4">
+              <button 
+                onClick={handleLogout}
+                className="flex items-center gap-3 w-full px-4 py-3 text-sm font-medium text-red-600 hover:bg-red-50 rounded-xl transition-all"
+              >
+                <LogOut size={20} />
+                Sair
+              </button>
+            </div>
+          </>
+        )}
+      </nav>
+
+      {/* Main Content */}
+      <main className="pb-24 pt-8 px-4 md:pl-72 md:pr-8 md:pt-12 max-w-7xl mx-auto">
+        {activeTab === 'inicio' && (
+          <Dashboard 
+            totalSpent={totalSpent} 
+            totalDonations={totalDonations}
+            categoryTotals={categoryTotals} 
+            cardInstallments={cardInstallmentsByMonth} 
+            caixaBalance={caixaBalance}
+            formatCurrency={formatCurrency} 
+          />
+        )}
+        {activeTab === 'saidas' && (
+          <ExpensesTab 
+            expenses={state.expenses} 
+            onAdd={addExpense} 
+            onEdit={editExpense}
+            onDelete={deleteExpense} 
+            formatCurrency={formatCurrency} 
+            isSharedMode={isSharedMode}
+          />
+        )}
+        {activeTab === 'entradas' && !isSharedMode && (
+          <IncomesTab 
+            incomes={state.incomes} 
+            payments={state.payments}
+            totalIncome={totalIncome}
+            totalPayments={totalPayments}
+            totalDebt={totalDebt}
+            individualStats={individualStats}
+            onAddIncome={addIncome} 
+            onEditIncome={editIncome}
+            onAddPayment={addPayment}
+            onDeleteIncome={deleteIncome}
+            onDeletePayment={deletePayment}
+            formatCurrency={formatCurrency} 
+          />
+        )}
+        {activeTab === 'relatorios' && !isSharedMode && (
+          <ReportsTab 
+            expenses={state.expenses} 
+            formatCurrency={formatCurrency} 
+          />
+        )}
+        {activeTab === 'config' && <PlaceholderTab title="Configurações" />}
+        {activeTab === 'sobre' && <PlaceholderTab title="Sobre o Sistema" />}
+      </main>
+    </div>
+  );
+}
+
+function PlaceholderTab({ title }: { title: string }) {
+  return (
+    <div className="flex flex-col items-center justify-center min-h-[60vh] text-center space-y-4">
+      <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center text-black">
+        <Settings size={40} />
+      </div>
+      <h2 className="text-2xl font-bold">{title}</h2>
+      <p className="text-black max-w-md">Esta aba está em desenvolvimento e será implementada em breve.</p>
+    </div>
+  );
+}
