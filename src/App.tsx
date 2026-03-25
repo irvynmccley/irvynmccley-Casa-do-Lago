@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, Component, ErrorInfo, ReactNode } from 'react';
 import { 
   LayoutDashboard, 
   ArrowUpCircle, 
@@ -26,7 +26,61 @@ import { supabase } from './supabaseClient';
 const CATEGORIES: Category[] = ['Combustível', 'Documentação', 'Material', 'Mão de Obra', 'Monitoramento'];
 const PEOPLE: Person[] = ['Mccley', 'Jan', 'Saulo'];
 
-export default function App() {
+interface ErrorBoundaryProps {
+  children: ReactNode;
+}
+
+interface ErrorBoundaryState {
+  hasError: boolean;
+  error: Error | null;
+}
+
+class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  state: ErrorBoundaryState = { hasError: false, error: null };
+
+  constructor(props: ErrorBoundaryProps) {
+    super(props);
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    console.error("Uncaught error:", error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen flex flex-col items-center justify-center bg-[#f5f5f5] text-black p-4">
+          <h1 className="text-2xl font-bold text-red-600 mb-4">Algo deu errado.</h1>
+          <pre className="bg-white p-4 rounded-xl shadow-sm text-sm overflow-auto max-w-full">
+            {this.state.error?.toString()}
+          </pre>
+          <button 
+            onClick={() => window.location.reload()}
+            className="mt-6 px-4 py-2 bg-[#0a192f] text-white rounded-xl"
+          >
+            Recarregar página
+          </button>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
+export default function AppWrapper() {
+  return (
+    <ErrorBoundary>
+      <App />
+    </ErrorBoundary>
+  );
+}
+
+function App() {
   const [activeTab, setActiveTab] = useState('inicio');
   const [isSharedMode, setIsSharedMode] = useState(false);
   const [user, setUser] = useState<any>(null);
@@ -172,11 +226,18 @@ export default function App() {
     const monthlyTotals: Record<string, number> = {};
     const currentMonthKey = format(new Date(), 'yyyy-MM');
     
-    state.expenses.filter(e => e.paymentMethod === 'Cartão' || e.paymentMethod === 'cartão').forEach(exp => {
-      const [yearStr, monthStr, dayStr] = exp.date.split('-');
+    state.expenses.filter(e => e.paymentMethod === 'Cartão').forEach(exp => {
+      if (!exp.date || !exp.date.includes('-')) return;
+      
+      const parts = exp.date.split('-');
+      if (parts.length !== 3) return;
+      
+      const [yearStr, monthStr, dayStr] = parts;
       const year = parseInt(yearStr, 10);
       const month = parseInt(monthStr, 10) - 1;
       const day = parseInt(dayStr, 10);
+      
+      if (isNaN(year) || isNaN(month) || isNaN(day)) return;
       
       const installments = Number(exp.installments) || 1;
       const value = Number(exp.value) || 0;

@@ -384,7 +384,7 @@ export function ExpensesTab({ expenses, onAdd, onEdit, onDelete, formatCurrency,
                   <div>
                     <h4 className="font-bold">{exp.local}</h4>
                     <div className="flex items-center gap-2 text-xs text-black">
-                      <span>{exp.date.split('-').reverse().join('/')}</span>
+                      <span>{exp.date ? exp.date.split('-').reverse().join('/') : '-'}</span>
                       <span>•</span>
                       <span className="capitalize">{exp.category}</span>
                       {exp.paymentMethod === 'Cartão' && (

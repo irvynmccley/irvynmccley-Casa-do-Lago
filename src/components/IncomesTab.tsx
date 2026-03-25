@@ -258,7 +258,7 @@ export function IncomesTab({
                     {inc.description}
                     {inc.isCaixa && <span className="px-2 py-0.5 bg-amber-100 text-amber-700 text-[10px] font-bold uppercase rounded-md">Caixa</span>}
                   </div>
-                  <div className="text-xs text-black">{inc.date.split('-').reverse().join('/')}</div>
+                  <div className="text-xs text-black">{inc.date ? inc.date.split('-').reverse().join('/') : '-'}</div>
                 </div>
                 <div className="flex items-center gap-4">
                   <span className="font-mono font-bold text-emerald-600">+{formatCurrency(inc.value)}</span>

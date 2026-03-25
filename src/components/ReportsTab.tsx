@@ -24,7 +24,7 @@ export function ReportsTab({ expenses, formatCurrency }: ReportsTabProps) {
     if (filter !== 'all') {
       result = expenses.filter((e: Expense) => e.category === filter);
     }
-    return [...result].sort((a, b) => b.date.localeCompare(a.date));
+    return [...result].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
   }, [expenses, filter]);
 
   return (
@@ -68,7 +68,7 @@ export function ReportsTab({ expenses, formatCurrency }: ReportsTabProps) {
             <tbody className="divide-y divide-black/5">
               {filteredExpenses.map((exp: Expense) => (
                 <tr key={exp.id} className="hover:bg-gray-50 transition-colors">
-                  <td className="px-6 py-4 text-sm">{exp.date.split('-').reverse().join('/')}</td>
+                  <td className="px-6 py-4 text-sm">{exp.date ? exp.date.split('-').reverse().join('/') : '-'}</td>
                   <td className="px-6 py-4 text-sm capitalize">{exp.category}</td>
                   <td className="px-6 py-4 text-sm font-medium">
                     <div>{exp.local}</div>
