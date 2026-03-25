@@ -18,7 +18,14 @@ export function Login() {
       if (error) throw error;
     } catch (err: any) {
       console.error(err);
-      setError(err.message || 'Ocorreu um erro. Tente novamente.');
+      
+      let errorMessage = err.message || 'Ocorreu um erro. Tente novamente.';
+      
+      if (errorMessage === 'Failed to fetch') {
+        errorMessage = 'Erro de conexão com o servidor. Verifique se as variáveis VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY estão corretas no Vercel, ou se o seu projeto no Supabase não está pausado (projetos gratuitos pausam após 7 dias de inatividade).';
+      }
+      
+      setError(errorMessage);
     } finally {
       setIsLoading(false);
     }
