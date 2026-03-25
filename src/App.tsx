@@ -44,6 +44,13 @@ export default function App() {
 
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session?.user) {
+        if (!shared && session.user.is_anonymous) {
+          supabase.auth.signOut().then(() => {
+            setUser(null);
+            setIsAuthReady(true);
+          });
+          return;
+        }
         setUser(session.user);
       } else {
         setUser(null);
@@ -56,7 +63,12 @@ export default function App() {
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (session?.user) {
-        setUser(session.user);
+        if (!shared && session.user.is_anonymous) {
+          await supabase.auth.signOut();
+          setUser(null);
+        } else {
+          setUser(session.user);
+        }
       } else {
         setUser(null);
       }
@@ -345,7 +357,7 @@ export default function App() {
         <NavItem icon={<LayoutDashboard size={20} />} label="Início" active={activeTab === 'inicio'} onClick={() => setActiveTab('inicio')} />
         <NavItem icon={<ArrowDownCircle size={20} />} label="Saídas" active={activeTab === 'saidas'} onClick={() => setActiveTab('saidas')} />
         
-        {!isSharedMode && (
+        {!isSharedMode ? (
           <>
             <NavItem icon={<ArrowUpCircle size={20} />} label="Entradas" active={activeTab === 'entradas'} onClick={() => setActiveTab('entradas')} />
             <NavItem icon={<FileText size={20} />} label="Relatórios" active={activeTab === 'relatorios'} onClick={() => setActiveTab('relatorios')} />
@@ -359,6 +371,26 @@ export default function App() {
               >
                 <LogOut size={20} />
                 Sair
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="md:hidden">
+              <NavItem 
+                icon={<LogOut size={20} />} 
+                label="Sair" 
+                active={false} 
+                onClick={() => window.location.href = '/'} 
+              />
+            </div>
+            <div className="mt-auto hidden md:block w-full px-4 pb-4">
+              <button 
+                onClick={() => window.location.href = '/'}
+                className="flex items-center gap-3 w-full px-4 py-3 text-sm font-medium text-red-600 hover:bg-red-50 rounded-xl transition-all"
+              >
+                <LogOut size={20} />
+                Voltar para Login
               </button>
             </div>
           </>
