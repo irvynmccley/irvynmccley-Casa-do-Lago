@@ -109,7 +109,16 @@ function App() {
       } else {
         setUser(null);
         if (shared) {
-          supabase.auth.signInAnonymously().catch(console.error);
+          supabase.auth.signInAnonymously().then(({ data: { session: anonSession } }) => {
+            if (anonSession?.user) {
+              setUser(anonSession.user);
+            }
+            setIsAuthReady(true);
+          }).catch(err => {
+            console.error(err);
+            setIsAuthReady(true);
+          });
+          return;
         }
       }
       setIsAuthReady(true);
@@ -295,7 +304,7 @@ function App() {
       const { error } = await supabase.from('expenses').insert({
         ...cleanExpense,
         createdAt: new Date().toISOString(),
-        createdBy: user?.id || 'anonymous'
+        createdBy: user?.id || null
       });
       if (error) throw error;
     } catch (error) {
@@ -320,7 +329,7 @@ function App() {
       const { error } = await supabase.from('incomes').insert({
         ...income,
         createdAt: new Date().toISOString(),
-        createdBy: user?.id || 'anonymous'
+        createdBy: user?.id || null
       });
       if (error) throw error;
     } catch (error) {
@@ -334,7 +343,7 @@ function App() {
       const { error } = await supabase.from('payments').insert({
         ...payment,
         createdAt: new Date().toISOString(),
-        createdBy: user?.id || 'anonymous'
+        createdBy: user?.id || null
       });
       if (error) throw error;
     } catch (error) {

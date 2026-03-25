@@ -42,10 +42,17 @@ ALTER TABLE public.expenses ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.incomes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.payments ENABLE ROW LEVEL SECURITY;
 
--- Políticas de Segurança (Permitir leitura/escrita para usuários autenticados e leitura anônima para expenses)
+-- Políticas de Segurança (Permitir acesso total a usuários autenticados)
 CREATE POLICY "Permitir acesso total a usuários autenticados em expenses" ON public.expenses FOR ALL TO authenticated USING (true);
 CREATE POLICY "Permitir acesso total a usuários autenticados em incomes" ON public.incomes FOR ALL TO authenticated USING (true);
 CREATE POLICY "Permitir acesso total a usuários autenticados em payments" ON public.payments FOR ALL TO authenticated USING (true);
 
--- Permitir leitura anônima para a tabela de despesas (para o modo compartilhado)
+-- Políticas para usuários anônimos (Modo Compartilhado)
 CREATE POLICY "Permitir leitura anônima em expenses" ON public.expenses FOR SELECT TO anon USING (true);
+CREATE POLICY "Permitir inserção anônima em expenses" ON public.expenses FOR INSERT TO anon WITH CHECK (true);
+CREATE POLICY "Permitir atualização anônima em expenses" ON public.expenses FOR UPDATE TO anon USING (true);
+CREATE POLICY "Permitir exclusão anônima em expenses" ON public.expenses FOR DELETE TO anon USING (true);
+
+-- Permitir leitura de entradas e pagamentos para o dashboard no modo compartilhado
+CREATE POLICY "Permitir leitura anônima em incomes" ON public.incomes FOR SELECT TO anon USING (true);
+CREATE POLICY "Permitir leitura anônima em payments" ON public.payments FOR SELECT TO anon USING (true);
