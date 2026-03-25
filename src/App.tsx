@@ -21,9 +21,7 @@ import { ExpensesTab } from './components/ExpensesTab';
 import { IncomesTab } from './components/IncomesTab';
 import { ReportsTab } from './components/ReportsTab';
 import { Login } from './components/Login';
-import { auth, db } from './firebase';
-import { onAuthStateChanged, signInAnonymously, signOut } from 'firebase/auth';
-import { collection, onSnapshot, addDoc, deleteDoc, doc, query, orderBy, updateDoc } from 'firebase/firestore';
+import { supabase } from './supabaseClient';
 
 const CATEGORIES: Category[] = ['Combustível', 'Documentação', 'Material', 'Mão de Obra', 'Monitoramento'];
 const PEOPLE: Person[] = ['Mccley', 'Jan', 'Saulo'];
@@ -44,23 +42,27 @@ export default function App() {
       }
     }
 
-    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-      if (currentUser) {
-        setUser(currentUser);
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        setUser(session.user);
       } else {
         setUser(null);
         if (shared) {
-          try {
-            await signInAnonymously(auth);
-          } catch (error) {
-            console.error("Error signing in anonymously:", error);
-          }
+          supabase.auth.signInAnonymously().catch(console.error);
         }
       }
       setIsAuthReady(true);
     });
 
-    return () => unsubscribe();
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (session?.user) {
+        setUser(session.user);
+      } else {
+        setUser(null);
+      }
+    });
+
+    return () => subscription.unsubscribe();
   }, [activeTab]);
 
   const [state, setState] = useState<AppState>({ expenses: [], incomes: [], payments: [] });
@@ -68,35 +70,57 @@ export default function App() {
   useEffect(() => {
     if (!isAuthReady) return;
 
-    const expensesQ = query(collection(db, 'expenses'), orderBy('createdAt', 'desc'));
-    const incomesQ = query(collection(db, 'incomes'), orderBy('createdAt', 'desc'));
-    const paymentsQ = query(collection(db, 'payments'), orderBy('createdAt', 'desc'));
+    const fetchAndSubscribe = async () => {
+      // Initial fetch
+      const fetchTable = async (table: string) => {
+        const { data } = await supabase.from(table).select('*').order('date', { ascending: false });
+        return data || [];
+      };
 
-    const unsubExpenses = onSnapshot(expensesQ, (snapshot) => {
-      const expensesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Expense));
-      setState(prev => ({ ...prev, expenses: expensesData }));
+      const [expensesData, incomesData, paymentsData] = await Promise.all([
+        fetchTable('expenses'),
+        !isSharedMode ? fetchTable('incomes') : Promise.resolve([]),
+        !isSharedMode ? fetchTable('payments') : Promise.resolve([])
+      ]);
+
+      setState({
+        expenses: expensesData as Expense[],
+        incomes: incomesData as Income[],
+        payments: paymentsData as Payment[]
+      });
+
+      // Realtime subscriptions
+      const channel = supabase.channel('schema-db-changes')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'expenses' }, async () => {
+          const data = await fetchTable('expenses');
+          setState(prev => ({ ...prev, expenses: data as Expense[] }));
+        });
+
+      if (!isSharedMode) {
+        channel
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'incomes' }, async () => {
+            const data = await fetchTable('incomes');
+            setState(prev => ({ ...prev, incomes: data as Income[] }));
+          })
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'payments' }, async () => {
+            const data = await fetchTable('payments');
+            setState(prev => ({ ...prev, payments: data as Payment[] }));
+          });
+      }
+
+      channel.subscribe();
+
+      return () => {
+        supabase.removeChannel(channel);
+      };
+    };
+
+    let cleanup = () => {};
+    fetchAndSubscribe().then(unsub => {
+      if (unsub) cleanup = unsub;
     });
 
-    let unsubIncomes = () => {};
-    let unsubPayments = () => {};
-
-    if (!isSharedMode) {
-      unsubIncomes = onSnapshot(incomesQ, (snapshot) => {
-        const incomesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Income));
-        setState(prev => ({ ...prev, incomes: incomesData }));
-      });
-
-      unsubPayments = onSnapshot(paymentsQ, (snapshot) => {
-        const paymentsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Payment));
-        setState(prev => ({ ...prev, payments: paymentsData }));
-      });
-    }
-
-    return () => {
-      unsubExpenses();
-      unsubIncomes();
-      unsubPayments();
-    };
+    return () => cleanup();
   }, [isAuthReady, isSharedMode]);
 
   // --- Calculations ---
@@ -195,11 +219,12 @@ export default function App() {
   const addExpense = async (expense: Omit<Expense, 'id'>) => {
     try {
       const cleanExpense = Object.fromEntries(Object.entries(expense).filter(([_, v]) => v !== undefined));
-      await addDoc(collection(db, 'expenses'), {
+      const { error } = await supabase.from('expenses').insert({
         ...cleanExpense,
         createdAt: new Date().toISOString(),
-        createdBy: user?.uid || 'anonymous'
+        createdBy: user?.id || 'anonymous'
       });
+      if (error) throw error;
     } catch (error) {
       console.error("Error adding expense: ", error);
       alert("Erro ao adicionar despesa. Verifique suas permissões.");
@@ -209,7 +234,8 @@ export default function App() {
   const editExpense = async (id: string, expense: Partial<Omit<Expense, 'id'>>) => {
     try {
       const cleanExpense = Object.fromEntries(Object.entries(expense).filter(([_, v]) => v !== undefined));
-      await updateDoc(doc(db, 'expenses', id), cleanExpense);
+      const { error } = await supabase.from('expenses').update(cleanExpense).eq('id', id);
+      if (error) throw error;
     } catch (error) {
       console.error("Error editing expense: ", error);
       alert("Erro ao editar despesa. Verifique suas permissões.");
@@ -218,11 +244,12 @@ export default function App() {
 
   const addIncome = async (income: Omit<Income, 'id'>) => {
     try {
-      await addDoc(collection(db, 'incomes'), {
+      const { error } = await supabase.from('incomes').insert({
         ...income,
         createdAt: new Date().toISOString(),
-        createdBy: user?.uid || 'anonymous'
+        createdBy: user?.id || 'anonymous'
       });
+      if (error) throw error;
     } catch (error) {
       console.error("Error adding income: ", error);
       alert("Erro ao adicionar entrada. Verifique suas permissões.");
@@ -231,11 +258,12 @@ export default function App() {
 
   const addPayment = async (payment: Omit<Payment, 'id'>) => {
     try {
-      await addDoc(collection(db, 'payments'), {
+      const { error } = await supabase.from('payments').insert({
         ...payment,
         createdAt: new Date().toISOString(),
-        createdBy: user?.uid || 'anonymous'
+        createdBy: user?.id || 'anonymous'
       });
+      if (error) throw error;
     } catch (error) {
       console.error("Error adding payment: ", error);
       alert("Erro ao adicionar pagamento. Verifique suas permissões.");
@@ -244,7 +272,8 @@ export default function App() {
 
   const deleteExpense = async (id: string) => {
     try {
-      await deleteDoc(doc(db, 'expenses', id));
+      const { error } = await supabase.from('expenses').delete().eq('id', id);
+      if (error) throw error;
     } catch (error) {
       console.error("Error deleting expense: ", error);
       alert("Erro ao deletar despesa. Verifique suas permissões.");
@@ -254,7 +283,8 @@ export default function App() {
   const editIncome = async (id: string, income: Partial<Omit<Income, 'id'>>) => {
     try {
       const cleanIncome = Object.fromEntries(Object.entries(income).filter(([_, v]) => v !== undefined));
-      await updateDoc(doc(db, 'incomes', id), cleanIncome);
+      const { error } = await supabase.from('incomes').update(cleanIncome).eq('id', id);
+      if (error) throw error;
     } catch (error) {
       console.error("Error editing income: ", error);
       alert("Erro ao editar entrada. Verifique suas permissões.");
@@ -263,7 +293,8 @@ export default function App() {
 
   const deleteIncome = async (id: string) => {
     try {
-      await deleteDoc(doc(db, 'incomes', id));
+      const { error } = await supabase.from('incomes').delete().eq('id', id);
+      if (error) throw error;
     } catch (error) {
       console.error("Error deleting income: ", error);
       alert("Erro ao deletar entrada. Verifique suas permissões.");
@@ -272,7 +303,8 @@ export default function App() {
 
   const deletePayment = async (id: string) => {
     try {
-      await deleteDoc(doc(db, 'payments', id));
+      const { error } = await supabase.from('payments').delete().eq('id', id);
+      if (error) throw error;
     } catch (error) {
       console.error("Error deleting payment: ", error);
       alert("Erro ao deletar pagamento. Verifique suas permissões.");
@@ -281,7 +313,7 @@ export default function App() {
 
   const handleLogout = async () => {
     try {
-      await signOut(auth);
+      await supabase.auth.signOut();
     } catch (error) {
       console.error("Error signing out: ", error);
     }
