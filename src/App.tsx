@@ -307,9 +307,9 @@ function App() {
         createdBy: user?.id || null
       });
       if (error) throw error;
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error adding expense: ", error);
-      alert("Erro ao adicionar despesa. Verifique suas permissões.");
+      alert(`Erro ao adicionar despesa: ${error.message || 'Verifique suas permissões.'}`);
     }
   };
 
@@ -318,9 +318,9 @@ function App() {
       const cleanExpense = Object.fromEntries(Object.entries(expense).filter(([_, v]) => v !== undefined));
       const { error } = await supabase.from('expenses').update(cleanExpense).eq('id', id);
       if (error) throw error;
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error editing expense: ", error);
-      alert("Erro ao editar despesa. Verifique suas permissões.");
+      alert(`Erro ao editar despesa: ${error.message || 'Verifique suas permissões.'}`);
     }
   };
 
@@ -332,9 +332,9 @@ function App() {
         createdBy: user?.id || null
       });
       if (error) throw error;
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error adding income: ", error);
-      alert("Erro ao adicionar entrada. Verifique suas permissões.");
+      alert(`Erro ao adicionar entrada: ${error.message || 'Verifique suas permissões.'}`);
     }
   };
 
@@ -346,9 +346,9 @@ function App() {
         createdBy: user?.id || null
       });
       if (error) throw error;
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error adding payment: ", error);
-      alert("Erro ao adicionar pagamento. Verifique suas permissões.");
+      alert(`Erro ao adicionar pagamento: ${error.message || 'Verifique suas permissões.'}`);
     }
   };
 
@@ -356,9 +356,9 @@ function App() {
     try {
       const { error } = await supabase.from('expenses').delete().eq('id', id);
       if (error) throw error;
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error deleting expense: ", error);
-      alert("Erro ao deletar despesa. Verifique suas permissões.");
+      alert(`Erro ao deletar despesa: ${error.message || 'Verifique suas permissões.'}`);
     }
   };
 
@@ -377,9 +377,9 @@ function App() {
     try {
       const { error } = await supabase.from('incomes').delete().eq('id', id);
       if (error) throw error;
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error deleting income: ", error);
-      alert("Erro ao deletar entrada. Verifique suas permissões.");
+      alert(`Erro ao deletar entrada: ${error.message || 'Verifique suas permissões.'}`);
     }
   };
 
@@ -387,9 +387,9 @@ function App() {
     try {
       const { error } = await supabase.from('payments').delete().eq('id', id);
       if (error) throw error;
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error deleting payment: ", error);
-      alert("Erro ao deletar pagamento. Verifique suas permissões.");
+      alert(`Erro ao deletar pagamento: ${error.message || 'Verifique suas permissões.'}`);
     }
   };
 
