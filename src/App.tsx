@@ -301,11 +301,7 @@ function App() {
   const addExpense = async (expense: Omit<Expense, 'id'>) => {
     try {
       const cleanExpense = Object.fromEntries(Object.entries(expense).filter(([_, v]) => v !== undefined));
-      const { error } = await supabase.from('expenses').insert({
-        ...cleanExpense,
-        createdAt: new Date().toISOString(),
-        createdBy: user?.id || null
-      });
+      const { error } = await supabase.from('expenses').insert(cleanExpense);
       if (error) throw error;
     } catch (error: any) {
       console.error("Error adding expense: ", error);
@@ -326,11 +322,7 @@ function App() {
 
   const addIncome = async (income: Omit<Income, 'id'>) => {
     try {
-      const { error } = await supabase.from('incomes').insert({
-        ...income,
-        createdAt: new Date().toISOString(),
-        createdBy: user?.id || null
-      });
+      const { error } = await supabase.from('incomes').insert(income);
       if (error) throw error;
     } catch (error: any) {
       console.error("Error adding income: ", error);
@@ -340,11 +332,7 @@ function App() {
 
   const addPayment = async (payment: Omit<Payment, 'id'>) => {
     try {
-      const { error } = await supabase.from('payments').insert({
-        ...payment,
-        createdAt: new Date().toISOString(),
-        createdBy: user?.id || null
-      });
+      const { error } = await supabase.from('payments').insert(payment);
       if (error) throw error;
     } catch (error: any) {
       console.error("Error adding payment: ", error);
