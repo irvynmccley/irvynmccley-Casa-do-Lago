@@ -24,6 +24,8 @@ import { ReportsTab } from './components/ReportsTab';
 import { TerrenoTab } from './components/TerrenoTab';
 import { Login } from './components/Login';
 import { supabase } from './supabaseClient';
+import { Toaster, toast } from 'sonner';
+import { ConfirmDialog } from './components/ui/ConfirmDialog';
 
 const ENABLE_SUPABASE_SYNC = true; // Trava de segurança
 
@@ -168,6 +170,17 @@ function App() {
   }, [activeTab]);
 
   const [state, setState] = useState<AppState>({ expenses: [], incomes: [], payments: [], terrenoPaidInstallments: INITIAL_PAID_TERRENO });
+  const [confirmDialog, setConfirmDialog] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {},
+  });
 
   const fetchAllData = useCallback(async () => {
     const fetchTable = async (table: string) => {
@@ -355,7 +368,7 @@ function App() {
   const addExpense = async (expense: Omit<Expense, 'id'>) => {
     if (!ENABLE_SUPABASE_SYNC) {
       setState(prev => ({ ...prev, expenses: [{ ...expense, id: Date.now().toString() } as Expense, ...prev.expenses] }));
-      alert("Trava de Segurança: Salvo apenas localmente.");
+      toast.success("Lançamento com Sucesso");
       return;
     }
     try {
@@ -363,16 +376,17 @@ function App() {
       const { error } = await supabase.from('expenses').insert(cleanExpense);
       if (error) throw error;
       await fetchAllData();
+      toast.success("Lançamento com Sucesso");
     } catch (error: any) {
       console.error("Error adding expense: ", error);
-      alert(`Erro ao adicionar despesa: ${error.message || 'Verifique suas permissões.'}`);
+      toast.error(`Erro ao adicionar despesa: ${error.message || 'Verifique suas permissões.'}`);
     }
   };
 
   const editExpense = async (id: string, expense: Partial<Omit<Expense, 'id'>>) => {
     if (!ENABLE_SUPABASE_SYNC) {
       setState(prev => ({ ...prev, expenses: prev.expenses.map(e => e.id === id ? { ...e, ...expense } as Expense : e) }));
-      alert("Trava de Segurança: Editado apenas localmente.");
+      toast.success("Lançamento alterado com sucesso");
       return;
     }
     try {
@@ -380,64 +394,68 @@ function App() {
       const { error } = await supabase.from('expenses').update(cleanExpense).eq('id', id);
       if (error) throw error;
       await fetchAllData();
+      toast.success("Lançamento alterado com sucesso");
     } catch (error: any) {
       console.error("Error editing expense: ", error);
-      alert(`Erro ao editar despesa: ${error.message || 'Verifique suas permissões.'}`);
+      toast.error(`Erro ao editar despesa: ${error.message || 'Verifique suas permissões.'}`);
     }
   };
 
   const addIncome = async (income: Omit<Income, 'id'>) => {
     if (!ENABLE_SUPABASE_SYNC) {
       setState(prev => ({ ...prev, incomes: [{ ...income, id: Date.now().toString() } as Income, ...prev.incomes] }));
-      alert("Trava de Segurança: Salvo apenas localmente.");
+      toast.success("Lançamento com Sucesso");
       return;
     }
     try {
       const { error } = await supabase.from('incomes').insert(income);
       if (error) throw error;
       await fetchAllData();
+      toast.success("Lançamento com Sucesso");
     } catch (error: any) {
       console.error("Error adding income: ", error);
-      alert(`Erro ao adicionar entrada: ${error.message || 'Verifique suas permissões.'}`);
+      toast.error(`Erro ao adicionar entrada: ${error.message || 'Verifique suas permissões.'}`);
     }
   };
 
   const addPayment = async (payment: Omit<Payment, 'id'>) => {
     if (!ENABLE_SUPABASE_SYNC) {
       setState(prev => ({ ...prev, payments: [{ ...payment, id: Date.now().toString() } as Payment, ...prev.payments] }));
-      alert("Trava de Segurança: Salvo apenas localmente.");
+      toast.success("Lançamento com Sucesso");
       return;
     }
     try {
       const { error } = await supabase.from('payments').insert(payment);
       if (error) throw error;
       await fetchAllData();
+      toast.success("Lançamento com Sucesso");
     } catch (error: any) {
       console.error("Error adding payment: ", error);
-      alert(`Erro ao adicionar pagamento: ${error.message || 'Verifique suas permissões.'}`);
+      toast.error(`Erro ao adicionar pagamento: ${error.message || 'Verifique suas permissões.'}`);
     }
   };
 
   const deleteExpense = async (id: string) => {
     if (!ENABLE_SUPABASE_SYNC) {
       setState(prev => ({ ...prev, expenses: prev.expenses.filter(e => e.id !== id) }));
-      alert("Trava de Segurança: Deletado apenas localmente.");
+      toast.success("Lançamento excluído com sucesso");
       return;
     }
     try {
       const { error } = await supabase.from('expenses').delete().eq('id', id);
       if (error) throw error;
       await fetchAllData();
+      toast.success("Lançamento excluído com sucesso");
     } catch (error: any) {
       console.error("Error deleting expense: ", error);
-      alert(`Erro ao deletar despesa: ${error.message || 'Verifique suas permissões.'}`);
+      toast.error(`Erro ao deletar despesa: ${error.message || 'Verifique suas permissões.'}`);
     }
   };
 
   const editIncome = async (id: string, income: Partial<Omit<Income, 'id'>>) => {
     if (!ENABLE_SUPABASE_SYNC) {
       setState(prev => ({ ...prev, incomes: prev.incomes.map(i => i.id === id ? { ...i, ...income } as Income : i) }));
-      alert("Trava de Segurança: Editado apenas localmente.");
+      toast.success("Lançamento alterado com sucesso");
       return;
     }
     try {
@@ -445,42 +463,72 @@ function App() {
       const { error } = await supabase.from('incomes').update(cleanIncome).eq('id', id);
       if (error) throw error;
       await fetchAllData();
+      toast.success("Lançamento alterado com sucesso");
     } catch (error) {
       console.error("Error editing income: ", error);
-      alert("Erro ao editar entrada. Verifique suas permissões.");
+      toast.error("Erro ao editar entrada. Verifique suas permissões.");
     }
   };
 
   const deleteIncome = async (id: string) => {
     if (!ENABLE_SUPABASE_SYNC) {
       setState(prev => ({ ...prev, incomes: prev.incomes.filter(i => i.id !== id) }));
-      alert("Trava de Segurança: Deletado apenas localmente.");
+      toast.success("Lançamento excluído com sucesso");
       return;
     }
     try {
       const { error } = await supabase.from('incomes').delete().eq('id', id);
       if (error) throw error;
       await fetchAllData();
+      toast.success("Lançamento excluído com sucesso");
     } catch (error: any) {
       console.error("Error deleting income: ", error);
-      alert(`Erro ao deletar entrada: ${error.message || 'Verifique suas permissões.'}`);
+      toast.error(`Erro ao deletar entrada: ${error.message || 'Verifique suas permissões.'}`);
     }
   };
 
   const deletePayment = async (id: string) => {
     if (!ENABLE_SUPABASE_SYNC) {
       setState(prev => ({ ...prev, payments: prev.payments.filter(p => p.id !== id) }));
-      alert("Trava de Segurança: Deletado apenas localmente.");
+      toast.success("Lançamento excluído com sucesso");
       return;
     }
     try {
       const { error } = await supabase.from('payments').delete().eq('id', id);
       if (error) throw error;
       await fetchAllData();
+      toast.success("Lançamento excluído com sucesso");
     } catch (error: any) {
       console.error("Error deleting payment: ", error);
-      alert(`Erro ao deletar pagamento: ${error.message || 'Verifique suas permissões.'}`);
+      toast.error(`Erro ao deletar pagamento: ${error.message || 'Verifique suas permissões.'}`);
     }
+  };
+
+  const confirmDeleteExpense = (id: string) => {
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Excluir Saída',
+      message: 'Tem certeza que deseja excluir esta saída? Esta ação não pode ser desfeita.',
+      onConfirm: () => deleteExpense(id),
+    });
+  };
+
+  const confirmDeleteIncome = (id: string) => {
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Excluir Entrada',
+      message: 'Tem certeza que deseja excluir esta entrada? Esta ação não pode ser desfeita.',
+      onConfirm: () => deleteIncome(id),
+    });
+  };
+
+  const confirmDeletePayment = (id: string) => {
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Excluir Pagamento',
+      message: 'Tem certeza que deseja excluir este pagamento? Esta ação não pode ser desfeita.',
+      onConfirm: () => deletePayment(id),
+    });
   };
 
   const handleLogout = async () => {
@@ -588,7 +636,7 @@ function App() {
             expenses={state.expenses} 
             onAdd={addExpense} 
             onEdit={editExpense}
-            onDelete={deleteExpense} 
+            onDelete={confirmDeleteExpense} 
             formatCurrency={formatCurrency} 
             isSharedMode={isSharedMode}
           />
@@ -604,8 +652,8 @@ function App() {
             onAddIncome={addIncome} 
             onEditIncome={editIncome}
             onAddPayment={addPayment}
-            onDeleteIncome={deleteIncome}
-            onDeletePayment={deletePayment}
+            onDeleteIncome={confirmDeleteIncome}
+            onDeletePayment={confirmDeletePayment}
             formatCurrency={formatCurrency} 
           />
         )}
@@ -625,6 +673,14 @@ function App() {
         {activeTab === 'config' && <PlaceholderTab title="Configurações" />}
         {activeTab === 'sobre' && <PlaceholderTab title="Sobre o Sistema" />}
       </main>
+      <Toaster position="top-center" richColors />
+      <ConfirmDialog 
+        isOpen={confirmDialog.isOpen}
+        title={confirmDialog.title}
+        message={confirmDialog.message}
+        onConfirm={confirmDialog.onConfirm}
+        onCancel={() => setConfirmDialog(prev => ({ ...prev, isOpen: false }))}
+      />
     </div>
   );
 }

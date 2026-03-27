@@ -4,6 +4,7 @@ import { Expense, Category } from '../types';
 import { Card } from './ui/Card';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import { Search } from 'lucide-react';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -18,14 +19,23 @@ interface ReportsTabProps {
 
 export function ReportsTab({ expenses, formatCurrency }: ReportsTabProps) {
   const [filter, setFilter] = useState('all');
+  const [searchTerm, setSearchTerm] = useState('');
 
   const filteredExpenses = useMemo(() => {
     let result = expenses;
     if (filter !== 'all') {
-      result = expenses.filter((e: Expense) => e.category === filter);
+      result = result.filter((e: Expense) => e.category === filter);
+    }
+    if (searchTerm) {
+      const lowerSearch = searchTerm.toLowerCase();
+      result = result.filter((e: Expense) => 
+        (e.local && e.local.toLowerCase().includes(lowerSearch)) ||
+        (e.observation && e.observation.toLowerCase().includes(lowerSearch)) ||
+        (e.paymentMethod && e.paymentMethod.toLowerCase().includes(lowerSearch))
+      );
     }
     return [...result].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
-  }, [expenses, filter]);
+  }, [expenses, filter, searchTerm]);
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -34,22 +44,36 @@ export function ReportsTab({ expenses, formatCurrency }: ReportsTabProps) {
           <h2 className="text-3xl font-bold tracking-tight mb-2">Relatórios</h2>
           <p className="text-black">Detalhamento de todos os lançamentos</p>
         </div>
-        <div className="flex items-center gap-2 bg-white p-1 rounded-xl shadow-sm border border-black/5 overflow-x-auto">
-          <button 
-            onClick={() => setFilter('all')}
-            className={cn("px-4 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap", filter === 'all' ? "bg-emerald-500 text-white" : "text-black hover:bg-gray-50")}
-          >
-            Todos
-          </button>
-          {CATEGORIES.map(cat => (
+        <div className="flex flex-col sm:flex-row items-center gap-4 w-full md:w-auto">
+          <div className="relative w-full sm:w-64">
+            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+              <Search size={18} className="text-gray-400" />
+            </div>
+            <input
+              type="text"
+              placeholder="Buscar local, obs..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none transition-all"
+            />
+          </div>
+          <div className="flex items-center gap-2 bg-white p-1 rounded-xl shadow-sm border border-black/5 overflow-x-auto w-full sm:w-auto">
             <button 
-              key={cat}
-              onClick={() => setFilter(cat)}
-              className={cn("px-4 py-2 rounded-lg text-sm font-medium transition-all capitalize whitespace-nowrap", filter === cat ? "bg-emerald-500 text-white" : "text-black hover:bg-gray-50")}
+              onClick={() => setFilter('all')}
+              className={cn("px-4 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap", filter === 'all' ? "bg-emerald-500 text-white" : "text-black hover:bg-gray-50")}
             >
-              {cat}
+              Todos
             </button>
-          ))}
+            {CATEGORIES.map(cat => (
+              <button 
+                key={cat}
+                onClick={() => setFilter(cat)}
+                className={cn("px-4 py-2 rounded-lg text-sm font-medium transition-all capitalize whitespace-nowrap", filter === cat ? "bg-emerald-500 text-white" : "text-black hover:bg-gray-50")}
+              >
+                {cat}
+              </button>
+            ))}
+          </div>
         </div>
       </header>
 

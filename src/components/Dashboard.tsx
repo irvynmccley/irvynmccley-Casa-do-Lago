@@ -87,7 +87,7 @@ export function Dashboard({ totalSpent, totalDonations, categoryTotals, cardInst
             <Banknote size={18} className="text-emerald-500" />
             <span className="text-sm font-medium uppercase tracking-wider">Total da Obra</span>
           </div>
-          <div className="text-3xl font-light tracking-tight truncate">{formatCurrency(totalSpent)}</div>
+          <div className="text-2xl sm:text-3xl font-light tracking-tight break-words">{formatCurrency(totalSpent)}</div>
         </Card>
 
         <Card className="bg-white border-none shadow-sm p-6 flex flex-col justify-between h-full">
@@ -95,7 +95,7 @@ export function Dashboard({ totalSpent, totalDonations, categoryTotals, cardInst
             <Wallet size={18} className="text-amber-500" />
             <span className="text-sm font-medium uppercase tracking-wider">Saldo do Caixa</span>
           </div>
-          <div className={`text-3xl font-light tracking-tight truncate ${caixaBalance > 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+          <div className={`text-2xl sm:text-3xl font-light tracking-tight break-words ${caixaBalance > 0 ? 'text-emerald-600' : 'text-red-600'}`}>
             {formatCurrency(caixaBalance)}
           </div>
         </Card>
@@ -105,7 +105,7 @@ export function Dashboard({ totalSpent, totalDonations, categoryTotals, cardInst
             <Banknote size={18} className="text-red-500" />
             <span className="text-sm font-medium uppercase tracking-wider">Saldo do Terreno</span>
           </div>
-          <div className="text-3xl font-light tracking-tight truncate text-red-600">
+          <div className="text-2xl sm:text-3xl font-light tracking-tight break-words text-red-600">
             {formatCurrency(terrenoBalance)}
           </div>
         </Card>
@@ -133,7 +133,7 @@ export function Dashboard({ totalSpent, totalDonations, categoryTotals, cardInst
             <User size={18} className="text-purple-500" />
             <span className="text-sm font-medium uppercase tracking-wider">Total Doações</span>
           </div>
-          <div className="text-3xl font-light tracking-tight text-purple-600 truncate">{formatCurrency(totalDonations)}</div>
+          <div className="text-2xl sm:text-3xl font-light tracking-tight text-purple-600 break-words">{formatCurrency(totalDonations)}</div>
         </Card>
       </div>
 
