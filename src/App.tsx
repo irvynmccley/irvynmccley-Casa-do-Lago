@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, Component, ErrorInfo, ReactNode } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, Component, ErrorInfo, ReactNode } from 'react';
 import { 
   LayoutDashboard, 
   ArrowUpCircle, 
@@ -7,7 +7,8 @@ import {
   Settings, 
   Info,
   Wallet,
-  LogOut
+  LogOut,
+  Map
 } from 'lucide-react';
 import { 
   format, 
@@ -20,8 +21,11 @@ import { Dashboard } from './components/Dashboard';
 import { ExpensesTab } from './components/ExpensesTab';
 import { IncomesTab } from './components/IncomesTab';
 import { ReportsTab } from './components/ReportsTab';
+import { TerrenoTab } from './components/TerrenoTab';
 import { Login } from './components/Login';
 import { supabase } from './supabaseClient';
+
+const ENABLE_SUPABASE_SYNC = true; // Trava de segurança
 
 const CATEGORIES: Category[] = ['Combustível', 'Documentação', 'Material', 'Mão de Obra', 'Monitoramento'];
 const PEOPLE: Person[] = ['Mccley', 'Jan', 'Saulo'];
@@ -80,6 +84,12 @@ export default function AppWrapper() {
   );
 }
 
+const INITIAL_PAID_TERRENO = [
+  '2024-02', '2024-03', '2024-04', '2024-05', '2024-06', '2024-07', '2024-08', '2024-09', '2024-10', '2024-11', '2024-12',
+  '2025-01', '2025-02', '2025-03', '2025-04', '2025-05', '2025-06', '2025-07', '2025-08', '2025-09', '2025-10', '2025-11', '2025-12',
+  '2026-01', '2026-02'
+];
+
 function App() {
   const [activeTab, setActiveTab] = useState('inicio');
   const [isSharedMode, setIsSharedMode] = useState(false);
@@ -91,7 +101,7 @@ function App() {
     const shared = params.get('shared') === 'true';
     if (shared) {
       setIsSharedMode(true);
-      if (!['inicio', 'saidas'].includes(activeTab)) {
+      if (!['inicio', 'saidas', 'terreno'].includes(activeTab)) {
         setActiveTab('inicio');
       }
     }
@@ -106,63 +116,90 @@ function App() {
           return;
         }
         setUser(session.user);
+        setIsAuthReady(true);
       } else {
         setUser(null);
         if (shared) {
-          supabase.auth.signInAnonymously().then(({ data: { session: anonSession } }) => {
-            if (anonSession?.user) {
-              setUser(anonSession.user);
+          try {
+            if (typeof supabase.auth.signInAnonymously === 'function') {
+              supabase.auth.signInAnonymously().then((response) => {
+                const anonSession = response?.data?.session;
+                if (anonSession?.user) {
+                  setUser(anonSession.user);
+                }
+                setIsAuthReady(true);
+              }).catch(err => {
+                console.error("Error signing in anonymously:", err);
+                setIsAuthReady(true);
+              });
+            } else {
+              console.warn("signInAnonymously is not available. Continuing as public user.");
+              setIsAuthReady(true);
             }
+          } catch (err) {
+            console.error("Sync error signing in anonymously:", err);
             setIsAuthReady(true);
-          }).catch(err => {
-            console.error(err);
-            setIsAuthReady(true);
-          });
+          }
           return;
         }
+        setIsAuthReady(true);
       }
+    }).catch(err => {
+      console.error("Error getting session:", err);
       setIsAuthReady(true);
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (session?.user) {
         if (!shared && session.user.is_anonymous) {
-          await supabase.auth.signOut();
-          setUser(null);
+          supabase.auth.signOut().then(() => {
+            setUser(null);
+          });
         } else {
           setUser(session.user);
         }
       } else {
         setUser(null);
       }
+      setIsAuthReady(true);
     });
 
     return () => subscription.unsubscribe();
   }, [activeTab]);
 
-  const [state, setState] = useState<AppState>({ expenses: [], incomes: [], payments: [] });
+  const [state, setState] = useState<AppState>({ expenses: [], incomes: [], payments: [], terrenoPaidInstallments: INITIAL_PAID_TERRENO });
+
+  const fetchAllData = useCallback(async () => {
+    const fetchTable = async (table: string) => {
+      const { data } = await supabase.from(table).select('*').order('date', { ascending: false });
+      return data || [];
+    };
+
+    const [expensesData, incomesData, paymentsData] = await Promise.all([
+      fetchTable('expenses'),
+      !isSharedMode ? fetchTable('incomes') : Promise.resolve([]),
+      !isSharedMode ? fetchTable('payments') : Promise.resolve([])
+    ]);
+
+    setState(prev => ({
+      ...prev,
+      expenses: expensesData as Expense[],
+      incomes: incomesData as Income[],
+      payments: paymentsData as Payment[]
+    }));
+  }, [isSharedMode]);
 
   useEffect(() => {
     if (!isAuthReady) return;
 
     const fetchAndSubscribe = async () => {
       // Initial fetch
+      await fetchAllData();
+
       const fetchTable = async (table: string) => {
         const { data } = await supabase.from(table).select('*').order('date', { ascending: false });
         return data || [];
       };
-
-      const [expensesData, incomesData, paymentsData] = await Promise.all([
-        fetchTable('expenses'),
-        !isSharedMode ? fetchTable('incomes') : Promise.resolve([]),
-        !isSharedMode ? fetchTable('payments') : Promise.resolve([])
-      ]);
-
-      setState({
-        expenses: expensesData as Expense[],
-        incomes: incomesData as Income[],
-        payments: paymentsData as Payment[]
-      });
 
       // Realtime subscriptions
       const channel = supabase.channel('schema-db-changes')
@@ -196,7 +233,7 @@ function App() {
     });
 
     return () => cleanup();
-  }, [isAuthReady, isSharedMode]);
+  }, [isAuthReady, isSharedMode, fetchAllData]);
 
   // --- Calculations ---
 
@@ -296,13 +333,36 @@ function App() {
     });
   }, [totalIncome, state.payments]);
 
+  const terrenoBalance = useMemo(() => {
+    let remainingDebt = 40000;
+    let currentDate = new Date(2024, 1, 25);
+    const installments = [];
+    while (remainingDebt > 0) {
+      const paymentValue = Math.min(700, remainingDebt);
+      const id = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`;
+      installments.push({ id, value: paymentValue });
+      remainingDebt -= paymentValue;
+      currentDate.setMonth(currentDate.getMonth() + 1);
+    }
+    const totalPaid = installments
+      .filter(i => (state.terrenoPaidInstallments || []).includes(i.id))
+      .reduce((acc, curr) => acc + curr.value, 0);
+    return 40000 - totalPaid;
+  }, [state.terrenoPaidInstallments]);
+
   // --- Handlers ---
 
   const addExpense = async (expense: Omit<Expense, 'id'>) => {
+    if (!ENABLE_SUPABASE_SYNC) {
+      setState(prev => ({ ...prev, expenses: [{ ...expense, id: Date.now().toString() } as Expense, ...prev.expenses] }));
+      alert("Trava de Segurança: Salvo apenas localmente.");
+      return;
+    }
     try {
       const cleanExpense = Object.fromEntries(Object.entries(expense).filter(([_, v]) => v !== undefined));
       const { error } = await supabase.from('expenses').insert(cleanExpense);
       if (error) throw error;
+      await fetchAllData();
     } catch (error: any) {
       console.error("Error adding expense: ", error);
       alert(`Erro ao adicionar despesa: ${error.message || 'Verifique suas permissões.'}`);
@@ -310,10 +370,16 @@ function App() {
   };
 
   const editExpense = async (id: string, expense: Partial<Omit<Expense, 'id'>>) => {
+    if (!ENABLE_SUPABASE_SYNC) {
+      setState(prev => ({ ...prev, expenses: prev.expenses.map(e => e.id === id ? { ...e, ...expense } as Expense : e) }));
+      alert("Trava de Segurança: Editado apenas localmente.");
+      return;
+    }
     try {
       const cleanExpense = Object.fromEntries(Object.entries(expense).filter(([_, v]) => v !== undefined));
       const { error } = await supabase.from('expenses').update(cleanExpense).eq('id', id);
       if (error) throw error;
+      await fetchAllData();
     } catch (error: any) {
       console.error("Error editing expense: ", error);
       alert(`Erro ao editar despesa: ${error.message || 'Verifique suas permissões.'}`);
@@ -321,9 +387,15 @@ function App() {
   };
 
   const addIncome = async (income: Omit<Income, 'id'>) => {
+    if (!ENABLE_SUPABASE_SYNC) {
+      setState(prev => ({ ...prev, incomes: [{ ...income, id: Date.now().toString() } as Income, ...prev.incomes] }));
+      alert("Trava de Segurança: Salvo apenas localmente.");
+      return;
+    }
     try {
       const { error } = await supabase.from('incomes').insert(income);
       if (error) throw error;
+      await fetchAllData();
     } catch (error: any) {
       console.error("Error adding income: ", error);
       alert(`Erro ao adicionar entrada: ${error.message || 'Verifique suas permissões.'}`);
@@ -331,9 +403,15 @@ function App() {
   };
 
   const addPayment = async (payment: Omit<Payment, 'id'>) => {
+    if (!ENABLE_SUPABASE_SYNC) {
+      setState(prev => ({ ...prev, payments: [{ ...payment, id: Date.now().toString() } as Payment, ...prev.payments] }));
+      alert("Trava de Segurança: Salvo apenas localmente.");
+      return;
+    }
     try {
       const { error } = await supabase.from('payments').insert(payment);
       if (error) throw error;
+      await fetchAllData();
     } catch (error: any) {
       console.error("Error adding payment: ", error);
       alert(`Erro ao adicionar pagamento: ${error.message || 'Verifique suas permissões.'}`);
@@ -341,9 +419,15 @@ function App() {
   };
 
   const deleteExpense = async (id: string) => {
+    if (!ENABLE_SUPABASE_SYNC) {
+      setState(prev => ({ ...prev, expenses: prev.expenses.filter(e => e.id !== id) }));
+      alert("Trava de Segurança: Deletado apenas localmente.");
+      return;
+    }
     try {
       const { error } = await supabase.from('expenses').delete().eq('id', id);
       if (error) throw error;
+      await fetchAllData();
     } catch (error: any) {
       console.error("Error deleting expense: ", error);
       alert(`Erro ao deletar despesa: ${error.message || 'Verifique suas permissões.'}`);
@@ -351,10 +435,16 @@ function App() {
   };
 
   const editIncome = async (id: string, income: Partial<Omit<Income, 'id'>>) => {
+    if (!ENABLE_SUPABASE_SYNC) {
+      setState(prev => ({ ...prev, incomes: prev.incomes.map(i => i.id === id ? { ...i, ...income } as Income : i) }));
+      alert("Trava de Segurança: Editado apenas localmente.");
+      return;
+    }
     try {
       const cleanIncome = Object.fromEntries(Object.entries(income).filter(([_, v]) => v !== undefined));
       const { error } = await supabase.from('incomes').update(cleanIncome).eq('id', id);
       if (error) throw error;
+      await fetchAllData();
     } catch (error) {
       console.error("Error editing income: ", error);
       alert("Erro ao editar entrada. Verifique suas permissões.");
@@ -362,9 +452,15 @@ function App() {
   };
 
   const deleteIncome = async (id: string) => {
+    if (!ENABLE_SUPABASE_SYNC) {
+      setState(prev => ({ ...prev, incomes: prev.incomes.filter(i => i.id !== id) }));
+      alert("Trava de Segurança: Deletado apenas localmente.");
+      return;
+    }
     try {
       const { error } = await supabase.from('incomes').delete().eq('id', id);
       if (error) throw error;
+      await fetchAllData();
     } catch (error: any) {
       console.error("Error deleting income: ", error);
       alert(`Erro ao deletar entrada: ${error.message || 'Verifique suas permissões.'}`);
@@ -372,9 +468,15 @@ function App() {
   };
 
   const deletePayment = async (id: string) => {
+    if (!ENABLE_SUPABASE_SYNC) {
+      setState(prev => ({ ...prev, payments: prev.payments.filter(p => p.id !== id) }));
+      alert("Trava de Segurança: Deletado apenas localmente.");
+      return;
+    }
     try {
       const { error } = await supabase.from('payments').delete().eq('id', id);
       if (error) throw error;
+      await fetchAllData();
     } catch (error: any) {
       console.error("Error deleting payment: ", error);
       alert(`Erro ao deletar pagamento: ${error.message || 'Verifique suas permissões.'}`);
@@ -387,6 +489,17 @@ function App() {
     } catch (error) {
       console.error("Error signing out: ", error);
     }
+  };
+
+  const handleToggleTerrenoPayment = (id: string) => {
+    setState(prev => {
+      const currentPaid = prev.terrenoPaidInstallments || [];
+      const isPaid = currentPaid.includes(id);
+      const newPaid = isPaid 
+        ? currentPaid.filter(i => i !== id)
+        : [...currentPaid, id];
+      return { ...prev, terrenoPaidInstallments: newPaid };
+    });
   };
 
   const formatCurrency = (value: number) => {
@@ -414,6 +527,7 @@ function App() {
 
         <NavItem icon={<LayoutDashboard size={20} />} label="Início" active={activeTab === 'inicio'} onClick={() => setActiveTab('inicio')} />
         <NavItem icon={<ArrowDownCircle size={20} />} label="Saídas" active={activeTab === 'saidas'} onClick={() => setActiveTab('saidas')} />
+        <NavItem icon={<Map size={20} />} label="Terreno" active={activeTab === 'terreno'} onClick={() => setActiveTab('terreno')} />
         
         {!isSharedMode ? (
           <>
@@ -464,7 +578,9 @@ function App() {
             categoryTotals={categoryTotals} 
             cardInstallments={cardInstallmentsByMonth} 
             caixaBalance={caixaBalance}
+            terrenoBalance={terrenoBalance}
             formatCurrency={formatCurrency} 
+            onRefresh={fetchAllData}
           />
         )}
         {activeTab === 'saidas' && (
@@ -497,6 +613,13 @@ function App() {
           <ReportsTab 
             expenses={state.expenses} 
             formatCurrency={formatCurrency} 
+          />
+        )}
+        {activeTab === 'terreno' && (
+          <TerrenoTab 
+            paidInstallments={state.terrenoPaidInstallments}
+            onTogglePayment={handleToggleTerrenoPayment}
+            formatCurrency={formatCurrency}
           />
         )}
         {activeTab === 'config' && <PlaceholderTab title="Configurações" />}

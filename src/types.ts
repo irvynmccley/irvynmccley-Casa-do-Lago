@@ -34,4 +34,5 @@ export interface AppState {
   expenses: Expense[];
   incomes: Income[];
   payments: Payment[];
+  terrenoPaidInstallments: string[];
 }

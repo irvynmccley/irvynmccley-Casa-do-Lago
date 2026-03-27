@@ -26,7 +26,9 @@ interface DashboardProps {
   categoryTotals: { name: string; value: number }[];
   cardInstallments: { month: string; total: number }[];
   caixaBalance: number;
+  terrenoBalance: number;
   formatCurrency: (v: number) => string;
+  onRefresh: () => Promise<void>;
 }
 
 const TriangleBar = (props: any) => {
@@ -45,15 +47,16 @@ const TriangleBar = (props: any) => {
   );
 };
 
-export function Dashboard({ totalSpent, totalDonations, categoryTotals, cardInstallments, caixaBalance, formatCurrency }: DashboardProps) {
+export function Dashboard({ totalSpent, totalDonations, categoryTotals, cardInstallments, caixaBalance, terrenoBalance, formatCurrency, onRefresh }: DashboardProps) {
   const [isRefreshing, setIsRefreshing] = React.useState(false);
 
-  const handleRefresh = () => {
+  const handleRefresh = async () => {
     setIsRefreshing(true);
-    // Simulating a data refresh
-    setTimeout(() => {
+    try {
+      await onRefresh();
+    } finally {
       setIsRefreshing(false);
-    }, 1000);
+    }
   };
 
   // Fixed costs calculation
@@ -78,7 +81,7 @@ export function Dashboard({ totalSpent, totalDonations, categoryTotals, cardInst
         </button>
       </header>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
         <Card className="bg-white border-none shadow-sm p-6 flex flex-col justify-between h-full">
           <div className="flex items-center gap-3 text-black mb-4">
             <Banknote size={18} className="text-emerald-500" />
@@ -94,6 +97,16 @@ export function Dashboard({ totalSpent, totalDonations, categoryTotals, cardInst
           </div>
           <div className={`text-3xl font-light tracking-tight truncate ${caixaBalance > 0 ? 'text-emerald-600' : 'text-red-600'}`}>
             {formatCurrency(caixaBalance)}
+          </div>
+        </Card>
+
+        <Card className="bg-white border-none shadow-sm p-6 flex flex-col justify-between h-full">
+          <div className="flex items-center gap-3 text-black mb-4">
+            <Banknote size={18} className="text-red-500" />
+            <span className="text-sm font-medium uppercase tracking-wider">Saldo do Terreno</span>
+          </div>
+          <div className="text-3xl font-light tracking-tight truncate text-red-600">
+            {formatCurrency(terrenoBalance)}
           </div>
         </Card>
 
