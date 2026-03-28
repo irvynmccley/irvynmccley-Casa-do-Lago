@@ -55,4 +55,20 @@ CREATE POLICY "Permitir exclusão anônima em expenses" ON public.expenses FOR D
 
 -- Permitir leitura de entradas e pagamentos para o dashboard no modo compartilhado
 CREATE POLICY "Permitir leitura anônima em incomes" ON public.incomes FOR SELECT TO anon USING (true);
+CREATE POLICY "Permitir inserção anônima em incomes" ON public.incomes FOR INSERT TO anon WITH CHECK (true);
+CREATE POLICY "Permitir atualização anônima em incomes" ON public.incomes FOR UPDATE TO anon USING (true);
+CREATE POLICY "Permitir exclusão anônima em incomes" ON public.incomes FOR DELETE TO anon USING (true);
+
 CREATE POLICY "Permitir leitura anônima em payments" ON public.payments FOR SELECT TO anon USING (true);
+CREATE POLICY "Permitir inserção anônima em payments" ON public.payments FOR INSERT TO anon WITH CHECK (true);
+CREATE POLICY "Permitir atualização anônima em payments" ON public.payments FOR UPDATE TO anon USING (true);
+CREATE POLICY "Permitir exclusão anônima em payments" ON public.payments FOR DELETE TO anon USING (true);
+
+-- Tabela de parcelas do terreno
+CREATE TABLE IF NOT EXISTS public.terreno_installments (
+  id TEXT PRIMARY KEY,
+  "createdAt" TIMESTAMPTZ DEFAULT NOW()
+);
+ALTER TABLE public.terreno_installments ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Permitir acesso total a usuários autenticados em terreno_installments" ON public.terreno_installments FOR ALL TO authenticated USING (true);
+CREATE POLICY "Permitir acesso total anônimo em terreno_installments" ON public.terreno_installments FOR ALL TO anon USING (true);
