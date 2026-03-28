@@ -232,6 +232,12 @@ function App() {
           .on('postgres_changes', { event: '*', schema: 'public', table: 'payments' }, async () => {
             const data = await fetchTable('payments');
             setState(prev => ({ ...prev, payments: data as Payment[] }));
+          })
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'terreno_installments' }, async () => {
+            const { data } = await supabase.from('terreno_installments').select('id');
+            if (data) {
+              setState(prev => ({ ...prev, terrenoPaidInstallments: data.map(d => d.id) }));
+            }
           });
       }
 
@@ -323,9 +329,10 @@ function App() {
       }
     });
 
+    const currentMonthKey = format(new Date(), 'yyyy-MM');
     return Object.entries(monthlyTotals)
       .map(([month, total]) => ({ month, total }))
-      .filter(item => item.month.startsWith(`${currentYear}-`))
+      .filter(item => item.month.startsWith(`${currentYear}-`) && item.month >= currentMonthKey)
       .sort((a, b) => a.month.localeCompare(b.month));
   }, [state.expenses]);
 
@@ -379,7 +386,7 @@ function App() {
     }
     try {
       const cleanExpense = Object.fromEntries(Object.entries(expense).filter(([_, v]) => v !== undefined));
-      const { error } = await supabase.from('expenses').insert(cleanExpense);
+      const { error } = await supabase.from('expenses').insert({ ...cleanExpense, user_id: user?.id });
       if (error) throw error;
       await fetchAllData();
       toast.success("Lançamento com Sucesso");
@@ -414,7 +421,7 @@ function App() {
       return;
     }
     try {
-      const { error } = await supabase.from('incomes').insert(income);
+      const { error } = await supabase.from('incomes').insert({ ...income, user_id: user?.id });
       if (error) throw error;
       await fetchAllData();
       toast.success("Lançamento com Sucesso");
@@ -431,7 +438,7 @@ function App() {
       return;
     }
     try {
-      const { error } = await supabase.from('payments').insert(payment);
+      const { error } = await supabase.from('payments').insert({ ...payment, user_id: user?.id });
       if (error) throw error;
       await fetchAllData();
       toast.success("Lançamento com Sucesso");
@@ -560,7 +567,7 @@ function App() {
           const { error } = await supabase.from('terreno_installments').delete().eq('id', id);
           if (error) throw error;
         } else {
-          const { error } = await supabase.from('terreno_installments').insert({ id });
+          const { error } = await supabase.from('terreno_installments').insert({ id, user_id: user?.id });
           if (error) throw error;
         }
       } catch (error: any) {
