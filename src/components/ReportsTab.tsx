@@ -57,7 +57,7 @@ export function ReportsTab({ expenses, formatCurrency }: ReportsTabProps) {
               className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none transition-all"
             />
           </div>
-          <div className="flex items-center gap-2 bg-white p-1 rounded-xl shadow-sm border border-black/5 overflow-x-auto w-full sm:w-auto">
+          <div className="flex items-center gap-2 bg-white p-1 rounded-xl shadow-sm border border-black/5 overflow-x-auto w-full sm:w-auto hide-scrollbar">
             <button 
               onClick={() => setFilter('all')}
               className={cn("px-4 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap", filter === 'all' ? "bg-emerald-500 text-white" : "text-black hover:bg-gray-50")}
@@ -77,32 +77,32 @@ export function ReportsTab({ expenses, formatCurrency }: ReportsTabProps) {
         </div>
       </header>
 
-      <Card className="bg-white overflow-hidden">
-        <div className="overflow-x-auto">
+      <Card className="bg-white overflow-hidden border-none shadow-sm">
+        <div className="overflow-x-auto hide-scrollbar">
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-gray-50 border-b border-black/5">
-                <th className="px-6 py-4 text-xs font-bold uppercase text-black">Data</th>
-                <th className="px-6 py-4 text-xs font-bold uppercase text-black">Categoria</th>
-                <th className="px-6 py-4 text-xs font-bold uppercase text-black">Local</th>
-                <th className="px-6 py-4 text-xs font-bold uppercase text-black">Pagamento</th>
-                <th className="px-6 py-4 text-xs font-bold uppercase text-black text-right">Valor R$</th>
+                <th className="px-4 sm:px-6 py-3 sm:py-4 text-xs font-bold uppercase text-black">Data</th>
+                <th className="px-4 sm:px-6 py-3 sm:py-4 text-xs font-bold uppercase text-black">Categoria</th>
+                <th className="px-4 sm:px-6 py-3 sm:py-4 text-xs font-bold uppercase text-black">Local</th>
+                <th className="px-4 sm:px-6 py-3 sm:py-4 text-xs font-bold uppercase text-black">Pagamento</th>
+                <th className="px-4 sm:px-6 py-3 sm:py-4 text-xs font-bold uppercase text-black text-right">Valor R$</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-black/5">
               {filteredExpenses.map((exp: Expense) => (
                 <tr key={exp.id} className="hover:bg-gray-50 transition-colors">
-                  <td className="px-6 py-4 text-sm">{exp.date ? exp.date.split('-').reverse().join('/') : '-'}</td>
-                  <td className="px-6 py-4 text-sm capitalize">{exp.category}</td>
-                  <td className="px-6 py-4 text-sm font-medium">
-                    <div>{exp.local}</div>
+                  <td className="px-4 sm:px-6 py-3 sm:py-4 text-sm whitespace-nowrap">{exp.date ? exp.date.split('-').reverse().join('/') : '-'}</td>
+                  <td className="px-4 sm:px-6 py-3 sm:py-4 text-sm capitalize whitespace-nowrap">{exp.category}</td>
+                  <td className="px-4 sm:px-6 py-3 sm:py-4 text-sm font-medium">
+                    <div className="whitespace-nowrap">{exp.local}</div>
                     {exp.observation && (
-                      <div className="text-[10px] text-black font-normal italic mt-0.5 max-w-[200px] truncate" title={exp.observation}>
+                      <div className="text-[10px] text-black font-normal italic mt-0.5 max-w-[150px] sm:max-w-[200px] truncate" title={exp.observation}>
                         {exp.observation}
                       </div>
                     )}
                   </td>
-                  <td className="px-6 py-4 text-sm">
+                  <td className="px-4 sm:px-6 py-3 sm:py-4 text-sm whitespace-nowrap">
                     <span className={cn(
                       "px-2 py-1 rounded-md text-[10px] font-bold uppercase",
                       exp.paymentMethod === 'Cartão' ? "bg-blue-100 text-blue-600" : 
@@ -112,7 +112,7 @@ export function ReportsTab({ expenses, formatCurrency }: ReportsTabProps) {
                       {exp.paymentMethod} {exp.installments ? `(${exp.installments}x)` : ''}
                     </span>
                   </td>
-                  <td className="px-6 py-4 text-sm font-mono font-bold text-right">{formatCurrency(exp.value)}</td>
+                  <td className="px-4 sm:px-6 py-3 sm:py-4 text-sm font-mono font-bold text-right whitespace-nowrap">{formatCurrency(exp.value)}</td>
                 </tr>
               ))}
             </tbody>

@@ -103,7 +103,7 @@ export function TerrenoTab({ paidInstallments, onTogglePayment, formatCurrency }
               const year = installment.date.getFullYear();
               
               return (
-                <div key={installment.id} className="flex items-center justify-between p-4 rounded-xl border border-gray-100 hover:bg-gray-50 transition-colors">
+                <div key={installment.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 rounded-xl border border-gray-100 hover:bg-gray-50 transition-colors gap-4">
                   <div className="flex items-center gap-4">
                     <div className="flex-shrink-0 w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center text-sm font-medium text-gray-500">
                       {index + 1}
@@ -114,7 +114,7 @@ export function TerrenoTab({ paidInstallments, onTogglePayment, formatCurrency }
                     </div>
                   </div>
                   
-                  <div className="flex items-center gap-6">
+                  <div className="flex items-center justify-between sm:justify-end gap-6 w-full sm:w-auto pt-2 sm:pt-0 border-t sm:border-0 border-gray-100">
                     <span className="font-medium">{formatCurrency(installment.value)}</span>
                     
                     {isPaid ? (

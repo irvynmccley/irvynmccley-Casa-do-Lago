@@ -43,25 +43,24 @@ export function IncomesTab({
 }: IncomesTabProps) {
   const [editingIncomeId, setEditingIncomeId] = useState<string | null>(null);
   const [incomeForm, setIncomeForm] = useState({
-    date: format(new Date(), 'yyyy-MM-dd'),
+    date: '',
     value: '',
     description: '',
     isCaixa: false
   });
 
   const [paymentForm, setPaymentForm] = useState({
-    date: format(new Date(), 'yyyy-MM-dd'),
+    date: '',
     value: '',
-    person: 'Mccley' as Person
+    person: '' as Person
   });
 
   const handleIncomeSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!incomeForm.value || !incomeForm.description) return;
     
     const incomeData = {
       date: incomeForm.date,
-      value: parseFloat(incomeForm.value),
+      value: parseFloat(incomeForm.value) || 0,
       description: incomeForm.description,
       isCaixa: incomeForm.isCaixa
     };
@@ -73,7 +72,7 @@ export function IncomesTab({
       onAddIncome(incomeData);
     }
 
-    setIncomeForm({ ...incomeForm, value: '', description: '', isCaixa: false });
+    setIncomeForm({ date: '', value: '', description: '', isCaixa: false });
   };
 
   const handleEditIncomeClick = (inc: Income) => {
@@ -89,13 +88,12 @@ export function IncomesTab({
 
   const handlePaymentSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!paymentForm.value) return;
     onAddPayment({
       date: paymentForm.date,
-      value: parseFloat(paymentForm.value),
+      value: parseFloat(paymentForm.value) || 0,
       person: paymentForm.person
     });
-    setPaymentForm({ ...paymentForm, value: '' });
+    setPaymentForm({ date: '', value: '', person: '' as Person });
   };
 
   const sortedIncomes = [...incomes].sort((a, b) => b.date.localeCompare(a.date));
@@ -127,6 +125,7 @@ export function IncomesTab({
                 <label className="block text-xs font-bold uppercase text-black mb-1">Data</label>
                 <input 
                   type="date" 
+                  required
                   value={incomeForm.date}
                   onChange={e => setIncomeForm({ ...incomeForm, date: e.target.value })}
                   className="w-full bg-gray-50 border border-black/5 rounded-xl px-4 py-3 focus:ring-2 focus:ring-emerald-500 outline-none"
@@ -137,6 +136,7 @@ export function IncomesTab({
                 <input 
                   type="number" 
                   step="0.01"
+                  required
                   value={incomeForm.value}
                   onChange={e => setIncomeForm({ ...incomeForm, value: e.target.value })}
                   className="w-full bg-gray-50 border border-black/5 rounded-xl px-4 py-3 focus:ring-2 focus:ring-emerald-500 outline-none"
@@ -146,6 +146,7 @@ export function IncomesTab({
                 <label className="block text-xs font-bold uppercase text-black mb-1">Descrição</label>
                 <input 
                   type="text" 
+                  required
                   value={incomeForm.description}
                   onChange={e => setIncomeForm({ ...incomeForm, description: e.target.value })}
                   className="w-full bg-gray-50 border border-black/5 rounded-xl px-4 py-3 focus:ring-2 focus:ring-emerald-500 outline-none"
@@ -173,7 +174,7 @@ export function IncomesTab({
                   onClick={() => {
                     setEditingIncomeId(null);
                     setIncomeForm({
-                      date: format(new Date(), 'yyyy-MM-dd'),
+                      date: '',
                       value: '',
                       description: '',
                       isCaixa: false
@@ -194,6 +195,7 @@ export function IncomesTab({
                 <label className="block text-xs font-bold uppercase text-black mb-1">Data</label>
                 <input 
                   type="date" 
+                  required
                   value={paymentForm.date}
                   onChange={e => setPaymentForm({ ...paymentForm, date: e.target.value })}
                   className="w-full bg-gray-50 border border-black/5 rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-500 outline-none"
@@ -204,6 +206,7 @@ export function IncomesTab({
                 <input 
                   type="number" 
                   step="0.01"
+                  required
                   value={paymentForm.value}
                   onChange={e => setPaymentForm({ ...paymentForm, value: e.target.value })}
                   className="w-full bg-gray-50 border border-black/5 rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-500 outline-none"
@@ -212,10 +215,12 @@ export function IncomesTab({
               <div>
                 <label className="block text-xs font-bold uppercase text-black mb-1">Pessoa</label>
                 <select 
+                  required
                   value={paymentForm.person}
                   onChange={e => setPaymentForm({ ...paymentForm, person: e.target.value as Person })}
                   className="w-full bg-gray-50 border border-black/5 rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-500 outline-none"
                 >
+                  <option value="" disabled>Selecione...</option>
                   {PEOPLE.map(p => <option key={p} value={p}>{p}</option>)}
                 </select>
               </div>

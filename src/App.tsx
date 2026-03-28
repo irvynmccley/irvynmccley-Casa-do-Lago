@@ -188,17 +188,19 @@ function App() {
       return data || [];
     };
 
-    const [expensesData, incomesData, paymentsData] = await Promise.all([
+    const [expensesData, incomesData, paymentsData, terrenoData] = await Promise.all([
       fetchTable('expenses'),
       !isSharedMode ? fetchTable('incomes') : Promise.resolve([]),
-      !isSharedMode ? fetchTable('payments') : Promise.resolve([])
+      !isSharedMode ? fetchTable('payments') : Promise.resolve([]),
+      fetchTable('terreno_installments').catch(() => []) // Catch error if table doesn't exist yet
     ]);
 
     setState(prev => ({
       ...prev,
       expenses: expensesData as Expense[],
       incomes: incomesData as Income[],
-      payments: paymentsData as Payment[]
+      payments: paymentsData as Payment[],
+      terrenoPaidInstallments: terrenoData && terrenoData.length > 0 ? terrenoData.map((t: any) => t.id) : INITIAL_PAID_TERRENO
     }));
   }, [isSharedMode]);
 
@@ -283,7 +285,13 @@ function App() {
 
   const cardInstallmentsByMonth = useMemo(() => {
     const monthlyTotals: Record<string, number> = {};
-    const currentMonthKey = format(new Date(), 'yyyy-MM');
+    const currentYear = new Date().getFullYear();
+    
+    // Initialize all months for the current year
+    for (let i = 1; i <= 12; i++) {
+      const monthKey = `${currentYear}-${String(i).padStart(2, '0')}`;
+      monthlyTotals[monthKey] = 0;
+    }
     
     state.expenses.filter(e => e.paymentMethod === 'Cartão').forEach(exp => {
       if (!exp.date || !exp.date.includes('-')) return;
@@ -309,17 +317,15 @@ function App() {
       for (let i = 0; i < installments; i++) {
         const installmentDate = new Date(year, month + startMonthOffset + i, 1);
         const monthKey = format(installmentDate, 'yyyy-MM');
+        // Only add if it's in the current year or we want to track future years too
+        // Actually, we should track all, but we'll filter later
         monthlyTotals[monthKey] = (monthlyTotals[monthKey] || 0) + valuePerInstallment;
       }
     });
 
-    if (!monthlyTotals[currentMonthKey]) {
-      monthlyTotals[currentMonthKey] = 0;
-    }
-
     return Object.entries(monthlyTotals)
       .map(([month, total]) => ({ month, total }))
-      .filter(item => item.month >= currentMonthKey)
+      .filter(item => item.month.startsWith(`${currentYear}-`))
       .sort((a, b) => a.month.localeCompare(b.month));
   }, [state.expenses]);
 
@@ -373,7 +379,7 @@ function App() {
     }
     try {
       const cleanExpense = Object.fromEntries(Object.entries(expense).filter(([_, v]) => v !== undefined));
-      const { error } = await supabase.from('expenses').insert(cleanExpense);
+      const { error } = await supabase.from('expenses').insert({ ...cleanExpense, user_id: user?.id });
       if (error) throw error;
       await fetchAllData();
       toast.success("Lançamento com Sucesso");
@@ -408,7 +414,7 @@ function App() {
       return;
     }
     try {
-      const { error } = await supabase.from('incomes').insert(income);
+      const { error } = await supabase.from('incomes').insert({ ...income, user_id: user?.id });
       if (error) throw error;
       await fetchAllData();
       toast.success("Lançamento com Sucesso");
@@ -425,7 +431,7 @@ function App() {
       return;
     }
     try {
-      const { error } = await supabase.from('payments').insert(payment);
+      const { error } = await supabase.from('payments').insert({ ...payment, user_id: user?.id });
       if (error) throw error;
       await fetchAllData();
       toast.success("Lançamento com Sucesso");
@@ -539,15 +545,29 @@ function App() {
     }
   };
 
-  const handleToggleTerrenoPayment = (id: string) => {
-    setState(prev => {
-      const currentPaid = prev.terrenoPaidInstallments || [];
-      const isPaid = currentPaid.includes(id);
-      const newPaid = isPaid 
-        ? currentPaid.filter(i => i !== id)
-        : [...currentPaid, id];
-      return { ...prev, terrenoPaidInstallments: newPaid };
-    });
+  const handleToggleTerrenoPayment = async (id: string) => {
+    const currentPaid = state.terrenoPaidInstallments || [];
+    const isPaid = currentPaid.includes(id);
+    const newPaid = isPaid 
+      ? currentPaid.filter(i => i !== id)
+      : [...currentPaid, id];
+    
+    setState(prev => ({ ...prev, terrenoPaidInstallments: newPaid }));
+
+    if (ENABLE_SUPABASE_SYNC) {
+      try {
+        if (isPaid) {
+          await supabase.from('terreno_installments').delete().eq('id', id);
+        } else {
+          await supabase.from('terreno_installments').insert({ id, user_id: user?.id });
+        }
+      } catch (error) {
+        console.error("Error syncing terreno payment: ", error);
+        // Revert state on error
+        setState(prev => ({ ...prev, terrenoPaidInstallments: currentPaid }));
+        toast.error("Erro ao sincronizar pagamento. Crie a tabela 'terreno_installments' no Supabase.");
+      }
+    }
   };
 
   const formatCurrency = (value: number) => {
@@ -618,7 +638,7 @@ function App() {
       </nav>
 
       {/* Main Content */}
-      <main className="pb-24 pt-8 px-4 md:pl-72 md:pr-8 md:pt-12 max-w-7xl mx-auto">
+      <main className="pb-24 pt-4 px-2 sm:px-4 md:pl-72 md:pr-8 md:pt-12 max-w-7xl mx-auto w-full overflow-x-hidden">
         {activeTab === 'inicio' && (
           <Dashboard 
             totalSpent={totalSpent} 

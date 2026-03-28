@@ -28,19 +28,19 @@ export function ExpensesTab({ expenses, onAdd, onEdit, onDelete, formatCurrency,
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formData, setFormData] = useState({
-    date: format(new Date(), 'yyyy-MM-dd'),
-    category: 'Material' as Category,
+    date: '',
+    category: '' as Category,
     local: '',
     value: '',
-    paymentMethod: 'Pix' as PaymentMethod,
+    paymentMethod: '' as PaymentMethod,
     installments: 1,
-    donor: 'Jorge' as Donor,
+    donor: '' as Donor,
     observation: ''
   });
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.local || !formData.value) return;
+    if (!formData.date || !formData.category || !formData.local || !formData.value || !formData.paymentMethod) return;
 
     const expenseData = {
       date: formData.date,
@@ -61,10 +61,13 @@ export function ExpensesTab({ expenses, onAdd, onEdit, onDelete, formatCurrency,
     }
 
     setFormData({
-      ...formData,
+      date: '',
+      category: '' as Category,
       local: '',
       value: '',
+      paymentMethod: '' as PaymentMethod,
       installments: 1,
+      donor: '' as Donor,
       observation: ''
     });
   };
@@ -244,6 +247,7 @@ export function ExpensesTab({ expenses, onAdd, onEdit, onDelete, formatCurrency,
               <label className="block text-xs font-bold uppercase text-black mb-1">Data</label>
               <input 
                 type="date" 
+                required
                 value={formData.date}
                 onChange={e => setFormData({ ...formData, date: e.target.value })}
                 className="w-full bg-gray-50 border border-black/5 rounded-xl px-4 py-3 focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
@@ -253,10 +257,12 @@ export function ExpensesTab({ expenses, onAdd, onEdit, onDelete, formatCurrency,
             <div>
               <label className="block text-xs font-bold uppercase text-black mb-1">Categoria</label>
               <select 
+                required
                 value={formData.category}
                 onChange={e => setFormData({ ...formData, category: e.target.value as Category })}
                 className="w-full bg-gray-50 border border-black/5 rounded-xl px-4 py-3 focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
               >
+                <option value="" disabled>Selecione...</option>
                 {CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
               </select>
             </div>
@@ -265,6 +271,7 @@ export function ExpensesTab({ expenses, onAdd, onEdit, onDelete, formatCurrency,
               <label className="block text-xs font-bold uppercase text-black mb-1">Local</label>
               <input 
                 type="text" 
+                required
                 placeholder="Ex: Leroy Merlin"
                 value={formData.local}
                 onChange={e => setFormData({ ...formData, local: e.target.value })}
@@ -277,6 +284,7 @@ export function ExpensesTab({ expenses, onAdd, onEdit, onDelete, formatCurrency,
               <input 
                 type="number" 
                 step="0.01"
+                required
                 placeholder="0,00"
                 value={formData.value}
                 onChange={e => setFormData({ ...formData, value: e.target.value })}
@@ -287,10 +295,12 @@ export function ExpensesTab({ expenses, onAdd, onEdit, onDelete, formatCurrency,
             <div>
               <label className="block text-xs font-bold uppercase text-black mb-1">Forma de Pagamento</label>
               <select 
+                required
                 value={formData.paymentMethod}
                 onChange={e => setFormData({ ...formData, paymentMethod: e.target.value as PaymentMethod })}
                 className="w-full bg-gray-50 border border-black/5 rounded-xl px-4 py-3 focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
               >
+                <option value="" disabled>Selecione...</option>
                 {PAYMENT_METHODS.map(pm => <option key={pm} value={pm}>{pm}</option>)}
               </select>
             </div>
@@ -318,6 +328,7 @@ export function ExpensesTab({ expenses, onAdd, onEdit, onDelete, formatCurrency,
                   onChange={e => setFormData({ ...formData, donor: e.target.value as Donor })}
                   className="w-full bg-gray-50 border border-black/5 rounded-xl px-4 py-3 focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
                 >
+                  <option value="" disabled>Selecione...</option>
                   {DONORS.map(d => <option key={d} value={d}>{d}</option>)}
                 </select>
               </div>
@@ -346,10 +357,13 @@ export function ExpensesTab({ expenses, onAdd, onEdit, onDelete, formatCurrency,
                 onClick={() => {
                   setEditingId(null);
                   setFormData({
-                    ...formData,
+                    date: '',
+                    category: '' as Category,
                     local: '',
                     value: '',
+                    paymentMethod: '' as PaymentMethod,
                     installments: 1,
+                    donor: '' as Donor,
                     observation: ''
                   });
                 }}
@@ -369,10 +383,10 @@ export function ExpensesTab({ expenses, onAdd, onEdit, onDelete, formatCurrency,
             </div>
           ) : (
             sortedExpenses.map((exp) => (
-              <Card key={exp.id} className="bg-white p-4 flex items-center justify-between group hover:shadow-md transition-all">
-                <div className="flex items-center gap-4">
+              <Card key={exp.id} className="bg-white p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 group hover:shadow-md transition-all">
+                <div className="flex items-start sm:items-center gap-4">
                   <div className={cn(
-                    "w-12 h-12 rounded-xl flex items-center justify-center",
+                    "w-12 h-12 rounded-xl flex items-center justify-center shrink-0",
                     exp.paymentMethod === 'Cartão' ? "bg-blue-100 text-blue-600" : 
                     exp.paymentMethod === 'doação' ? "bg-purple-100 text-purple-600" : 
                     exp.paymentMethod === 'Caixa' ? "bg-amber-100 text-amber-600" : "bg-emerald-100 text-emerald-600"
@@ -381,31 +395,31 @@ export function ExpensesTab({ expenses, onAdd, onEdit, onDelete, formatCurrency,
                      exp.paymentMethod === 'doação' ? <User size={20} /> : 
                      exp.paymentMethod === 'Caixa' ? <Wallet size={20} /> : <Wallet size={20} />}
                   </div>
-                  <div>
-                    <h4 className="font-bold">{exp.local}</h4>
-                    <div className="flex items-center gap-2 text-xs text-black">
+                  <div className="min-w-0 flex-1">
+                    <h4 className="font-bold truncate">{exp.local}</h4>
+                    <div className="flex flex-wrap items-center gap-1 sm:gap-2 text-xs text-black">
                       <span>{exp.date ? exp.date.split('-').reverse().join('/') : '-'}</span>
-                      <span>•</span>
+                      <span className="hidden sm:inline">•</span>
                       <span className="capitalize">{exp.category}</span>
                       {exp.paymentMethod === 'Cartão' && (
                         <>
-                          <span>•</span>
+                          <span className="hidden sm:inline">•</span>
                           <span className="text-blue-500 font-medium">{exp.installments}x</span>
                         </>
                       )}
                       {exp.paymentMethod === 'doação' && (
                         <>
-                          <span>•</span>
+                          <span className="hidden sm:inline">•</span>
                           <span className="text-purple-500 font-medium">Doador: {exp.donor}</span>
                         </>
                       )}
                     </div>
                     {exp.observation && (
-                      <p className="text-sm text-black mt-1 italic">"{exp.observation}"</p>
+                      <p className="text-sm text-black mt-1 italic truncate">"{exp.observation}"</p>
                     )}
                   </div>
                 </div>
-                <div className="flex items-center gap-4">
+                <div className="flex items-center justify-between sm:justify-end gap-4 w-full sm:w-auto mt-2 sm:mt-0 pt-2 sm:pt-0 border-t sm:border-0 border-gray-100">
                   <span className="font-mono font-bold text-lg">{formatCurrency(exp.value)}</span>
                   <div className="flex items-center gap-1">
                     <button 

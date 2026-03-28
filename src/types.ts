@@ -1,4 +1,4 @@
-export type Category = 'Combustível' | 'Documentação' | 'Material' | 'Mão de Obra' | 'Monitoramento';
+export type Category = 'Combustível' | 'Documentação' | 'Material' | 'Mão de Obra' | 'Monitoramento' | 'Alimentação';
 export type PaymentMethod = 'Pix' | 'Cartão' | 'doação' | 'Caixa';
 export type Donor = 'Jorge' | 'Jane' | 'Saulo' | 'Mccley' | 'Jan';
 export type Person = 'Mccley' | 'Jan' | 'Saulo' | 'Jorge';
