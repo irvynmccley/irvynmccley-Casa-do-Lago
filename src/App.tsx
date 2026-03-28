@@ -379,7 +379,7 @@ function App() {
     }
     try {
       const cleanExpense = Object.fromEntries(Object.entries(expense).filter(([_, v]) => v !== undefined));
-      const { error } = await supabase.from('expenses').insert({ ...cleanExpense, user_id: user?.id });
+      const { error } = await supabase.from('expenses').insert(cleanExpense);
       if (error) throw error;
       await fetchAllData();
       toast.success("Lançamento com Sucesso");
@@ -414,7 +414,7 @@ function App() {
       return;
     }
     try {
-      const { error } = await supabase.from('incomes').insert({ ...income, user_id: user?.id });
+      const { error } = await supabase.from('incomes').insert(income);
       if (error) throw error;
       await fetchAllData();
       toast.success("Lançamento com Sucesso");
@@ -431,7 +431,7 @@ function App() {
       return;
     }
     try {
-      const { error } = await supabase.from('payments').insert({ ...payment, user_id: user?.id });
+      const { error } = await supabase.from('payments').insert(payment);
       if (error) throw error;
       await fetchAllData();
       toast.success("Lançamento com Sucesso");
@@ -557,15 +557,17 @@ function App() {
     if (ENABLE_SUPABASE_SYNC) {
       try {
         if (isPaid) {
-          await supabase.from('terreno_installments').delete().eq('id', id);
+          const { error } = await supabase.from('terreno_installments').delete().eq('id', id);
+          if (error) throw error;
         } else {
-          await supabase.from('terreno_installments').insert({ id, user_id: user?.id });
+          const { error } = await supabase.from('terreno_installments').insert({ id });
+          if (error) throw error;
         }
-      } catch (error) {
+      } catch (error: any) {
         console.error("Error syncing terreno payment: ", error);
         // Revert state on error
         setState(prev => ({ ...prev, terrenoPaidInstallments: currentPaid }));
-        toast.error("Erro ao sincronizar pagamento. Crie a tabela 'terreno_installments' no Supabase.");
+        toast.error(`Erro ao sincronizar pagamento: ${error.message || "Tabela 'terreno_installments' não encontrada."}`);
       }
     }
   };

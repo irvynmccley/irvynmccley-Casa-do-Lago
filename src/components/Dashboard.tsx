@@ -89,7 +89,9 @@ export function Dashboard({ totalSpent, totalDonations, categoryTotals, cardInst
             </div>
             <span className="text-xs sm:text-sm font-bold uppercase tracking-wider">Total da Obra</span>
           </div>
-          <div className="text-2xl sm:text-3xl font-bold tracking-tight text-emerald-950 break-words">{formatCurrency(totalSpent)}</div>
+          <div className="text-xl sm:text-2xl xl:text-3xl font-bold tracking-tighter text-emerald-950 whitespace-nowrap overflow-hidden text-ellipsis" title={formatCurrency(totalSpent)}>
+            {formatCurrency(totalSpent)}
+          </div>
         </Card>
 
         <Card className="bg-gradient-to-br from-white to-amber-50/30 border border-amber-100/50 shadow-sm p-4 sm:p-6 flex flex-col justify-between h-full hover:shadow-md transition-all">
@@ -99,7 +101,7 @@ export function Dashboard({ totalSpent, totalDonations, categoryTotals, cardInst
             </div>
             <span className="text-xs sm:text-sm font-bold uppercase tracking-wider">Saldo do Caixa</span>
           </div>
-          <div className={`text-2xl sm:text-3xl font-bold tracking-tight break-words ${caixaBalance > 0 ? 'text-emerald-700' : 'text-red-700'}`}>
+          <div className={`text-xl sm:text-2xl xl:text-3xl font-bold tracking-tighter whitespace-nowrap overflow-hidden text-ellipsis ${caixaBalance > 0 ? 'text-emerald-700' : 'text-red-700'}`} title={formatCurrency(caixaBalance)}>
             {formatCurrency(caixaBalance)}
           </div>
         </Card>
@@ -111,7 +113,7 @@ export function Dashboard({ totalSpent, totalDonations, categoryTotals, cardInst
             </div>
             <span className="text-xs sm:text-sm font-bold uppercase tracking-wider">Saldo do Terreno</span>
           </div>
-          <div className="text-2xl sm:text-3xl font-bold tracking-tight break-words text-red-700">
+          <div className="text-xl sm:text-2xl xl:text-3xl font-bold tracking-tighter text-red-700 whitespace-nowrap overflow-hidden text-ellipsis" title={formatCurrency(terrenoBalance)}>
             {formatCurrency(terrenoBalance)}
           </div>
         </Card>
@@ -143,7 +145,9 @@ export function Dashboard({ totalSpent, totalDonations, categoryTotals, cardInst
             </div>
             <span className="text-xs sm:text-sm font-bold uppercase tracking-wider">Total Doações</span>
           </div>
-          <div className="text-2xl sm:text-3xl font-bold tracking-tight text-purple-950 break-words">{formatCurrency(totalDonations)}</div>
+          <div className="text-xl sm:text-2xl xl:text-3xl font-bold tracking-tighter text-purple-950 whitespace-nowrap overflow-hidden text-ellipsis" title={formatCurrency(totalDonations)}>
+            {formatCurrency(totalDonations)}
+          </div>
         </Card>
       </div>
 
