@@ -58,7 +58,7 @@ export function TerrenoTab({ paidInstallments, onTogglePayment, formatCurrency }
               <Map size={18} className="text-emerald-500" />
               <span className="text-sm font-medium uppercase tracking-wider">Valor Total</span>
             </div>
-            <div className="text-3xl font-light tracking-tight truncate mb-4">{formatCurrency(62451.92)}</div>
+          <div className="text-xl sm:text-2xl font-bold tracking-tight text-black mb-4">{formatCurrency(62451.92)}</div>
           </div>
           <div className="space-y-1.5 text-sm text-gray-500 border-t border-gray-100 pt-4">
             <div className="flex justify-between">
@@ -80,14 +80,14 @@ export function TerrenoTab({ paidInstallments, onTogglePayment, formatCurrency }
             <CheckCircle size={18} className="text-blue-500" />
             <span className="text-sm font-medium uppercase tracking-wider">Total Pago</span>
           </div>
-          <div className="text-3xl font-light tracking-tight truncate text-blue-600">{formatCurrency(totalPaid)}</div>
+          <div className="text-xl sm:text-2xl font-bold tracking-tight text-black">{formatCurrency(totalPaid)}</div>
         </Card>
         <Card className="bg-white border-none shadow-sm p-6 flex flex-col justify-between h-full">
           <div className="flex items-center gap-3 text-black mb-4">
             <Circle size={18} className="text-red-500" />
             <span className="text-sm font-medium uppercase tracking-wider">Saldo Devedor</span>
           </div>
-          <div className="text-3xl font-light tracking-tight truncate text-red-600">{formatCurrency(currentBalance)}</div>
+          <div className="text-xl sm:text-2xl font-bold tracking-tight text-black">{formatCurrency(currentBalance)}</div>
         </Card>
       </div>
 

@@ -200,14 +200,17 @@ function App() {
 
     const [expensesData, incomesData, paymentsData, { data: terrenoData }] = await Promise.all([
       fetchTable('expenses'),
-      !isSharedMode ? fetchTable('incomes') : Promise.resolve([]),
-      !isSharedMode ? fetchTable('payments') : Promise.resolve([]),
+      fetchTable('incomes'),
+      fetchTable('payments'),
       (async () => {
         try {
           const res = await supabase.from('terreno_installments').select('id');
+          if (res.error) {
+            console.error("Supabase error fetching terreno_installments:", res.error);
+          }
           return { data: res.data || [] };
         } catch (err) {
-          console.error("Error fetching terreno_installments:", err);
+          console.error("Exception fetching terreno_installments:", err);
           return { data: [] };
         }
       })()
@@ -247,25 +250,21 @@ function App() {
         .on('postgres_changes', { event: '*', schema: 'public', table: 'expenses' }, async () => {
           const data = await fetchTable('expenses');
           setState(prev => ({ ...prev, expenses: data as Expense[] }));
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'incomes' }, async () => {
+          const data = await fetchTable('incomes');
+          setState(prev => ({ ...prev, incomes: data as Income[] }));
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'payments' }, async () => {
+          const data = await fetchTable('payments');
+          setState(prev => ({ ...prev, payments: data as Payment[] }));
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'terreno_installments' }, async () => {
+          const { data } = await supabase.from('terreno_installments').select('id');
+          if (data) {
+            setState(prev => ({ ...prev, terrenoPaidInstallments: data.map(d => d.id) }));
+          }
         });
-
-      if (!isSharedMode) {
-        channel
-          .on('postgres_changes', { event: '*', schema: 'public', table: 'incomes' }, async () => {
-            const data = await fetchTable('incomes');
-            setState(prev => ({ ...prev, incomes: data as Income[] }));
-          })
-          .on('postgres_changes', { event: '*', schema: 'public', table: 'payments' }, async () => {
-            const data = await fetchTable('payments');
-            setState(prev => ({ ...prev, payments: data as Payment[] }));
-          })
-          .on('postgres_changes', { event: '*', schema: 'public', table: 'terreno_installments' }, async () => {
-            const { data } = await supabase.from('terreno_installments').select('id');
-            if (data) {
-              setState(prev => ({ ...prev, terrenoPaidInstallments: data.map(d => d.id) }));
-            }
-          });
-      }
 
       channel.subscribe();
 
@@ -363,7 +362,7 @@ function App() {
   }, [state.expenses]);
 
   const totalIncome = useMemo(() => {
-    return state.incomes.reduce((acc, inc) => acc + inc.value, 0);
+    return state.incomes.filter(i => !i.isCaixa).reduce((acc, inc) => acc + inc.value, 0);
   }, [state.incomes]);
 
   const totalPayments = useMemo(() => {

@@ -83,43 +83,43 @@ export function Dashboard({ totalSpent, totalDonations, categoryTotals, cardInst
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 sm:gap-6">
         <Card className="bg-gradient-to-br from-white to-emerald-50/30 border border-emerald-100/50 shadow-sm p-4 sm:p-6 flex flex-col justify-between h-full hover:shadow-md transition-all">
-          <div className="flex items-center gap-3 text-emerald-700 mb-4">
+          <div className="flex items-center gap-3 text-black mb-4">
             <div className="p-2 bg-emerald-100 rounded-lg">
               <Banknote size={18} className="text-emerald-600" />
             </div>
             <span className="text-xs sm:text-sm font-bold uppercase tracking-wider">Total da Obra</span>
           </div>
-          <div className="text-base sm:text-lg lg:text-xl font-bold tracking-tight text-emerald-950 truncate" title={formatCurrency(totalSpent)}>
+          <div className="text-sm sm:text-base font-bold tracking-tight text-black" title={formatCurrency(totalSpent)}>
             {formatCurrency(totalSpent)}
           </div>
         </Card>
 
         <Card className="bg-gradient-to-br from-white to-amber-50/30 border border-amber-100/50 shadow-sm p-4 sm:p-6 flex flex-col justify-between h-full hover:shadow-md transition-all">
-          <div className="flex items-center gap-3 text-amber-700 mb-4">
+          <div className="flex items-center gap-3 text-black mb-4">
             <div className="p-2 bg-amber-100 rounded-lg">
               <Wallet size={18} className="text-amber-600" />
             </div>
             <span className="text-xs sm:text-sm font-bold uppercase tracking-wider">Saldo do Caixa</span>
           </div>
-          <div className={`text-base sm:text-lg lg:text-xl font-bold tracking-tight truncate ${caixaBalance > 0 ? 'text-emerald-700' : 'text-red-700'}`} title={formatCurrency(caixaBalance)}>
+          <div className="text-sm sm:text-base font-bold tracking-tight text-black" title={formatCurrency(caixaBalance)}>
             {formatCurrency(caixaBalance)}
           </div>
         </Card>
 
         <Card className="bg-gradient-to-br from-white to-red-50/30 border border-red-100/50 shadow-sm p-4 sm:p-6 flex flex-col justify-between h-full hover:shadow-md transition-all">
-          <div className="flex items-center gap-3 text-red-700 mb-4">
+          <div className="flex items-center gap-3 text-black mb-4">
             <div className="p-2 bg-red-100 rounded-lg">
               <Banknote size={18} className="text-red-600" />
             </div>
             <span className="text-xs sm:text-sm font-bold uppercase tracking-wider">Saldo do Terreno</span>
           </div>
-          <div className="text-base sm:text-lg lg:text-xl font-bold tracking-tight text-red-700 truncate" title={formatCurrency(terrenoBalance)}>
+          <div className="text-sm sm:text-base font-bold tracking-tight text-black" title={formatCurrency(terrenoBalance)}>
             {formatCurrency(terrenoBalance)}
           </div>
         </Card>
 
         <Card className="bg-gradient-to-br from-white to-orange-50/30 border border-orange-100/50 shadow-sm p-4 sm:p-6 flex flex-col h-full hover:shadow-md transition-all">
-          <div className="flex items-center gap-3 text-orange-700 mb-4">
+          <div className="flex items-center gap-3 text-black mb-4">
             <div className="p-2 bg-orange-100 rounded-lg">
               <CreditCard size={18} className="text-orange-600" />
             </div>
@@ -128,24 +128,24 @@ export function Dashboard({ totalSpent, totalDonations, categoryTotals, cardInst
           <div className="space-y-2 overflow-y-auto max-h-[200px] pr-2 custom-scrollbar mt-auto">
             {cardInstallments.map((item) => (
               <div key={item.month} className="flex justify-between items-center py-1.5 border-b border-orange-100/50 last:border-0">
-                <span className="text-xs font-semibold text-orange-900/80">
+                <span className="text-xs font-semibold text-black">
                   {format(new Date(parseInt(item.month.split('-')[0]), parseInt(item.month.split('-')[1]) - 1, 1), 'MMM yy', { locale: ptBR })}
                 </span>
-                <span className="text-xs font-mono font-bold text-orange-700">{formatCurrency(item.total)}</span>
+                <span className="text-xs font-mono font-bold text-black">{formatCurrency(item.total)}</span>
               </div>
             ))}
-            {cardInstallments.length === 0 && <p className="text-xs text-orange-800/60 italic">Nenhum lançamento</p>}
+            {cardInstallments.length === 0 && <p className="text-xs text-black italic">Nenhum lançamento</p>}
           </div>
         </Card>
 
         <Card className="bg-gradient-to-br from-white to-purple-50/30 border border-purple-100/50 shadow-sm p-4 sm:p-6 flex flex-col justify-between h-full hover:shadow-md transition-all">
-          <div className="flex items-center gap-3 text-purple-700 mb-4">
+          <div className="flex items-center gap-3 text-black mb-4">
             <div className="p-2 bg-purple-100 rounded-lg">
               <User size={18} className="text-purple-600" />
             </div>
             <span className="text-xs sm:text-sm font-bold uppercase tracking-wider">Total Doações</span>
           </div>
-          <div className="text-base sm:text-lg lg:text-xl font-bold tracking-tight text-purple-950 truncate" title={formatCurrency(totalDonations)}>
+          <div className="text-sm sm:text-base font-bold tracking-tight text-black" title={formatCurrency(totalDonations)}>
             {formatCurrency(totalDonations)}
           </div>
         </Card>
@@ -154,13 +154,13 @@ export function Dashboard({ totalSpent, totalDonations, categoryTotals, cardInst
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-8 items-stretch">
         <Card className="bg-white border border-blue-100/50 shadow-sm p-4 sm:p-8 flex flex-col h-full hover:shadow-md transition-all">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-4 mb-6">
-            <h3 className="text-base sm:text-lg font-bold flex items-center gap-3 text-blue-950">
+            <h3 className="text-base sm:text-lg font-bold flex items-center gap-3 text-black">
               <div className="p-2 bg-blue-50 rounded-lg">
                 <Wallet size={20} className="text-blue-600" />
               </div>
               A Pagar (Mensal por Pessoa)
             </h3>
-            <div className="text-[10px] text-blue-800/60 font-bold uppercase tracking-wider bg-blue-50 px-3 py-1 rounded-full">
+            <div className="text-[10px] text-black font-bold uppercase tracking-wider bg-blue-50 px-3 py-1 rounded-full">
               Jorge, Mccley, Jan, Saulo
             </div>
           </div>
@@ -174,14 +174,14 @@ export function Dashboard({ totalSpent, totalDonations, categoryTotals, cardInst
                 return (
                   <div key={item.month} className="flex flex-col sm:flex-row sm:items-center justify-between p-3 sm:p-4 bg-gradient-to-r from-blue-50/50 to-transparent rounded-2xl border border-blue-100/50 hover:border-blue-200 transition-colors">
                     <div className="mb-2 sm:mb-0">
-                      <div className="text-sm font-bold text-blue-950 capitalize">
+                      <div className="text-sm font-bold text-black capitalize">
                         {format(new Date(parseInt(item.month.split('-')[0]), parseInt(item.month.split('-')[1]) - 1, 1), 'MMMM yyyy', { locale: ptBR })}
                       </div>
-                      <div className="text-[10px] text-blue-800/70 font-semibold uppercase tracking-tighter mt-1">
+                      <div className="text-[10px] text-black font-semibold uppercase tracking-tighter mt-1">
                         Cartão: {formatCurrency(cardPerPerson)} + Fixo: {formatCurrency(FIXED_PER_PERSON)}
                       </div>
                     </div>
-                    <div className="text-lg sm:text-xl font-mono font-bold text-blue-700 bg-white px-4 py-2 rounded-xl shadow-sm border border-blue-50">
+                    <div className="text-lg sm:text-xl font-mono font-bold text-black bg-white px-4 py-2 rounded-xl shadow-sm border border-blue-50">
                       {formatCurrency(totalPerPerson)}
                     </div>
                   </div>
@@ -213,13 +213,13 @@ export function Dashboard({ totalSpent, totalDonations, categoryTotals, cardInst
 
         <Card className="bg-white border border-emerald-100/50 shadow-sm p-4 sm:p-8 flex flex-col h-full hover:shadow-md transition-all">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-4 mb-6">
-            <h3 className="text-base sm:text-lg font-bold flex items-center gap-3 text-emerald-950">
+            <h3 className="text-base sm:text-lg font-bold flex items-center gap-3 text-black">
               <div className="p-2 bg-emerald-50 rounded-lg">
                 <BarChartIcon size={20} className="text-emerald-600" />
               </div>
               Gastos por Categoria
             </h3>
-            <div className="text-xs text-emerald-800/60 font-medium italic bg-emerald-50 px-3 py-1 rounded-full">
+            <div className="text-xs text-black font-medium italic bg-emerald-50 px-3 py-1 rounded-full">
               * Inclui todos os pagamentos (Pix, Cartão e Doações)
             </div>
           </div>
