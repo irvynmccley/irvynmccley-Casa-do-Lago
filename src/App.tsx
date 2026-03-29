@@ -412,7 +412,7 @@ function App() {
     }
     try {
       const cleanExpense = Object.fromEntries(Object.entries(expense).filter(([_, v]) => v !== undefined));
-      const { error } = await supabase.from('expenses').insert({ ...cleanExpense, user_id: user?.id });
+      const { error } = await supabase.from('expenses').insert({ ...cleanExpense, createdBy: user?.id });
       if (error) throw error;
       await fetchAllData();
       toast.success("Lançamento com Sucesso");
@@ -447,7 +447,7 @@ function App() {
       return;
     }
     try {
-      const { error } = await supabase.from('incomes').insert({ ...income, user_id: user?.id });
+      const { error } = await supabase.from('incomes').insert({ ...income, createdBy: user?.id });
       if (error) throw error;
       await fetchAllData();
       toast.success("Lançamento com Sucesso");
@@ -464,7 +464,7 @@ function App() {
       return;
     }
     try {
-      const { error } = await supabase.from('payments').insert({ ...payment, user_id: user?.id });
+      const { error } = await supabase.from('payments').insert({ ...payment, createdBy: user?.id });
       if (error) throw error;
       await fetchAllData();
       toast.success("Lançamento com Sucesso");
@@ -593,7 +593,7 @@ function App() {
           const { error } = await supabase.from('terreno_installments').delete().eq('id', id);
           if (error) throw error;
         } else {
-          const { error } = await supabase.from('terreno_installments').upsert({ id, user_id: user?.id });
+          const { error } = await supabase.from('terreno_installments').upsert({ id });
           if (error) throw error;
         }
       } catch (error: any) {
