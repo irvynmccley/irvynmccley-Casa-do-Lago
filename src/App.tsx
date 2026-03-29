@@ -175,6 +175,8 @@ function App() {
     title: string;
     message: string;
     onConfirm: () => void;
+    confirmText?: string;
+    confirmStyle?: 'danger' | 'primary';
   }>({
     isOpen: false,
     title: '',
@@ -192,7 +194,7 @@ function App() {
       fetchTable('expenses'),
       !isSharedMode ? fetchTable('incomes') : Promise.resolve([]),
       !isSharedMode ? fetchTable('payments') : Promise.resolve([]),
-      supabase.from('terreno_installments').select('id').catch(() => ({ data: [] }))
+      supabase.from('terreno_installments').select('id').then(res => ({ data: res.data || [] }))
     ]);
 
     setState(prev => ({
@@ -709,6 +711,8 @@ function App() {
         message={confirmDialog.message}
         onConfirm={confirmDialog.onConfirm}
         onCancel={() => setConfirmDialog(prev => ({ ...prev, isOpen: false }))}
+        confirmText={confirmDialog.confirmText}
+        confirmStyle={confirmDialog.confirmStyle}
       />
     </div>
   );

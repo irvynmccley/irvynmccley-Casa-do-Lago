@@ -3,6 +3,7 @@ import { Plus, Trash2, CreditCard, User, Wallet, FileUp, Download, Share2, Edit2
 import { format } from 'date-fns';
 import { Expense, Category, PaymentMethod, Donor } from '../types';
 import { Card } from './ui/Card';
+import { ConfirmDialog } from './ui/ConfirmDialog';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import * as XLSX from 'xlsx';
@@ -27,6 +28,8 @@ interface ExpensesTabProps {
 export function ExpensesTab({ expenses, onAdd, onEdit, onDelete, formatCurrency, isSharedMode }: ExpensesTabProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [isConfirmingEdit, setIsConfirmingEdit] = useState(false);
+  const [pendingEditData, setPendingEditData] = useState<any>(null);
   const [formData, setFormData] = useState({
     date: '',
     category: '' as Category,
@@ -54,22 +57,39 @@ export function ExpensesTab({ expenses, onAdd, onEdit, onDelete, formatCurrency,
     };
 
     if (editingId) {
-      onEdit(editingId, expenseData);
-      setEditingId(null);
+      setPendingEditData(expenseData);
+      setIsConfirmingEdit(true);
     } else {
       onAdd(expenseData);
+      setFormData({
+        date: '',
+        category: '' as Category,
+        local: '',
+        value: '',
+        paymentMethod: '' as PaymentMethod,
+        installments: 1,
+        donor: '' as Donor,
+        observation: ''
+      });
     }
+  };
 
-    setFormData({
-      date: '',
-      category: '' as Category,
-      local: '',
-      value: '',
-      paymentMethod: '' as PaymentMethod,
-      installments: 1,
-      donor: '' as Donor,
-      observation: ''
-    });
+  const confirmEdit = () => {
+    if (editingId && pendingEditData) {
+      onEdit(editingId, pendingEditData);
+      setEditingId(null);
+      setPendingEditData(null);
+      setFormData({
+        date: '',
+        category: '' as Category,
+        local: '',
+        value: '',
+        paymentMethod: '' as PaymentMethod,
+        installments: 1,
+        donor: '' as Donor,
+        observation: ''
+      });
+    }
   };
 
   const handleEditClick = (exp: Expense) => {
@@ -441,6 +461,18 @@ export function ExpensesTab({ expenses, onAdd, onEdit, onDelete, formatCurrency,
           )}
         </div>
       </div>
+      <ConfirmDialog 
+        isOpen={isConfirmingEdit}
+        title="Salvar Alterações"
+        message="Tem certeza que deseja salvar as alterações desta saída?"
+        onConfirm={confirmEdit}
+        onCancel={() => {
+          setIsConfirmingEdit(false);
+          setPendingEditData(null);
+        }}
+        confirmText="Salvar"
+        confirmStyle="primary"
+      />
     </div>
   );
 }
