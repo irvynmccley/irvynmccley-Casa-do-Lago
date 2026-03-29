@@ -13,7 +13,7 @@ CREATE TABLE public.expenses (
   observation TEXT,
   "isFixed" BOOLEAN DEFAULT false,
   "createdAt" TIMESTAMPTZ DEFAULT NOW(),
-  "createdBy" UUID REFERENCES auth.users(id) ON DELETE SET NULL
+  "user_id" UUID REFERENCES auth.users(id) ON DELETE SET NULL
 );
 
 -- Tabela de Entradas
@@ -24,7 +24,7 @@ CREATE TABLE public.incomes (
   description TEXT NOT NULL,
   "isCaixa" BOOLEAN DEFAULT false,
   "createdAt" TIMESTAMPTZ DEFAULT NOW(),
-  "createdBy" UUID REFERENCES auth.users(id) ON DELETE SET NULL
+  "user_id" UUID REFERENCES auth.users(id) ON DELETE SET NULL
 );
 
 -- Tabela de Pagamentos
@@ -34,7 +34,7 @@ CREATE TABLE public.payments (
   value DECIMAL(12,2) NOT NULL,
   person TEXT NOT NULL,
   "createdAt" TIMESTAMPTZ DEFAULT NOW(),
-  "createdBy" UUID REFERENCES auth.users(id) ON DELETE SET NULL
+  "user_id" UUID REFERENCES auth.users(id) ON DELETE SET NULL
 );
 
 -- Habilitar Row Level Security (RLS)

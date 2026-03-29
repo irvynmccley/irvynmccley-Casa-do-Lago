@@ -186,15 +186,31 @@ function App() {
 
   const fetchAllData = useCallback(async () => {
     const fetchTable = async (table: string) => {
-      const { data } = await supabase.from(table).select('*').order('date', { ascending: false });
-      return data || [];
+      try {
+        const { data, error } = await supabase.from(table).select('*').order('date', { ascending: false });
+        if (error) {
+          console.error(`Error fetching ${table}:`, error);
+        }
+        return data || [];
+      } catch (err) {
+        console.error(`Exception fetching ${table}:`, err);
+        return [];
+      }
     };
 
     const [expensesData, incomesData, paymentsData, { data: terrenoData }] = await Promise.all([
       fetchTable('expenses'),
       !isSharedMode ? fetchTable('incomes') : Promise.resolve([]),
       !isSharedMode ? fetchTable('payments') : Promise.resolve([]),
-      supabase.from('terreno_installments').select('id').then(res => ({ data: res.data || [] }))
+      (async () => {
+        try {
+          const res = await supabase.from('terreno_installments').select('id');
+          return { data: res.data || [] };
+        } catch (err) {
+          console.error("Error fetching terreno_installments:", err);
+          return { data: [] };
+        }
+      })()
     ]);
 
     setState(prev => ({
@@ -214,8 +230,16 @@ function App() {
       await fetchAllData();
 
       const fetchTable = async (table: string) => {
-        const { data } = await supabase.from(table).select('*').order('date', { ascending: false });
-        return data || [];
+        try {
+          const { data, error } = await supabase.from(table).select('*').order('date', { ascending: false });
+          if (error) {
+            console.error(`Error fetching ${table}:`, error);
+          }
+          return data || [];
+        } catch (err) {
+          console.error(`Exception fetching ${table}:`, err);
+          return [];
+        }
       };
 
       // Realtime subscriptions
@@ -388,7 +412,7 @@ function App() {
     }
     try {
       const cleanExpense = Object.fromEntries(Object.entries(expense).filter(([_, v]) => v !== undefined));
-      const { error } = await supabase.from('expenses').insert({ ...cleanExpense, createdBy: user?.id });
+      const { error } = await supabase.from('expenses').insert({ ...cleanExpense, user_id: user?.id });
       if (error) throw error;
       await fetchAllData();
       toast.success("Lançamento com Sucesso");
@@ -423,7 +447,7 @@ function App() {
       return;
     }
     try {
-      const { error } = await supabase.from('incomes').insert({ ...income, createdBy: user?.id });
+      const { error } = await supabase.from('incomes').insert({ ...income, user_id: user?.id });
       if (error) throw error;
       await fetchAllData();
       toast.success("Lançamento com Sucesso");
@@ -440,7 +464,7 @@ function App() {
       return;
     }
     try {
-      const { error } = await supabase.from('payments').insert({ ...payment, createdBy: user?.id });
+      const { error } = await supabase.from('payments').insert({ ...payment, user_id: user?.id });
       if (error) throw error;
       await fetchAllData();
       toast.success("Lançamento com Sucesso");
@@ -569,7 +593,7 @@ function App() {
           const { error } = await supabase.from('terreno_installments').delete().eq('id', id);
           if (error) throw error;
         } else {
-          const { error } = await supabase.from('terreno_installments').upsert({ id });
+          const { error } = await supabase.from('terreno_installments').upsert({ id, user_id: user?.id });
           if (error) throw error;
         }
       } catch (error: any) {
