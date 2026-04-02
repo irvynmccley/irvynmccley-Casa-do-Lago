@@ -183,6 +183,7 @@ function App() {
   }, [activeTab]);
 
   const [state, setState] = useState<AppState>({ expenses: [], incomes: [], payments: [], terrenoPaidInstallments: INITIAL_PAID_TERRENO });
+  const [syncStatus, setSyncStatus] = useState<'syncing' | 'local' | 'error'>(ENABLE_SUPABASE_SYNC ? 'syncing' : 'local');
   const [confirmDialog, setConfirmDialog] = useState<{
     isOpen: boolean;
     title: string;
@@ -198,15 +199,24 @@ function App() {
   });
 
   const fetchAllData = useCallback(async () => {
+    if (!ENABLE_SUPABASE_SYNC) {
+      setSyncStatus('local');
+      return;
+    }
+
+    let hasError = false;
+
     const fetchTable = async (table: string) => {
       try {
         const { data, error } = await supabase.from(table).select('*').order('date', { ascending: false });
         if (error) {
           console.error(`Error fetching ${table}:`, error);
+          hasError = true;
         }
         return data || [];
       } catch (err) {
         console.error(`Exception fetching ${table}:`, err);
+        hasError = true;
         return [];
       }
     };
@@ -220,14 +230,18 @@ function App() {
           const res = await supabase.from('terreno_installments').select('id');
           if (res.error) {
             console.error("Supabase error fetching terreno_installments:", res.error);
+            hasError = true;
           }
           return { data: res.data || [] };
         } catch (err) {
           console.error("Exception fetching terreno_installments:", err);
+          hasError = true;
           return { data: [] };
         }
       })()
     ]);
+
+    setSyncStatus(hasError ? 'error' : 'syncing');
 
     setState(prev => ({
       ...prev,
@@ -644,11 +658,33 @@ function App() {
     <div className="min-h-screen bg-[#f5f5f5] text-black font-sans">
       {/* Sidebar / Navigation */}
       <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-black/5 px-4 py-2 flex justify-around items-center z-50 md:top-0 md:bottom-auto md:flex-col md:w-64 md:h-screen md:border-t-0 md:border-r md:justify-start md:py-8 md:gap-4">
-        <div className="hidden md:flex items-center gap-3 mb-8 px-4 w-full">
-          <div className="w-10 h-10 bg-emerald-500 rounded-xl flex items-center justify-center text-white shadow-lg shadow-emerald-500/20">
-            <Wallet size={24} />
+        <div className="hidden md:flex flex-col gap-1 mb-8 px-4 w-full">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-emerald-500 rounded-xl flex items-center justify-center text-white shadow-lg shadow-emerald-500/20">
+              <Wallet size={24} />
+            </div>
+            <h1 className="text-xl font-bold tracking-tight">Casa do Lago</h1>
           </div>
-          <h1 className="text-xl font-bold tracking-tight">Casa do Lago</h1>
+          <div className="mt-2 flex items-center gap-1.5 text-[10px] font-medium px-1">
+            {syncStatus === 'syncing' && (
+              <>
+                <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
+                <span className="text-emerald-700" title="Tudo certo! Os dados estão indo para a nuvem e aparecerão em qualquer dispositivo.">Sincronizado</span>
+              </>
+            )}
+            {syncStatus === 'local' && (
+              <>
+                <div className="w-2 h-2 rounded-full bg-amber-500"></div>
+                <span className="text-amber-700" title="As chaves não foram encontradas. Os dados ficam presos no aparelho atual.">Modo Local</span>
+              </>
+            )}
+            {syncStatus === 'error' && (
+              <>
+                <div className="w-2 h-2 rounded-full bg-red-500"></div>
+                <span className="text-red-700" title="As chaves estão lá, mas há algo errado (talvez as tabelas não foram criadas no Supabase).">Erro de Conexão</span>
+              </>
+            )}
+          </div>
         </div>
 
         <NavItem icon={<LayoutDashboard size={20} />} label="Início" active={activeTab === 'inicio'} onClick={() => setActiveTab('inicio')} />
@@ -708,6 +744,7 @@ function App() {
             terrenoBalance={terrenoBalance}
             formatCurrency={formatCurrency} 
             onRefresh={fetchAllData}
+            syncStatus={syncStatus}
           />
         )}
         {activeTab === 'saidas' && (

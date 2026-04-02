@@ -30,6 +30,7 @@ interface DashboardProps {
   terrenoBalance: number;
   formatCurrency: (v: number) => string;
   onRefresh: () => Promise<void>;
+  syncStatus?: 'syncing' | 'local' | 'error';
 }
 
 const TriangleBar = (props: any) => {
@@ -48,7 +49,7 @@ const TriangleBar = (props: any) => {
   );
 };
 
-export function Dashboard({ totalSpent, totalDonations, categoryTotals, cardInstallments, allCardInstallments, caixaBalance, terrenoBalance, formatCurrency, onRefresh }: DashboardProps) {
+export function Dashboard({ totalSpent, totalDonations, categoryTotals, cardInstallments, allCardInstallments, caixaBalance, terrenoBalance, formatCurrency, onRefresh, syncStatus }: DashboardProps) {
   const [isRefreshing, setIsRefreshing] = React.useState(false);
 
   const handleRefresh = async () => {
@@ -86,6 +87,26 @@ export function Dashboard({ totalSpent, totalDonations, categoryTotals, cardInst
       <header className="flex items-center justify-between">
         <div>
           <h2 className="text-3xl font-bold tracking-tight mb-2">Casa do Lago 🏠</h2>
+          <div className="md:hidden mt-1 mb-2 flex items-center gap-1.5 text-[10px] font-medium px-1">
+            {syncStatus === 'syncing' && (
+              <>
+                <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
+                <span className="text-emerald-700" title="Tudo certo! Os dados estão indo para a nuvem e aparecerão em qualquer dispositivo.">Sincronizado</span>
+              </>
+            )}
+            {syncStatus === 'local' && (
+              <>
+                <div className="w-2 h-2 rounded-full bg-amber-500"></div>
+                <span className="text-amber-700" title="As chaves não foram encontradas. Os dados ficam presos no aparelho atual.">Modo Local</span>
+              </>
+            )}
+            {syncStatus === 'error' && (
+              <>
+                <div className="w-2 h-2 rounded-full bg-red-500"></div>
+                <span className="text-red-700" title="As chaves estão lá, mas há algo errado (talvez as tabelas não foram criadas no Supabase).">Erro de Conexão</span>
+              </>
+            )}
+          </div>
           <p className="text-black">Visão geral da sua obra</p>
         </div>
         <button 
