@@ -184,7 +184,7 @@ export function Dashboard({ totalSpent, totalDonations, categoryTotals, cardInst
           
           {previousMonthValue !== null && (
             <div className="mb-4 text-xs font-medium text-red-600 bg-red-50 px-3 py-1.5 rounded-lg inline-block self-start">
-              Lembrete: Mês anterior ({format(new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1), 'MMMM', { locale: ptBR })}) foi {formatCurrency(previousMonthValue)}
+              Mês anterior: {formatCurrency(previousMonthValue)}
             </div>
           )}
           
