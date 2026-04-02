@@ -11,7 +11,7 @@ function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-const CATEGORIES: Category[] = ['Combustível', 'Documentação', 'Material', 'Mão de Obra', 'Monitoramento'];
+const CATEGORIES: Category[] = ['Combustível', 'Documentação', 'Material', 'Mão de Obra', 'Monitoramento', 'Alimentação'];
 
 interface ReportsTabProps {
   expenses: Expense[];
@@ -32,9 +32,9 @@ export function ReportsTab({ expenses, allCardInstallments = [], formatCurrency 
     if (searchTerm) {
       const lowerSearch = searchTerm.toLowerCase();
       result = result.filter((e: Expense) => 
-        (e.local && e.local.toLowerCase().includes(lowerSearch)) ||
-        (e.observation && e.observation.toLowerCase().includes(lowerSearch)) ||
-        (e.paymentMethod && e.paymentMethod.toLowerCase().includes(lowerSearch))
+        (e.local && typeof e.local === 'string' && e.local.toLowerCase().includes(lowerSearch)) ||
+        (e.observation && typeof e.observation === 'string' && e.observation.toLowerCase().includes(lowerSearch)) ||
+        (e.paymentMethod && typeof e.paymentMethod === 'string' && e.paymentMethod.toLowerCase().includes(lowerSearch))
       );
     }
     return [...result].sort((a, b) => (b.date || '').localeCompare(a.date || ''));

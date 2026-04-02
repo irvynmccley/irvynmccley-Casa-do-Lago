@@ -29,8 +29,25 @@ import { ConfirmDialog } from './components/ui/ConfirmDialog';
 
 const ENABLE_SUPABASE_SYNC = true; // Trava de segurança
 
-const CATEGORIES: Category[] = ['Combustível', 'Documentação', 'Material', 'Mão de Obra', 'Monitoramento'];
+const CATEGORIES: Category[] = ['Combustível', 'Documentação', 'Material', 'Mão de Obra', 'Monitoramento', 'Alimentação'];
 const PEOPLE: Person[] = ['Mccley', 'Jan', 'Saulo'];
+
+export const normalizeCategory = (cat: any): string => {
+  if (!cat || typeof cat !== 'string') return '';
+  // Remove accents and convert to lowercase for comparison
+  const normalized = cat.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+  
+  if (normalized === 'combustivel') return 'Combustível';
+  if (normalized === 'mao de obra') return 'Mão de Obra';
+  if (normalized === 'documentacao') return 'Documentação';
+  if (normalized === 'alimentacao') return 'Alimentação';
+  if (normalized === 'monitoramento') return 'Monitoramento';
+  if (normalized === 'material') return 'Material';
+  
+  // Fallback
+  const trimmed = cat.trim();
+  return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
+};
 
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -98,15 +115,18 @@ function App() {
   const [user, setUser] = useState<any>(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
 
+  // Tab restriction logic for shared mode
+  useEffect(() => {
+    if (isSharedMode && !['inicio', 'saidas', 'terreno'].includes(activeTab)) {
+      setActiveTab('inicio');
+    }
+  }, [activeTab, isSharedMode]);
+
+  // Auth logic
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const shared = params.get('shared') === 'true';
-    if (shared) {
-      setIsSharedMode(true);
-      if (!['inicio', 'saidas', 'terreno'].includes(activeTab)) {
-        setActiveTab('inicio');
-      }
-    }
+    setIsSharedMode(shared);
 
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session?.user) {
@@ -179,8 +199,10 @@ function App() {
       setIsAuthReady(true);
     });
 
-    return () => subscription.unsubscribe();
-  }, [activeTab]);
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []); // Remove activeTab from dependencies to prevent re-subscribing and re-fetching session on tab change
 
   const [state, setState] = useState<AppState>({ expenses: [], incomes: [], payments: [], terrenoPaidInstallments: INITIAL_PAID_TERRENO });
   const [syncStatus, setSyncStatus] = useState<'syncing' | 'local' | 'error'>(ENABLE_SUPABASE_SYNC ? 'syncing' : 'local');
@@ -243,9 +265,14 @@ function App() {
 
     setSyncStatus(hasError ? 'error' : 'syncing');
 
+    const normalizedExpenses = (expensesData as Expense[]).map(e => ({
+      ...e,
+      category: normalizeCategory(e.category) as Category
+    }));
+
     setState(prev => ({
       ...prev,
-      expenses: expensesData as Expense[],
+      expenses: normalizedExpenses,
       incomes: incomesData as Income[],
       payments: paymentsData as Payment[],
       terrenoPaidInstallments: terrenoData && terrenoData.length > 0 ? terrenoData.map((t: any) => t.id) : INITIAL_PAID_TERRENO
@@ -276,7 +303,11 @@ function App() {
       const channel = supabase.channel('schema-db-changes')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'expenses' }, async () => {
           const data = await fetchTable('expenses');
-          setState(prev => ({ ...prev, expenses: data as Expense[] }));
+          const normalizedExpenses = (data as Expense[]).map(e => ({
+            ...e,
+            category: normalizeCategory(e.category) as Category
+          }));
+          setState(prev => ({ ...prev, expenses: normalizedExpenses }));
         })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'incomes' }, async () => {
           const data = await fetchTable('incomes');
@@ -333,7 +364,10 @@ function App() {
   const categoryTotals = useMemo(() => {
     const totals: Record<string, number> = {};
     state.expenses.forEach(e => {
-      totals[e.category] = (totals[e.category] || 0) + e.value;
+      const catName = normalizeCategory(e.category);
+      if (catName) {
+        totals[catName] = (totals[catName] || 0) + e.value;
+      }
     });
     return Object.entries(totals)
       .map(([name, value]) => ({ name, value }))

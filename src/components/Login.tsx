@@ -14,20 +14,32 @@ export function Login() {
     setIsLoading(true);
 
     try {
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      // Add a timeout to prevent hanging forever
+      const authPromise = supabase.auth.signInWithPassword({ email, password });
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Tempo limite de conexão excedido. Tente novamente.')), 15000)
+      );
+      
+      const { data, error } = await Promise.race([authPromise, timeoutPromise]) as any;
+      
       if (error) throw error;
+      
+      // If successful, force a reload to ensure the app state updates correctly
+      // This is a fallback in case onAuthStateChange is delayed or blocked
+      if (data?.session) {
+        window.location.href = '/';
+      }
     } catch (err: any) {
-      console.error(err);
+      console.error("Login error:", err);
       
       let errorMessage = err.message || 'Ocorreu um erro. Tente novamente.';
       
       if (errorMessage === 'Failed to fetch') {
-        errorMessage = 'Erro de conexão com o servidor. Verifique se as variáveis VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY estão corretas no Vercel, ou se o seu projeto no Supabase não está pausado (projetos gratuitos pausam após 7 dias de inatividade).';
+        errorMessage = 'Erro de conexão com o servidor. Verifique sua internet ou se o projeto no Supabase está ativo.';
       }
       
       setError(errorMessage);
-    } finally {
-      setIsLoading(false);
+      setIsLoading(false); // Only set to false on error, on success we reload
     }
   };
 
