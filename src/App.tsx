@@ -148,10 +148,19 @@ function App() {
       }
     }).catch(err => {
       console.error("Error getting session:", err);
-      setIsAuthReady(true);
+      // Se o token de atualização não for encontrado ou for inválido, limpa a sessão local
+      if (err?.message?.includes('Refresh Token Not Found') || err?.message?.includes('invalid_refresh_token')) {
+        supabase.auth.signOut().then(() => {
+          setUser(null);
+          setIsAuthReady(true);
+        });
+      } else {
+        setIsAuthReady(true);
+      }
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      console.log("Auth event:", event);
       if (session?.user) {
         if (!shared && session.user.is_anonymous) {
           supabase.auth.signOut().then(() => {
@@ -162,6 +171,10 @@ function App() {
         }
       } else {
         setUser(null);
+        // Se a sessão expirou ou foi invalidada, garante que o estado local reflita isso
+        if (event === 'SIGNED_OUT' || event === 'USER_UPDATED') {
+          setUser(null);
+        }
       }
       setIsAuthReady(true);
     });
@@ -314,15 +327,8 @@ function App() {
       .sort((a, b) => b.value - a.value);
   }, [state.expenses]);
 
-  const cardInstallmentsByMonth = useMemo(() => {
+  const allCardInstallmentsByMonth = useMemo(() => {
     const monthlyTotals: Record<string, number> = {};
-    const currentYear = new Date().getFullYear();
-    
-    // Initialize all months for the current year
-    for (let i = 1; i <= 12; i++) {
-      const monthKey = `${currentYear}-${String(i).padStart(2, '0')}`;
-      monthlyTotals[monthKey] = 0;
-    }
     
     state.expenses.filter(e => e.paymentMethod === 'Cartão').forEach(exp => {
       if (!exp.date || !exp.date.includes('-')) return;
@@ -348,18 +354,36 @@ function App() {
       for (let i = 0; i < installments; i++) {
         const installmentDate = new Date(year, month + startMonthOffset + i, 1);
         const monthKey = format(installmentDate, 'yyyy-MM');
-        // Only add if it's in the current year or we want to track future years too
-        // Actually, we should track all, but we'll filter later
         monthlyTotals[monthKey] = (monthlyTotals[monthKey] || 0) + valuePerInstallment;
       }
     });
 
+    return Object.entries(monthlyTotals)
+      .map(([month, total]) => ({ month, total }))
+      .sort((a, b) => b.month.localeCompare(a.month)); // descending
+  }, [state.expenses]);
+
+  const cardInstallmentsByMonth = useMemo(() => {
     const currentMonthKey = format(new Date(), 'yyyy-MM');
+    const currentYear = new Date().getFullYear();
+    
+    // Pegamos todos os meses e filtramos apenas os atuais/futuros do ano atual
+    // Para manter o comportamento original, também adicionamos meses vazios do ano atual
+    const monthlyTotals: Record<string, number> = {};
+    for (let i = 1; i <= 12; i++) {
+      const monthKey = `${currentYear}-${String(i).padStart(2, '0')}`;
+      monthlyTotals[monthKey] = 0;
+    }
+    
+    allCardInstallmentsByMonth.forEach(item => {
+      monthlyTotals[item.month] = item.total;
+    });
+
     return Object.entries(monthlyTotals)
       .map(([month, total]) => ({ month, total }))
       .filter(item => item.month.startsWith(`${currentYear}-`) && item.month >= currentMonthKey)
       .sort((a, b) => a.month.localeCompare(b.month));
-  }, [state.expenses]);
+  }, [allCardInstallmentsByMonth]);
 
   const totalIncome = useMemo(() => {
     return state.incomes.filter(i => !i.isCaixa).reduce((acc, inc) => acc + inc.value, 0);
@@ -679,6 +703,7 @@ function App() {
             totalDonations={totalDonations}
             categoryTotals={categoryTotals} 
             cardInstallments={cardInstallmentsByMonth} 
+            allCardInstallments={allCardInstallmentsByMonth}
             caixaBalance={caixaBalance}
             terrenoBalance={terrenoBalance}
             formatCurrency={formatCurrency} 
@@ -714,6 +739,7 @@ function App() {
         {activeTab === 'relatorios' && !isSharedMode && (
           <ReportsTab 
             expenses={state.expenses} 
+            allCardInstallments={allCardInstallmentsByMonth}
             formatCurrency={formatCurrency} 
           />
         )}

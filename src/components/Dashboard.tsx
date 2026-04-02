@@ -25,6 +25,7 @@ interface DashboardProps {
   totalDonations: number;
   categoryTotals: { name: string; value: number }[];
   cardInstallments: { month: string; total: number }[];
+  allCardInstallments?: { month: string; total: number }[];
   caixaBalance: number;
   terrenoBalance: number;
   formatCurrency: (v: number) => string;
@@ -47,7 +48,7 @@ const TriangleBar = (props: any) => {
   );
 };
 
-export function Dashboard({ totalSpent, totalDonations, categoryTotals, cardInstallments, caixaBalance, terrenoBalance, formatCurrency, onRefresh }: DashboardProps) {
+export function Dashboard({ totalSpent, totalDonations, categoryTotals, cardInstallments, allCardInstallments, caixaBalance, terrenoBalance, formatCurrency, onRefresh }: DashboardProps) {
   const [isRefreshing, setIsRefreshing] = React.useState(false);
 
   const handleRefresh = async () => {
@@ -63,6 +64,22 @@ export function Dashboard({ totalSpent, totalDonations, categoryTotals, cardInst
   const FIXED_COSTS = 750; // 700 (terreno) + 50 (condominio)
   const PEOPLE_COUNT = 4; // Jorge, Mccley, Jan, Saulo
   const FIXED_PER_PERSON = FIXED_COSTS / PEOPLE_COUNT;
+
+  // Calculate previous month value
+  const previousMonthValue = React.useMemo(() => {
+    if (!allCardInstallments) return null;
+    const now = new Date();
+    // Get previous month key (e.g., "2026-03" if now is April 2026)
+    const prevMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const prevMonthKey = format(prevMonthDate, 'yyyy-MM');
+    const prevMonthData = allCardInstallments.find(item => item.month === prevMonthKey);
+    
+    if (prevMonthData) {
+      const cardPerPerson = prevMonthData.total / PEOPLE_COUNT;
+      return cardPerPerson + FIXED_PER_PERSON;
+    }
+    return null;
+  }, [allCardInstallments]);
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -153,7 +170,7 @@ export function Dashboard({ totalSpent, totalDonations, categoryTotals, cardInst
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-8 items-stretch">
         <Card className="bg-white border border-blue-100/50 shadow-sm p-4 sm:p-8 flex flex-col h-full hover:shadow-md transition-all">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-4 mb-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-4 mb-2">
             <h3 className="text-base sm:text-lg font-bold flex items-center gap-3 text-black">
               <div className="p-2 bg-blue-50 rounded-lg">
                 <Wallet size={20} className="text-blue-600" />
@@ -164,6 +181,12 @@ export function Dashboard({ totalSpent, totalDonations, categoryTotals, cardInst
               Jorge, Mccley, Jan, Saulo
             </div>
           </div>
+          
+          {previousMonthValue !== null && (
+            <div className="mb-4 text-xs font-medium text-red-600 bg-red-50 px-3 py-1.5 rounded-lg inline-block self-start">
+              Lembrete: Mês anterior ({format(new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1), 'MMMM', { locale: ptBR })}) foi {formatCurrency(previousMonthValue)}
+            </div>
+          )}
           
           <div className="space-y-2 sm:space-y-4 overflow-y-auto max-h-[350px] pr-2 custom-scrollbar flex-grow">
             {cardInstallments.length > 0 ? (
