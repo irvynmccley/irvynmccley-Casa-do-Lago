@@ -424,13 +424,25 @@ export function ExpensesTab({ expenses, onAdd, onEdit, onDelete, formatCurrency,
                       {exp.paymentMethod === 'Cartão' && (
                         <>
                           <span className="hidden sm:inline">•</span>
-                          <span className="text-blue-500 font-medium">{exp.installments}x</span>
+                          <span className="text-blue-500 font-medium">Cartão ({exp.installments}x)</span>
                         </>
                       )}
                       {exp.paymentMethod === 'doação' && (
                         <>
                           <span className="hidden sm:inline">•</span>
                           <span className="text-purple-500 font-medium">Doador: {exp.donor}</span>
+                        </>
+                      )}
+                      {exp.paymentMethod === 'Pix' && (
+                        <>
+                          <span className="hidden sm:inline">•</span>
+                          <span className="text-emerald-500 font-medium">Pix</span>
+                        </>
+                      )}
+                      {exp.paymentMethod === 'Caixa' && (
+                        <>
+                          <span className="hidden sm:inline">•</span>
+                          <span className="text-amber-500 font-medium">Caixa</span>
                         </>
                       )}
                     </div>

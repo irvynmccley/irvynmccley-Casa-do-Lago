@@ -82,6 +82,19 @@ export function Dashboard({ totalSpent, totalDonations, categoryTotals, cardInst
     return null;
   }, [allCardInstallments]);
 
+  const previousMonthInvoiceTotal = React.useMemo(() => {
+    if (!allCardInstallments) return null;
+    const now = new Date();
+    const prevMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const prevMonthKey = format(prevMonthDate, 'yyyy-MM');
+    const prevMonthData = allCardInstallments.find(item => item.month === prevMonthKey);
+    
+    if (prevMonthData) {
+      return prevMonthData.total;
+    }
+    return null;
+  }, [allCardInstallments]);
+
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
       <header className="flex items-center justify-between">
@@ -157,12 +170,19 @@ export function Dashboard({ totalSpent, totalDonations, categoryTotals, cardInst
         </Card>
 
         <Card className="bg-gradient-to-br from-white to-orange-50/30 border border-orange-100/50 shadow-sm p-4 sm:p-6 flex flex-col h-full hover:shadow-md transition-all">
-          <div className="flex items-center gap-3 text-black mb-4">
+          <div className="flex items-center gap-3 text-black mb-2">
             <div className="p-2 bg-orange-100 rounded-lg">
               <CreditCard size={18} className="text-orange-600" />
             </div>
             <span className="text-xs sm:text-sm font-bold uppercase tracking-wider">Fatura do Cartão</span>
           </div>
+          
+          {previousMonthInvoiceTotal !== null && (
+            <div className="mb-4 text-[10px] font-medium text-red-600 bg-red-50 px-2 py-1 rounded-md inline-block self-start">
+              Mês anterior: {formatCurrency(previousMonthInvoiceTotal)}
+            </div>
+          )}
+          
           <div className="space-y-2 overflow-y-auto max-h-[200px] pr-2 custom-scrollbar mt-auto">
             {cardInstallments.map((item) => (
               <div key={item.month} className="flex justify-between items-center py-1.5 border-b border-orange-100/50 last:border-0">
@@ -299,6 +319,40 @@ export function Dashboard({ totalSpent, totalDonations, categoryTotals, cardInst
             </ResponsiveContainer>
           </div>
         </Card>
+
+        {allCardInstallments && allCardInstallments.length > 0 && (
+          <Card className="bg-white border border-purple-100/50 shadow-sm p-4 sm:p-8 flex flex-col h-full hover:shadow-md transition-all lg:col-span-2">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-4 mb-2">
+              <h3 className="text-base sm:text-lg font-bold flex items-center gap-3 text-black">
+                <div className="p-2 bg-purple-50 rounded-lg">
+                  <CreditCard size={20} className="text-purple-600" />
+                </div>
+                Faturas de Cartão (Total)
+              </h3>
+            </div>
+            
+            {previousMonthInvoiceTotal !== null && (
+              <div className="mb-4 text-xs font-medium text-red-600 bg-red-50 px-3 py-1.5 rounded-lg inline-block self-start">
+                Mês anterior: {formatCurrency(previousMonthInvoiceTotal)}
+              </div>
+            )}
+            
+            <div className="space-y-2 sm:space-y-4 overflow-y-auto max-h-[350px] pr-2 custom-scrollbar flex-grow">
+              {allCardInstallments.map((item) => (
+                <div key={item.month} className="flex flex-col sm:flex-row sm:items-center justify-between p-3 sm:p-4 bg-gradient-to-r from-purple-50/50 to-transparent rounded-2xl border border-purple-100/50 hover:border-purple-200 transition-colors">
+                  <div className="mb-2 sm:mb-0">
+                    <div className="text-sm font-bold text-black capitalize">
+                      {format(new Date(parseInt(item.month.split('-')[0]), parseInt(item.month.split('-')[1]) - 1, 1), 'MMMM yyyy', { locale: ptBR })}
+                    </div>
+                  </div>
+                  <div className="text-lg sm:text-xl font-mono font-bold text-black bg-white px-4 py-2 rounded-xl shadow-sm border border-purple-50">
+                    {formatCurrency(item.total)}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </Card>
+        )}
       </div>
     </div>
   );
