@@ -129,6 +129,24 @@ function App() {
     const shared = params.get('shared') === 'true';
     setIsSharedMode(shared);
 
+    // Pre-emptively check for broken tokens in localStorage before even calling getSession
+    try {
+      let hasBrokenToken = false;
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith('sb-') && key.endsWith('-auth-token')) {
+          const tokenData = localStorage.getItem(key);
+          if (tokenData && (tokenData.includes('Refresh Token Not Found') || tokenData.includes('invalid_refresh_token'))) {
+            hasBrokenToken = true;
+            localStorage.removeItem(key);
+          }
+        }
+      }
+      if (hasBrokenToken) {
+        console.warn("Cleared broken auth token from localStorage before session check");
+      }
+    } catch (e) {}
+
     supabase.auth.getSession().then(({ data: { session }, error }) => {
       if (error) {
         console.error("Error getting session:", error);
@@ -186,6 +204,17 @@ function App() {
       }
     }).catch(err => {
       console.error("Unexpected error getting session:", err);
+      
+      // Aggressive cleanup on any unexpected session error
+      try {
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && key.startsWith('sb-') && key.endsWith('-auth-token')) {
+            localStorage.removeItem(key);
+          }
+        }
+      } catch (e) {}
+      
       setIsAuthReady(true);
     });
 
