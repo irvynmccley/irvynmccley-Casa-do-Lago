@@ -185,8 +185,6 @@ export function ExpensesTab({ expenses, onAdd, onEdit, onDelete, formatCurrency,
       const data = XLSX.utils.sheet_to_json(ws) as any[];
 
       data.forEach((row) => {
-        // Map Excel columns to Expense object
-        // Expected columns: Data, Categoria, Local, Valor, Forma de Pagamento, Parcelas, Doador, Observação
         const date = row['Data'] || row['date'] || format(new Date(), 'yyyy-MM-dd');
         const category = row['Categoria'] || row['category'] || 'Material';
         const local = row['Local'] || row['local'] || '';
@@ -266,7 +264,6 @@ export function ExpensesTab({ expenses, onAdd, onEdit, onDelete, formatCurrency,
           url: url,
         });
       } catch (err) {
-        // If user cancels share, ignore
         if ((err as Error).name !== 'AbortError') {
           const whatsappUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`;
           window.open(whatsappUrl, '_blank');
@@ -581,74 +578,67 @@ export function ExpensesTab({ expenses, onAdd, onEdit, onDelete, formatCurrency,
         <div className="lg:col-span-2 space-y-4">
           <h3 className="text-lg font-semibold mb-4">Últimos Lançamentos</h3>
           {sortedExpenses.length === 0 ? (
-            <div className="bg-white rounded-2xl p-12 text-center text-black border border-dashed border-gray-200">
-              Nenhuma despesa lançada ainda.
+            <div className="text-center py-12 bg-white rounded-2xl border border-black/5">
+              <p className="text-gray-500">Nenhuma despesa registrada.</p>
             </div>
           ) : (
-            sortedExpenses.map((exp) => (
-              <Card key={exp.id} className="bg-white p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 group hover:shadow-md transition-all">
-                <div className="flex items-start sm:items-center gap-4">
-                  <div className={cn(
-                    "w-12 h-12 rounded-xl flex items-center justify-center shrink-0",
-                    exp.paymentMethod === 'Cartão' ? "bg-blue-100 text-blue-600" : 
-                    exp.paymentMethod === 'doação' ? "bg-purple-100 text-purple-600" : 
-                    exp.paymentMethod === 'Caixa' ? "bg-amber-100 text-amber-600" : "bg-emerald-100 text-emerald-600"
-                  )}>
-                    {exp.paymentMethod === 'Cartão' ? <CreditCard size={20} /> : 
-                     exp.paymentMethod === 'doação' ? <User size={20} /> : 
-                     exp.paymentMethod === 'Caixa' ? <Wallet size={20} /> : <Wallet size={20} />}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <h4 className="font-bold truncate">{exp.local}</h4>
-                    <div className="flex flex-wrap items-center gap-1 sm:gap-2 text-xs text-black">
-                      <span>{exp.date ? exp.date.split('-').reverse().join('/') : '-'}</span>
-                      <span className="hidden sm:inline">•</span>
-                      <span className="capitalize">{exp.category}</span>
-                      {exp.paymentMethod === 'Cartão' && (
-                        <>
-                          <span className="hidden sm:inline">•</span>
-                          <span className="text-blue-500 font-medium">Cartão ({exp.installments}x)</span>
-                        </>
-                      )}
-                      {exp.paymentMethod === 'doação' && (
-                        <>
-                          <span className="hidden sm:inline">•</span>
-                          <span className="text-purple-500 font-medium">Doador: {exp.donor}</span>
-                        </>
-                      )}
-                      {exp.paymentMethod === 'Pix' && (
-                        <>
-                          <span className="hidden sm:inline">•</span>
-                          <span className="text-emerald-500 font-medium">Pix</span>
-                        </>
-                      )}
-                      {exp.paymentMethod === 'Caixa' && (
-                        <>
-                          <span className="hidden sm:inline">•</span>
-                          <span className="text-amber-500 font-medium">Caixa</span>
-                        </>
-                      )}
+            sortedExpenses.map(expense => (
+              <Card key={expense.id} className="bg-white p-4 hover:shadow-md transition-all">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="flex items-start gap-4">
+                    <div className={cn(
+                      "p-3 rounded-xl shrink-0",
+                      expense.category === 'Material' ? 'bg-blue-50 text-blue-600' :
+                      expense.category === 'Mão de Obra' ? 'bg-orange-50 text-orange-600' :
+                      expense.category === 'Documentação' ? 'bg-purple-50 text-purple-600' :
+                      expense.category === 'Combustível' ? 'bg-red-50 text-red-600' :
+                      expense.category === 'Alimentação' ? 'bg-yellow-50 text-yellow-600' :
+                      'bg-emerald-50 text-emerald-600'
+                    )}>
+                      {expense.category === 'Material' ? <Wallet size={24} /> :
+                       expense.category === 'Mão de Obra' ? <User size={24} /> :
+                       <CreditCard size={24} />}
                     </div>
-                    {exp.observation && (
-                      <p className="text-sm text-black mt-1 italic truncate">"{exp.observation}"</p>
-                    )}
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2 mb-1">
+                        <h4 className="font-bold text-black">{expense.local}</h4>
+                        <span className="text-xs font-medium px-2 py-1 bg-gray-100 text-gray-600 rounded-md">
+                          {expense.category}
+                        </span>
+                        <span className="text-xs font-medium px-2 py-1 bg-emerald-50 text-emerald-700 rounded-md">
+                          {expense.paymentMethod === 'Cartão' ? `Cartão (${expense.installments}x)` : 
+                           expense.paymentMethod === 'doação' ? `Doação (${expense.donor})` : 
+                           expense.paymentMethod}
+                        </span>
+                      </div>
+                      <p className="text-sm text-gray-500">
+                        {format(new Date(expense.date + 'T00:00:00'), 'dd/MM/yyyy')}
+                        {expense.observation && ` • ${expense.observation}`}
+                      </p>
+                    </div>
                   </div>
-                </div>
-                <div className="flex items-center justify-between sm:justify-end gap-4 w-full sm:w-auto mt-2 sm:mt-0 pt-2 sm:pt-0 border-t sm:border-0 border-gray-100">
-                  <span className="font-mono font-bold text-lg">{formatCurrency(exp.value)}</span>
-                  <div className="flex items-center gap-1">
-                    <button 
-                      onClick={() => handleEditClick(exp)}
-                      className="p-2 text-black hover:text-blue-500 transition-colors"
-                    >
-                      <Edit2 size={18} />
-                    </button>
-                    <button 
-                      onClick={() => onDelete(exp.id)}
-                      className="p-2 text-black hover:text-red-500 transition-colors"
-                    >
-                      <Trash2 size={18} />
-                    </button>
+                  <div className="flex items-center justify-between sm:justify-end gap-4 w-full sm:w-auto border-t sm:border-0 pt-4 sm:pt-0">
+                    <span className="font-bold text-lg text-black">
+                      {formatCurrency(expense.value)}
+                    </span>
+                    {!isSharedMode && (
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => handleEditClick(expense)}
+                          className="p-2 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded-lg transition-colors"
+                          title="Editar"
+                        >
+                          <Edit2 size={18} />
+                        </button>
+                        <button
+                          onClick={() => onDelete(expense.id)}
+                          className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                          title="Excluir"
+                        >
+                          <Trash2 size={18} />
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
               </Card>
@@ -656,17 +646,17 @@ export function ExpensesTab({ expenses, onAdd, onEdit, onDelete, formatCurrency,
           )}
         </div>
       </div>
-      <ConfirmDialog 
+
+      <ConfirmDialog
         isOpen={isConfirmingEdit}
-        title="Salvar Alterações"
-        message="Tem certeza que deseja salvar as alterações desta saída?"
+        title="Confirmar Edição"
+        message="Tem certeza que deseja salvar as alterações neste lançamento?"
         onConfirm={confirmEdit}
         onCancel={() => {
           setIsConfirmingEdit(false);
           setPendingEditData(null);
         }}
         confirmText="Salvar"
-        confirmStyle="primary"
       />
     </div>
   );
