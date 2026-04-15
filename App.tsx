@@ -129,7 +129,24 @@ function App() {
     const shared = params.get('shared') === 'true';
     setIsSharedMode(shared);
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then(({ data: { session }, error }) => {
+      if (error) {
+        console.error("Error getting session:", error);
+        if (error.message?.includes('Refresh Token') || error.message?.includes('refresh_token') || error.message?.includes('not found')) {
+          // Force clear local storage to remove broken session
+          for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            if (key && key.startsWith('sb-') && key.endsWith('-auth-token')) {
+              localStorage.removeItem(key);
+            }
+          }
+          supabase.auth.signOut().catch(() => {});
+        }
+        setUser(null);
+        setIsAuthReady(true);
+        return;
+      }
+
       if (session?.user) {
         if (!shared && session.user.is_anonymous) {
           supabase.auth.signOut().then(() => {
@@ -168,16 +185,8 @@ function App() {
         setIsAuthReady(true);
       }
     }).catch(err => {
-      console.error("Error getting session:", err);
-      // Se o token de atualização não for encontrado ou for inválido, limpa a sessão local
-      if (err?.message?.includes('Refresh Token Not Found') || err?.message?.includes('invalid_refresh_token')) {
-        supabase.auth.signOut().then(() => {
-          setUser(null);
-          setIsAuthReady(true);
-        });
-      } else {
-        setIsAuthReady(true);
-      }
+      console.error("Unexpected error getting session:", err);
+      setIsAuthReady(true);
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
