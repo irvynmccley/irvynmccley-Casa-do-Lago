@@ -13,7 +13,7 @@ import {
   LabelList,
   Legend
 } from 'recharts';
-import { Banknote, TrendingUp, CreditCard, BarChart as BarChartIcon, User, RefreshCw, Wallet } from 'lucide-react';
+import { Banknote, TrendingUp, CreditCard, BarChart as BarChartIcon, User, RefreshCw, Wallet, ChevronDown, ChevronUp } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { Card } from './ui/Card';
@@ -25,7 +25,18 @@ interface DashboardProps {
   totalDonations: number;
   categoryTotals: { name: string; value: number }[];
   cardInstallments: { month: string; total: number }[];
-  allCardInstallments?: { month: string; total: number }[];
+  allCardInstallments?: { 
+    month: string; 
+    total: number;
+    items?: Array<{
+      id: string;
+      date: string;
+      local: string;
+      value: number;
+      installment: string;
+      originalExp: any;
+    }>;
+  }[];
   caixaBalance: number;
   terrenoBalance: number;
   formatCurrency: (v: number) => string;
@@ -51,6 +62,7 @@ const TriangleBar = (props: any) => {
 
 export function Dashboard({ totalSpent, totalDonations, categoryTotals, cardInstallments, allCardInstallments, caixaBalance, terrenoBalance, formatCurrency, onRefresh, syncStatus }: DashboardProps) {
   const [isRefreshing, setIsRefreshing] = React.useState(false);
+  const [expandedInvoice, setExpandedInvoice] = React.useState<string | null>(null);
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
@@ -59,6 +71,10 @@ export function Dashboard({ totalSpent, totalDonations, categoryTotals, cardInst
     } finally {
       setIsRefreshing(false);
     }
+  };
+
+  const toggleInvoice = (month: string) => {
+    setExpandedInvoice(expandedInvoice === month ? null : month);
   };
 
   // Fixed costs calculation
@@ -337,19 +353,74 @@ export function Dashboard({ totalSpent, totalDonations, categoryTotals, cardInst
               </div>
             )}
             
-            <div className="space-y-2 sm:space-y-4 overflow-y-auto max-h-[350px] pr-2 custom-scrollbar flex-grow">
-              {allCardInstallments.map((item) => (
-                <div key={item.month} className="flex flex-col sm:flex-row sm:items-center justify-between p-3 sm:p-4 bg-gradient-to-r from-purple-50/50 to-transparent rounded-2xl border border-purple-100/50 hover:border-purple-200 transition-colors">
-                  <div className="mb-2 sm:mb-0">
-                    <div className="text-sm font-bold text-black capitalize">
-                      {format(new Date(parseInt(item.month.split('-')[0]), parseInt(item.month.split('-')[1]) - 1, 1), 'MMMM yyyy', { locale: ptBR })}
-                    </div>
+            <div className="space-y-4 overflow-y-auto max-h-[350px] pr-2 custom-scrollbar flex-grow">
+              {allCardInstallments.map((item) => {
+                const isExpanded = expandedInvoice === item.month;
+                
+                return (
+                  <div key={item.month} className="bg-gray-50 rounded-xl border border-purple-100/50 hover:border-purple-200 transition-colors overflow-hidden">
+                    <button 
+                      onClick={() => toggleInvoice(item.month)}
+                      className="w-full flex flex-col sm:flex-row sm:items-center justify-between p-3 sm:p-4 bg-gradient-to-r from-purple-50/50 to-transparent transition-colors"
+                    >
+                      <div className="flex items-center gap-2 mb-2 sm:mb-0">
+                        {isExpanded ? <ChevronUp size={20} className="text-purple-500" /> : <ChevronDown size={20} className="text-purple-500" />}
+                        <div className="text-sm font-bold text-black capitalize">
+                          {format(new Date(parseInt(item.month.split('-')[0]), parseInt(item.month.split('-')[1]) - 1, 1), 'MMMM yyyy', { locale: ptBR })}
+                        </div>
+                      </div>
+                      <div className="text-lg sm:text-xl font-mono font-bold text-black bg-white px-4 py-2 rounded-xl shadow-sm border border-purple-50 flex-shrink-0 text-left sm:text-right w-full sm:w-auto">
+                        {formatCurrency(item.total)}
+                      </div>
+                    </button>
+                    
+                    {isExpanded && item.items && item.items.length > 0 && (
+                      <div className="border-t border-purple-100 bg-white p-4">
+                        <div className="overflow-x-auto hide-scrollbar">
+                          <table className="w-full text-left border-collapse min-w-[500px]">
+                            <thead>
+                              <tr className="bg-purple-50/30 border-b border-black/5">
+                                <th className="px-4 py-3 text-xs font-bold uppercase text-black">Data da Compra</th>
+                                <th className="px-4 py-3 text-xs font-bold uppercase text-black">Local</th>
+                                <th className="px-4 py-3 text-xs font-bold uppercase text-black text-center">Parcela</th>
+                                <th className="px-4 py-3 text-xs font-bold uppercase text-black text-right">Valor</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-black/5">
+                              {item.items.sort((a, b) => (b.date || '').localeCompare(a.date || '')).map((detail, idx) => (
+                                <tr key={`${detail.id}-${idx}`} className="hover:bg-purple-50/10 transition-colors">
+                                  <td className="px-4 py-3 text-sm whitespace-nowrap">
+                                    {detail.date ? detail.date.split('-').reverse().join('/') : '-'}
+                                  </td>
+                                  <td className="px-4 py-3 text-sm font-medium text-black">
+                                    {detail.local}
+                                    {detail.originalExp?.observation && (
+                                      <div className="text-[10px] text-gray-500 font-normal italic mt-0.5 truncate max-w-[200px]" title={detail.originalExp.observation}>
+                                        {detail.originalExp.observation}
+                                      </div>
+                                    )}
+                                  </td>
+                                  <td className="px-4 py-3 text-sm font-medium text-center text-gray-600">
+                                    {detail.installment}
+                                  </td>
+                                  <td className="px-4 py-3 text-sm font-mono font-bold text-right whitespace-nowrap">
+                                    {formatCurrency(detail.value)}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+                    {isExpanded && (!item.items || item.items.length === 0) && (
+                       <div className="border-t border-purple-100 bg-white p-4 text-center text-sm text-gray-500">
+                         Detalhamento não disponível.
+                       </div>
+                    )}
                   </div>
-                  <div className="text-lg sm:text-xl font-mono font-bold text-black bg-white px-4 py-2 rounded-xl shadow-sm border border-purple-50">
-                    {formatCurrency(item.total)}
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </Card>
         )}

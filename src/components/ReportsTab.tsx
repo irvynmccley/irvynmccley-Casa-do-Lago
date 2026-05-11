@@ -5,7 +5,7 @@ import { Expense, Category } from '../types';
 import { Card } from './ui/Card';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { Search } from 'lucide-react';
+import { Search, ChevronDown, ChevronUp } from 'lucide-react';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -15,7 +15,18 @@ const CATEGORIES: Category[] = ['Combustível', 'Documentação', 'Material', 'M
 
 interface ReportsTabProps {
   expenses: Expense[];
-  allCardInstallments?: { month: string; total: number }[];
+  allCardInstallments?: { 
+    month: string; 
+    total: number;
+    items?: Array<{
+      id: string;
+      date: string;
+      local: string;
+      value: number;
+      installment: string;
+      originalExp: any;
+    }>;
+  }[];
   formatCurrency: (v: number) => string;
 }
 
@@ -23,6 +34,7 @@ export function ReportsTab({ expenses, allCardInstallments = [], formatCurrency 
   const [activeReportTab, setActiveReportTab] = useState<'geral' | 'apagar' | 'faturas'>('geral');
   const [filter, setFilter] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
+  const [expandedInvoice, setExpandedInvoice] = useState<string | null>(null);
 
   const filteredExpenses = useMemo(() => {
     let result = expenses;
@@ -39,6 +51,10 @@ export function ReportsTab({ expenses, allCardInstallments = [], formatCurrency 
     }
     return [...result].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
   }, [expenses, filter, searchTerm]);
+
+  const toggleInvoice = (month: string) => {
+    setExpandedInvoice(expandedInvoice === month ? null : month);
+  };
 
   const FIXED_COSTS = 750; // 700 (terreno) + 50 (condominio)
   const PEOPLE_COUNT = 4; // Jorge, Mccley, Jan, Saulo
@@ -190,16 +206,73 @@ export function ReportsTab({ expenses, allCardInstallments = [], formatCurrency 
           <h3 className="text-lg font-bold mb-6 text-black">Faturas de Cartão (Total)</h3>
           <div className="space-y-4">
             {allCardInstallments.length > 0 ? (
-              allCardInstallments.map((item) => (
-                <div key={item.month} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-gray-50 rounded-xl border border-gray-100">
-                  <div className="text-base font-bold text-black capitalize">
-                    {format(new Date(parseInt(item.month.split('-')[0]), parseInt(item.month.split('-')[1]) - 1, 1), 'MMMM yyyy', { locale: ptBR })}
+              allCardInstallments.map((item) => {
+                const isExpanded = expandedInvoice === item.month;
+                
+                return (
+                  <div key={item.month} className="bg-gray-50 rounded-xl border border-gray-200 overflow-hidden">
+                    <button 
+                      onClick={() => toggleInvoice(item.month)}
+                      className="w-full flex flex-col sm:flex-row sm:items-center justify-between p-4 hover:bg-gray-100 transition-colors"
+                    >
+                      <div className="flex items-center gap-2">
+                        {isExpanded ? <ChevronUp size={20} className="text-gray-500" /> : <ChevronDown size={20} className="text-gray-500" />}
+                        <div className="text-base font-bold text-black capitalize">
+                          {format(new Date(parseInt(item.month.split('-')[0]), parseInt(item.month.split('-')[1]) - 1, 1), 'MMMM yyyy', { locale: ptBR })}
+                        </div>
+                      </div>
+                      <div className="text-xl font-bold text-black mt-2 sm:mt-0 text-left sm:text-right w-full sm:w-auto">
+                        {formatCurrency(item.total)}
+                      </div>
+                    </button>
+                    
+                    {isExpanded && item.items && item.items.length > 0 && (
+                      <div className="border-t border-gray-200 bg-white p-4">
+                        <div className="overflow-x-auto hide-scrollbar">
+                          <table className="w-full text-left border-collapse min-w-[500px]">
+                            <thead>
+                              <tr className="bg-gray-50 border-b border-black/5">
+                                <th className="px-4 py-3 text-xs font-bold uppercase text-black">Data da Compra</th>
+                                <th className="px-4 py-3 text-xs font-bold uppercase text-black">Local</th>
+                                <th className="px-4 py-3 text-xs font-bold uppercase text-black text-center">Parcela</th>
+                                <th className="px-4 py-3 text-xs font-bold uppercase text-black text-right">Valor</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-black/5">
+                              {item.items.sort((a, b) => (b.date || '').localeCompare(a.date || '')).map((detail, idx) => (
+                                <tr key={`${detail.id}-${idx}`} className="hover:bg-gray-50 transition-colors">
+                                  <td className="px-4 py-3 text-sm whitespace-nowrap">
+                                    {detail.date ? detail.date.split('-').reverse().join('/') : '-'}
+                                  </td>
+                                  <td className="px-4 py-3 text-sm font-medium text-black">
+                                    {detail.local}
+                                    {detail.originalExp?.observation && (
+                                      <div className="text-[10px] text-gray-500 font-normal italic mt-0.5 truncate max-w-[200px]" title={detail.originalExp.observation}>
+                                        {detail.originalExp.observation}
+                                      </div>
+                                    )}
+                                  </td>
+                                  <td className="px-4 py-3 text-sm font-medium text-center text-gray-600">
+                                    {detail.installment}
+                                  </td>
+                                  <td className="px-4 py-3 text-sm font-mono font-bold text-right whitespace-nowrap">
+                                    {formatCurrency(detail.value)}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+                    {isExpanded && (!item.items || item.items.length === 0) && (
+                       <div className="border-t border-gray-200 bg-white p-4 text-center text-sm text-gray-500">
+                         Detalhamento não disponível.
+                       </div>
+                    )}
                   </div>
-                  <div className="text-xl font-bold text-black mt-2 sm:mt-0">
-                    {formatCurrency(item.total)}
-                  </div>
-                </div>
-              ))
+                );
+              })
             ) : (
               <div className="text-center py-8 text-gray-500">Nenhuma fatura de cartão encontrada.</div>
             )}
