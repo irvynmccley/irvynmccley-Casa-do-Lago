@@ -13,10 +13,11 @@ import {
   LabelList,
   Legend
 } from 'recharts';
-import { Banknote, TrendingUp, CreditCard, BarChart as BarChartIcon, User, RefreshCw, Wallet, ChevronDown, ChevronUp } from 'lucide-react';
+import { Banknote, TrendingUp, CreditCard, BarChart as BarChartIcon, User, RefreshCw, Wallet, ChevronDown, ChevronUp, Download } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { Card } from './ui/Card';
+import { toPng } from 'html-to-image';
 
 const COLORS = ['#10b981', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6'];
 
@@ -77,18 +78,59 @@ export function Dashboard({ totalSpent, totalDonations, categoryTotals, cardInst
     setExpandedInvoice(expandedInvoice === month ? null : month);
   };
 
+  const exportAsImage = async (elementId: string, filename: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const element = document.getElementById(elementId);
+    if (!element) return;
+
+    try {
+      const dataUrl = await toPng(element, {
+        backgroundColor: '#ffffff',
+        style: {
+          padding: '24px',
+          borderRadius: '16px',
+        },
+        filter: (node) => {
+          // Filter out the chevron icon and export button from the generated image
+          if (node instanceof HTMLElement) {
+            if (node.classList?.contains('export-btn') || node.classList?.contains('chevron-icon')) {
+              return false;
+            }
+          }
+          return true;
+        }
+      });
+      
+      const link = document.createElement('a');
+      link.download = `${filename}.png`;
+      link.href = dataUrl;
+      link.click();
+    } catch (err) {
+      console.error('Error exporting image:', err);
+    }
+  };
+
   // Fixed costs calculation
   const FIXED_COSTS = 750; // 700 (terreno) + 50 (condominio)
   const PEOPLE_COUNT = 4; // Jorge, Mccley, Jan, Saulo
   const FIXED_PER_PERSON = FIXED_COSTS / PEOPLE_COUNT;
 
   // Calculate previous month value
-  const previousMonthValue = React.useMemo(() => {
-    if (!allCardInstallments) return null;
+  const previousMonthInfo = React.useMemo(() => {
     const now = new Date();
     // Get previous month key (e.g., "2026-03" if now is April 2026)
     const prevMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-    const prevMonthKey = format(prevMonthDate, 'yyyy-MM');
+    const prevMonthName = format(prevMonthDate, 'MMMM', { locale: ptBR });
+    
+    return {
+      date: prevMonthDate,
+      name: prevMonthName.charAt(0).toUpperCase() + prevMonthName.slice(1) // Capitalize
+    };
+  }, []);
+
+  const previousMonthValue = React.useMemo(() => {
+    if (!allCardInstallments) return null;
+    const prevMonthKey = format(previousMonthInfo.date, 'yyyy-MM');
     const prevMonthData = allCardInstallments.find(item => item.month === prevMonthKey);
     
     if (prevMonthData) {
@@ -96,20 +138,18 @@ export function Dashboard({ totalSpent, totalDonations, categoryTotals, cardInst
       return cardPerPerson + FIXED_PER_PERSON;
     }
     return null;
-  }, [allCardInstallments]);
+  }, [allCardInstallments, previousMonthInfo]);
 
   const previousMonthInvoiceTotal = React.useMemo(() => {
     if (!allCardInstallments) return null;
-    const now = new Date();
-    const prevMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-    const prevMonthKey = format(prevMonthDate, 'yyyy-MM');
+    const prevMonthKey = format(previousMonthInfo.date, 'yyyy-MM');
     const prevMonthData = allCardInstallments.find(item => item.month === prevMonthKey);
     
     if (prevMonthData) {
       return prevMonthData.total;
     }
     return null;
-  }, [allCardInstallments]);
+  }, [allCardInstallments, previousMonthInfo]);
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -195,7 +235,7 @@ export function Dashboard({ totalSpent, totalDonations, categoryTotals, cardInst
           
           {previousMonthInvoiceTotal !== null && (
             <div className="mb-4 text-[10px] font-medium text-red-600 bg-red-50 px-2 py-1 rounded-md inline-block self-start">
-              Mês anterior: {formatCurrency(previousMonthInvoiceTotal)}
+              {previousMonthInfo.name}: {formatCurrency(previousMonthInvoiceTotal)}
             </div>
           )}
           
@@ -241,7 +281,7 @@ export function Dashboard({ totalSpent, totalDonations, categoryTotals, cardInst
           
           {previousMonthValue !== null && (
             <div className="mb-4 text-xs font-medium text-red-600 bg-red-50 px-3 py-1.5 rounded-lg inline-block self-start">
-              Mês anterior: {formatCurrency(previousMonthValue)}
+              {previousMonthInfo.name}: {formatCurrency(previousMonthValue)}
             </div>
           )}
           
@@ -349,7 +389,7 @@ export function Dashboard({ totalSpent, totalDonations, categoryTotals, cardInst
             
             {previousMonthInvoiceTotal !== null && (
               <div className="mb-4 text-xs font-medium text-red-600 bg-red-50 px-3 py-1.5 rounded-lg inline-block self-start">
-                Mês anterior: {formatCurrency(previousMonthInvoiceTotal)}
+                {previousMonthInfo.name}: {formatCurrency(previousMonthInvoiceTotal)}
               </div>
             )}
             
@@ -358,24 +398,39 @@ export function Dashboard({ totalSpent, totalDonations, categoryTotals, cardInst
                 const isExpanded = expandedInvoice === item.month;
                 
                 return (
-                  <div key={item.month} className="bg-gray-50 rounded-xl border border-purple-100/50 hover:border-purple-200 transition-colors overflow-hidden">
-                    <button 
+                  <div key={item.month} id={`invoice-${item.month}`} className="bg-gray-50 rounded-xl border border-purple-100/50 hover:border-purple-200 transition-colors overflow-hidden relative">
+                    <div 
                       onClick={() => toggleInvoice(item.month)}
-                      className="w-full flex flex-col sm:flex-row sm:items-center justify-between p-3 sm:p-4 bg-gradient-to-r from-purple-50/50 to-transparent transition-colors"
+                      className="w-full flex flex-col sm:flex-row sm:items-center justify-between p-3 sm:p-4 bg-gradient-to-r from-purple-50/50 to-transparent transition-colors cursor-pointer"
+                      role="button"
+                      tabIndex={0}
                     >
                       <div className="flex items-center gap-2 mb-2 sm:mb-0">
-                        {isExpanded ? <ChevronUp size={20} className="text-purple-500" /> : <ChevronDown size={20} className="text-purple-500" />}
+                        <div className="chevron-icon">
+                          {isExpanded ? <ChevronUp size={20} className="text-purple-500" /> : <ChevronDown size={20} className="text-purple-500" />}
+                        </div>
                         <div className="text-sm font-bold text-black capitalize">
                           {format(new Date(parseInt(item.month.split('-')[0]), parseInt(item.month.split('-')[1]) - 1, 1), 'MMMM yyyy', { locale: ptBR })}
                         </div>
                       </div>
-                      <div className="text-lg sm:text-xl font-mono font-bold text-black bg-white px-4 py-2 rounded-xl shadow-sm border border-purple-50 flex-shrink-0 text-left sm:text-right w-full sm:w-auto">
-                        {formatCurrency(item.total)}
+                      <div className="flex items-center gap-4">
+                        <div className="text-lg sm:text-xl font-mono font-bold text-black bg-white px-4 py-2 rounded-xl shadow-sm border border-purple-50 flex-shrink-0 text-left sm:text-right w-full sm:w-auto">
+                          {formatCurrency(item.total)}
+                        </div>
+                        {isExpanded && (
+                          <button
+                            onClick={(e) => exportAsImage(`invoice-${item.month}`, `Fatura-${item.month}`, e)}
+                            className="export-btn p-2.5 bg-purple-100 text-purple-700 hover:bg-purple-200 rounded-lg transition-colors flex items-center justify-center shrink-0"
+                            title="Exportar como Imagem"
+                          >
+                            <Download size={18} />
+                          </button>
+                        )}
                       </div>
-                    </button>
+                    </div>
                     
                     {isExpanded && item.items && item.items.length > 0 && (
-                      <div className="border-t border-purple-100 bg-white p-4">
+                      <div className="border-t border-purple-100 bg-white p-4 breakdown-section">
                         <div className="overflow-x-auto hide-scrollbar">
                           <table className="w-full text-left border-collapse min-w-[500px]">
                             <thead>

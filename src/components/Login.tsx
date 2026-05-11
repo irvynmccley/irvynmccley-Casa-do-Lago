@@ -17,7 +17,7 @@ export function Login() {
       // Add a timeout to prevent hanging forever
       const authPromise = supabase.auth.signInWithPassword({ email, password });
       const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Tempo limite de conexão excedido. Tente novamente.')), 15000)
+        setTimeout(() => reject(new Error('Tempo limite de conexão excedido. O banco de dados (Supabase) pode estar pausado por inatividade, ou sua internet está instável. Acesse o painel do Supabase para reativá-lo se necessário.')), 20000)
       );
       
       const { data, error } = await Promise.race([authPromise, timeoutPromise]) as any;
