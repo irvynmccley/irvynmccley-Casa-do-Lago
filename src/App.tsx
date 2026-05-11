@@ -22,6 +22,7 @@ import { ExpensesTab } from './components/ExpensesTab';
 import { IncomesTab } from './components/IncomesTab';
 import { ReportsTab } from './components/ReportsTab';
 import { TerrenoTab } from './components/TerrenoTab';
+import { ConfigTab } from './components/ConfigTab';
 import { Login } from './components/Login';
 import { supabase } from './supabaseClient';
 import { Toaster, toast } from 'sonner';
@@ -128,7 +129,42 @@ function App() {
     const shared = params.get('shared') === 'true';
     setIsSharedMode(shared);
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    // Pre-emptively check for broken tokens in localStorage before even calling getSession
+    try {
+      let hasBrokenToken = false;
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith('sb-') && key.endsWith('-auth-token')) {
+          const tokenData = localStorage.getItem(key);
+          if (tokenData && (tokenData.includes('Refresh Token Not Found') || tokenData.includes('invalid_refresh_token'))) {
+            hasBrokenToken = true;
+            localStorage.removeItem(key);
+          }
+        }
+      }
+      if (hasBrokenToken) {
+        console.warn("Cleared broken auth token from localStorage before session check");
+      }
+    } catch (e) {}
+
+    supabase.auth.getSession().then(({ data: { session }, error }) => {
+      if (error) {
+        console.error("Error getting session:", error);
+        if (error.message?.includes('Refresh Token') || error.message?.includes('refresh_token') || error.message?.includes('not found')) {
+          // Force clear local storage to remove broken session
+          for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            if (key && key.startsWith('sb-') && key.endsWith('-auth-token')) {
+              localStorage.removeItem(key);
+            }
+          }
+          supabase.auth.signOut().catch(() => {});
+        }
+        setUser(null);
+        setIsAuthReady(true);
+        return;
+      }
+
       if (session?.user) {
         if (!shared && session.user.is_anonymous) {
           supabase.auth.signOut().then(() => {
@@ -167,16 +203,19 @@ function App() {
         setIsAuthReady(true);
       }
     }).catch(err => {
-      console.error("Error getting session:", err);
-      // Se o token de atualização não for encontrado ou for inválido, limpa a sessão local
-      if (err?.message?.includes('Refresh Token Not Found') || err?.message?.includes('invalid_refresh_token')) {
-        supabase.auth.signOut().then(() => {
-          setUser(null);
-          setIsAuthReady(true);
-        });
-      } else {
-        setIsAuthReady(true);
-      }
+      console.error("Unexpected error getting session:", err);
+      
+      // Aggressive cleanup on any unexpected session error
+      try {
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && key.startsWith('sb-') && key.endsWith('-auth-token')) {
+            localStorage.removeItem(key);
+          }
+        }
+      } catch (e) {}
+      
+      setIsAuthReady(true);
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
@@ -376,7 +415,7 @@ function App() {
   }, [state.expenses]);
 
   const allCardInstallmentsByMonth = useMemo(() => {
-    const monthlyTotals: Record<string, number> = {};
+    const monthlyTotals: Record<string, { total: number, items: Array<{id: string, date: string, local: string, value: number, installment: string, originalExp: any}> }> = {};
     
     state.expenses.filter(e => e.paymentMethod === 'Cartão').forEach(exp => {
       if (!exp.date || !exp.date.includes('-')) return;
@@ -402,12 +441,23 @@ function App() {
       for (let i = 0; i < installments; i++) {
         const installmentDate = new Date(year, month + startMonthOffset + i, 1);
         const monthKey = format(installmentDate, 'yyyy-MM');
-        monthlyTotals[monthKey] = (monthlyTotals[monthKey] || 0) + valuePerInstallment;
+        if (!monthlyTotals[monthKey]) {
+          monthlyTotals[monthKey] = { total: 0, items: [] };
+        }
+        monthlyTotals[monthKey].total += valuePerInstallment;
+        monthlyTotals[monthKey].items.push({
+          id: exp.id,
+          date: exp.date,
+          local: exp.local || '',
+          value: valuePerInstallment,
+          installment: `${i + 1}/${installments}`,
+          originalExp: exp,
+        });
       }
     });
 
     return Object.entries(monthlyTotals)
-      .map(([month, total]) => ({ month, total }))
+      .map(([month, data]) => ({ month, total: data.total, items: data.items }))
       .sort((a, b) => b.month.localeCompare(a.month)); // descending
   }, [state.expenses]);
 
@@ -821,7 +871,7 @@ function App() {
             formatCurrency={formatCurrency}
           />
         )}
-        {activeTab === 'config' && <PlaceholderTab title="Configurações" />}
+        {activeTab === 'config' && <ConfigTab state={state} />}
         {activeTab === 'sobre' && <PlaceholderTab title="Sobre o Sistema" />}
       </main>
       <Toaster position="top-center" richColors />
