@@ -137,7 +137,7 @@ export function Dashboard({ totalSpent, totalDonations, categoryTotals, cardInst
       const cardPerPerson = prevMonthData.total / PEOPLE_COUNT;
       return cardPerPerson + FIXED_PER_PERSON;
     }
-    return null;
+    return FIXED_PER_PERSON;
   }, [allCardInstallments, previousMonthInfo]);
 
   const previousMonthInvoiceTotal = React.useMemo(() => {
@@ -148,7 +148,7 @@ export function Dashboard({ totalSpent, totalDonations, categoryTotals, cardInst
     if (prevMonthData) {
       return prevMonthData.total;
     }
-    return null;
+    return 0; // fallback to 0
   }, [allCardInstallments, previousMonthInfo]);
 
   return (
