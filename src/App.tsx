@@ -27,6 +27,7 @@ import { Login } from './components/Login';
 import { supabase } from './supabaseClient';
 import { Toaster, toast } from 'sonner';
 import { ConfirmDialog } from './components/ui/ConfirmDialog';
+import { useOfflineSync } from './hooks/useOfflineSync';
 
 const ENABLE_SUPABASE_SYNC = true; // Trava de segurança
 
@@ -67,6 +68,21 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
   }
 
   static getDerivedStateFromError(error: Error) {
+    if (error.message?.includes('Refresh Token') || error.message?.includes('refresh_token') || error.message?.includes('not found') || error.message?.includes('Invalid Refresh Token')) {
+      try {
+        let cleared = false;
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && key.startsWith('sb-') && key.endsWith('-auth-token')) {
+            localStorage.removeItem(key);
+            cleared = true;
+          }
+        }
+        if (cleared) {
+          window.location.reload();
+        }
+      } catch (e) {}
+    }
     return { hasError: true, error };
   }
 
@@ -318,6 +334,8 @@ function App() {
     }));
   }, [isSharedMode]);
 
+  const { isOffline, isSyncing, saveToOfflineQueue } = useOfflineSync(fetchAllData);
+
   useEffect(() => {
     if (!isAuthReady) return;
 
@@ -531,15 +549,30 @@ function App() {
       toast.success("Lançamento com Sucesso");
       return;
     }
+    const cleanExpense = Object.fromEntries(Object.entries(expense).filter(([_, v]) => v !== undefined));
+    const payload = { ...cleanExpense, createdBy: user?.id };
+    
+    if (isOffline) {
+       saveToOfflineQueue('ADD_EXPENSE', payload);
+       setState(prev => ({ ...prev, expenses: [{ ...payload, id: 'temp-' + Date.now().toString() } as Expense, ...prev.expenses] }));
+       toast.success("Salvo offline. Rastreando até reconectar.");
+       return;
+    }
+
     try {
-      const cleanExpense = Object.fromEntries(Object.entries(expense).filter(([_, v]) => v !== undefined));
-      const { error } = await supabase.from('expenses').insert({ ...cleanExpense, createdBy: user?.id });
+      const { error } = await supabase.from('expenses').insert(payload);
       if (error) throw error;
       await fetchAllData();
       toast.success("Lançamento com Sucesso");
     } catch (error: any) {
       console.error("Error adding expense: ", error);
-      toast.error(`Erro ao adicionar despesa: ${error.message || 'Verifique suas permissões.'}`);
+      if (error.message && (error.message.includes('FetchError') || error.message.includes('Failed to fetch') || error.message.includes('network'))) {
+         saveToOfflineQueue('ADD_EXPENSE', payload);
+         setState(prev => ({ ...prev, expenses: [{ ...payload, id: 'temp-' + Date.now().toString() } as Expense, ...prev.expenses] }));
+         toast.success("Salvo offline (Erro de rede).");
+      } else {
+         toast.error(`Erro ao adicionar despesa: ${error.message || 'Verifique suas permissões.'}`);
+      }
     }
   };
 
@@ -549,15 +582,29 @@ function App() {
       toast.success("Lançamento alterado com sucesso");
       return;
     }
+    const cleanExpense = Object.fromEntries(Object.entries(expense).filter(([_, v]) => v !== undefined));
+
+    if (isOffline) {
+       saveToOfflineQueue('EDIT_EXPENSE', cleanExpense, id);
+       setState(prev => ({ ...prev, expenses: prev.expenses.map(e => e.id === id ? { ...e, ...cleanExpense } as Expense : e) }));
+       toast.success("Editado offline. Será sincronizado na próxima conexão.");
+       return;
+    }
+
     try {
-      const cleanExpense = Object.fromEntries(Object.entries(expense).filter(([_, v]) => v !== undefined));
       const { error } = await supabase.from('expenses').update(cleanExpense).eq('id', id);
       if (error) throw error;
       await fetchAllData();
       toast.success("Lançamento alterado com sucesso");
     } catch (error: any) {
       console.error("Error editing expense: ", error);
-      toast.error(`Erro ao editar despesa: ${error.message || 'Verifique suas permissões.'}`);
+      if (error.message && (error.message.includes('FetchError') || error.message.includes('Failed to fetch') || error.message.includes('network'))) {
+         saveToOfflineQueue('EDIT_EXPENSE', cleanExpense, id);
+         setState(prev => ({ ...prev, expenses: prev.expenses.map(e => e.id === id ? { ...e, ...cleanExpense } as Expense : e) }));
+         toast.success("Editado offline (Erro de rede).");
+      } else {
+         toast.error(`Erro ao editar despesa: ${error.message || 'Verifique suas permissões.'}`);
+      }
     }
   };
 
@@ -567,14 +614,29 @@ function App() {
       toast.success("Lançamento com Sucesso");
       return;
     }
+    const payload = { ...income, createdBy: user?.id };
+
+    if (isOffline) {
+       saveToOfflineQueue('ADD_INCOME', payload);
+       setState(prev => ({ ...prev, incomes: [{ ...payload, id: 'temp-' + Date.now().toString() } as Income, ...prev.incomes] }));
+       toast.success("Salvo offline. Será sincronizado na próxima conexão.");
+       return;
+    }
+
     try {
-      const { error } = await supabase.from('incomes').insert({ ...income, createdBy: user?.id });
+      const { error } = await supabase.from('incomes').insert(payload);
       if (error) throw error;
       await fetchAllData();
       toast.success("Lançamento com Sucesso");
     } catch (error: any) {
       console.error("Error adding income: ", error);
-      toast.error(`Erro ao adicionar entrada: ${error.message || 'Verifique suas permissões.'}`);
+      if (error.message && (error.message.includes('FetchError') || error.message.includes('Failed to fetch') || error.message.includes('network'))) {
+         saveToOfflineQueue('ADD_INCOME', payload);
+         setState(prev => ({ ...prev, incomes: [{ ...payload, id: 'temp-' + Date.now().toString() } as Income, ...prev.incomes] }));
+         toast.success("Salvo offline (Erro de rede).");
+      } else {
+         toast.error(`Erro ao adicionar entrada: ${error.message || 'Verifique suas permissões.'}`);
+      }
     }
   };
 
@@ -584,14 +646,29 @@ function App() {
       toast.success("Lançamento com Sucesso");
       return;
     }
+    const payload = { ...payment, createdBy: user?.id };
+    
+    if (isOffline) {
+       saveToOfflineQueue('ADD_PAYMENT', payload);
+       setState(prev => ({ ...prev, payments: [{ ...payload, id: 'temp-' + Date.now().toString() } as Payment, ...prev.payments] }));
+       toast.success("Salvo offline. Rastreando até reconectar.");
+       return;
+    }
+
     try {
-      const { error } = await supabase.from('payments').insert({ ...payment, createdBy: user?.id });
+      const { error } = await supabase.from('payments').insert(payload);
       if (error) throw error;
       await fetchAllData();
       toast.success("Lançamento com Sucesso");
     } catch (error: any) {
       console.error("Error adding payment: ", error);
-      toast.error(`Erro ao adicionar pagamento: ${error.message || 'Verifique suas permissões.'}`);
+      if (error.message && (error.message.includes('FetchError') || error.message.includes('Failed to fetch') || error.message.includes('network'))) {
+         saveToOfflineQueue('ADD_PAYMENT', payload);
+         setState(prev => ({ ...prev, payments: [{ ...payload, id: 'temp-' + Date.now().toString() } as Payment, ...prev.payments] }));
+         toast.success("Salvo offline (Erro de rede).");
+      } else {
+         toast.error(`Erro ao adicionar pagamento: ${error.message || 'Verifique suas permissões.'}`);
+      }
     }
   };
 
@@ -601,6 +678,14 @@ function App() {
       toast.success("Lançamento excluído com sucesso");
       return;
     }
+    
+    if (isOffline) {
+       saveToOfflineQueue('DELETE_EXPENSE', null, id);
+       setState(prev => ({ ...prev, expenses: prev.expenses.filter(e => e.id !== id) }));
+       toast.success("Excluído offline. Será sincronizado na próxima conexão.");
+       return;
+    }
+
     try {
       const { error } = await supabase.from('expenses').delete().eq('id', id);
       if (error) throw error;
@@ -608,7 +693,13 @@ function App() {
       toast.success("Lançamento excluído com sucesso");
     } catch (error: any) {
       console.error("Error deleting expense: ", error);
-      toast.error(`Erro ao deletar despesa: ${error.message || 'Verifique suas permissões.'}`);
+      if (error.message && (error.message.includes('FetchError') || error.message.includes('Failed to fetch') || error.message.includes('network'))) {
+         saveToOfflineQueue('DELETE_EXPENSE', null, id);
+         setState(prev => ({ ...prev, expenses: prev.expenses.filter(e => e.id !== id) }));
+         toast.success("Excluído offline (Erro de rede).");
+      } else {
+         toast.error(`Erro ao deletar despesa: ${error.message || 'Verifique suas permissões.'}`);
+      }
     }
   };
 
@@ -618,15 +709,29 @@ function App() {
       toast.success("Lançamento alterado com sucesso");
       return;
     }
+    const cleanIncome = Object.fromEntries(Object.entries(income).filter(([_, v]) => v !== undefined));
+
+    if (isOffline) {
+       saveToOfflineQueue('EDIT_INCOME', cleanIncome, id);
+       setState(prev => ({ ...prev, incomes: prev.incomes.map(i => i.id === id ? { ...i, ...cleanIncome } as Income : i) }));
+       toast.success("Editado offline. Será sincronizado na próxima conexão.");
+       return;
+    }
+
     try {
-      const cleanIncome = Object.fromEntries(Object.entries(income).filter(([_, v]) => v !== undefined));
       const { error } = await supabase.from('incomes').update(cleanIncome).eq('id', id);
       if (error) throw error;
       await fetchAllData();
       toast.success("Lançamento alterado com sucesso");
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error editing income: ", error);
-      toast.error("Erro ao editar entrada. Verifique suas permissões.");
+      if (error.message && (error.message.includes('FetchError') || error.message.includes('Failed to fetch') || error.message.includes('network'))) {
+         saveToOfflineQueue('EDIT_INCOME', cleanIncome, id);
+         setState(prev => ({ ...prev, incomes: prev.incomes.map(i => i.id === id ? { ...i, ...cleanIncome } as Income : i) }));
+         toast.success("Editado offline (Erro de rede).");
+      } else {
+         toast.error("Erro ao editar entrada. Verifique suas permissões.");
+      }
     }
   };
 
@@ -636,6 +741,14 @@ function App() {
       toast.success("Lançamento excluído com sucesso");
       return;
     }
+
+    if (isOffline) {
+       saveToOfflineQueue('DELETE_INCOME', null, id);
+       setState(prev => ({ ...prev, incomes: prev.incomes.filter(i => i.id !== id) }));
+       toast.success("Excluído offline. Será sincronizado na próxima conexão.");
+       return;
+    }
+
     try {
       const { error } = await supabase.from('incomes').delete().eq('id', id);
       if (error) throw error;
@@ -643,7 +756,13 @@ function App() {
       toast.success("Lançamento excluído com sucesso");
     } catch (error: any) {
       console.error("Error deleting income: ", error);
-      toast.error(`Erro ao deletar entrada: ${error.message || 'Verifique suas permissões.'}`);
+      if (error.message && (error.message.includes('FetchError') || error.message.includes('Failed to fetch') || error.message.includes('network'))) {
+         saveToOfflineQueue('DELETE_INCOME', null, id);
+         setState(prev => ({ ...prev, incomes: prev.incomes.filter(i => i.id !== id) }));
+         toast.success("Excluído offline (Erro de rede).");
+      } else {
+         toast.error(`Erro ao deletar entrada: ${error.message || 'Verifique suas permissões.'}`);
+      }
     }
   };
 
@@ -653,6 +772,14 @@ function App() {
       toast.success("Lançamento excluído com sucesso");
       return;
     }
+    
+    if (isOffline) {
+       saveToOfflineQueue('DELETE_PAYMENT', null, id);
+       setState(prev => ({ ...prev, payments: prev.payments.filter(p => p.id !== id) }));
+       toast.success("Excluído offline. Será sincronizado na próxima conexão.");
+       return;
+    }
+
     try {
       const { error } = await supabase.from('payments').delete().eq('id', id);
       if (error) throw error;
@@ -660,7 +787,13 @@ function App() {
       toast.success("Lançamento excluído com sucesso");
     } catch (error: any) {
       console.error("Error deleting payment: ", error);
-      toast.error(`Erro ao deletar pagamento: ${error.message || 'Verifique suas permissões.'}`);
+      if (error.message && (error.message.includes('FetchError') || error.message.includes('Failed to fetch') || error.message.includes('network'))) {
+         saveToOfflineQueue('DELETE_PAYMENT', null, id);
+         setState(prev => ({ ...prev, payments: prev.payments.filter(p => p.id !== id) }));
+         toast.success("Excluído offline (Erro de rede).");
+      } else {
+         toast.error(`Erro ao deletar pagamento: ${error.message || 'Verifique suas permissões.'}`);
+      }
     }
   };
 
@@ -709,6 +842,11 @@ function App() {
     setState(prev => ({ ...prev, terrenoPaidInstallments: newPaid }));
 
     if (ENABLE_SUPABASE_SYNC) {
+      if (isOffline) {
+        saveToOfflineQueue('TOGGLE_TERRENO', { action: isPaid ? 'delete' : 'insert' }, id);
+        toast.success("Ação salva offline. Será sincronizada na próxima conexão.");
+        return;
+      }
       try {
         if (isPaid) {
           const { error } = await supabase.from('terreno_installments').delete().eq('id', id);
@@ -719,9 +857,14 @@ function App() {
         }
       } catch (error: any) {
         console.error("Error syncing terreno payment: ", error);
-        // Revert state on error
-        setState(prev => ({ ...prev, terrenoPaidInstallments: currentPaid }));
-        toast.error(`Erro ao sincronizar pagamento: ${error.message || "Tabela 'terreno_installments' não encontrada."}`);
+        if (error.message && (error.message.includes('FetchError') || error.message.includes('Failed to fetch') || error.message.includes('network'))) {
+           saveToOfflineQueue('TOGGLE_TERRENO', { action: isPaid ? 'delete' : 'insert' }, id);
+           toast.success("Ação salva offline (Erro de rede).");
+        } else {
+           // Revert state on error if it's a hard error
+           setState(prev => ({ ...prev, terrenoPaidInstallments: currentPaid }));
+           toast.error(`Erro ao sincronizar pagamento: ${error.message || "Tabela 'terreno_installments' não encontrada."}`);
+        }
       }
     }
   };
