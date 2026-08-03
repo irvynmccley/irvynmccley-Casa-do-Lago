@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { supabase } from '../supabaseClient';
-import { Lock, AlertCircle, ArrowRight } from 'lucide-react';
+import { AlertCircle, ArrowRight, User, KeyRound, Building2 } from 'lucide-react';
 
 export function Login() {
   const [error, setError] = useState('');
@@ -44,76 +44,103 @@ export function Login() {
   };
 
   return (
-    <div className="min-h-screen bg-[#f8f9fc] text-[#0a192f] flex flex-col justify-center py-12 sm:px-6 lg:px-8 font-sans">
-      <div className="sm:mx-auto sm:w-full sm:max-w-md">
-        <div className="flex justify-center">
-          <div className="w-16 h-16 bg-[#0a192f] rounded-2xl flex items-center justify-center shadow-lg shadow-blue-900/20">
-            <Lock className="text-white" size={32} />
-          </div>
-        </div>
-        <h2 className="mt-6 text-center text-3xl font-bold text-[#0a192f]">
-          Casa do Lago
-        </h2>
-        <p className="mt-2 text-center text-sm text-gray-500">
-          Faça login para acessar o painel financeiro
-        </p>
-      </div>
+    <div className="min-h-screen bg-[#020817] flex items-center justify-center p-4 relative overflow-hidden font-sans selection:bg-blue-500/30">
+      {/* Elementos de fundo dinâmicos */}
+      <div className="absolute top-[-10%] left-[-10%] w-96 h-96 bg-blue-600 rounded-full mix-blend-screen filter blur-[100px] opacity-20 animate-pulse"></div>
+      <div className="absolute bottom-[-10%] right-[-10%] w-96 h-96 bg-indigo-600 rounded-full mix-blend-screen filter blur-[100px] opacity-20 animate-pulse" style={{ animationDelay: '2s' }}></div>
+      <div className="absolute top-[40%] left-[60%] w-72 h-72 bg-emerald-600 rounded-full mix-blend-screen filter blur-[100px] opacity-10 animate-pulse" style={{ animationDelay: '4s' }}></div>
 
-      <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
-        <div className="bg-white py-8 px-4 shadow-sm sm:rounded-2xl sm:px-10 border border-gray-100">
+      <div className="w-full max-w-md relative z-10">
+        <div className="text-center mb-10">
+          <div className="mx-auto w-20 h-20 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl flex items-center justify-center shadow-2xl shadow-blue-500/20 mb-6 transform hover:scale-105 transition-transform duration-300 ring-1 ring-white/10">
+            <Building2 className="text-white" size={36} strokeWidth={1.5} />
+          </div>
+          <h2 className="text-4xl font-extrabold text-white tracking-tight">
+            Casa do Lago
+          </h2>
+          <p className="mt-3 text-slate-400 font-medium text-sm tracking-wide uppercase">
+            Sistema de Gestão Financeira
+          </p>
+        </div>
+
+        <div className="bg-slate-900/60 backdrop-blur-xl rounded-3xl p-8 shadow-2xl border border-slate-800/60 relative overflow-hidden">
+          {/* Brilho sutil no topo do card */}
+          <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-blue-500/50 to-transparent"></div>
+
           <form onSubmit={handleSubmit} className="space-y-6">
             {error && (
-              <div className="bg-red-50 border border-red-100 p-4 rounded-xl flex items-start gap-3">
-                <AlertCircle className="text-red-500 mt-0.5" size={18} />
-                <p className="text-sm text-red-700">{error}</p>
+              <div className="bg-red-500/10 border border-red-500/20 p-4 rounded-2xl flex items-start gap-3 backdrop-blur-md">
+                <AlertCircle className="text-red-400 mt-0.5 shrink-0" size={18} />
+                <p className="text-sm text-red-200/90 leading-relaxed">{error}</p>
               </div>
             )}
             
-            <div>
-              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
-                E-mail
-              </label>
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="w-full px-4 py-3 rounded-xl bg-[#f8f9fc] border-none focus:ring-2 focus:ring-[#0a192f] outline-none transition-all text-gray-800"
-                placeholder="admin@projeto.com"
-                required
-              />
+            <div className="space-y-5">
+              <div className="group">
+                <label className="block text-xs font-semibold text-slate-400 mb-2 uppercase tracking-wider group-focus-within:text-blue-400 transition-colors">
+                  E-mail de Acesso
+                </label>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-500 group-focus-within:text-blue-400 transition-colors">
+                    <User size={18} />
+                  </div>
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="w-full pl-11 pr-4 py-3.5 rounded-2xl bg-slate-950/50 border border-slate-800 text-slate-200 placeholder-slate-600 focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 outline-none transition-all shadow-inner"
+                    placeholder="admin@projeto.com"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="group">
+                <label className="block text-xs font-semibold text-slate-400 mb-2 uppercase tracking-wider group-focus-within:text-blue-400 transition-colors">
+                  Senha
+                </label>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-500 group-focus-within:text-blue-400 transition-colors">
+                    <KeyRound size={18} />
+                  </div>
+                  <input
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="w-full pl-11 pr-4 py-3.5 rounded-2xl bg-slate-950/50 border border-slate-800 text-slate-200 placeholder-slate-600 focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 outline-none transition-all shadow-inner"
+                    placeholder="••••••••"
+                    required
+                  />
+                </div>
+              </div>
             </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
-                Senha
-              </label>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full px-4 py-3 rounded-xl bg-[#f8f9fc] border-none focus:ring-2 focus:ring-[#0a192f] outline-none transition-all text-gray-800"
-                placeholder="••••••••"
-                required
-              />
-            </div>
-
-            <div>
-              <button
-                type="submit"
-                disabled={isLoading}
-                className="w-full flex justify-center items-center gap-3 py-3.5 px-4 border border-transparent rounded-xl shadow-sm text-sm font-medium text-white bg-[#0a192f] hover:bg-[#112a4a] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#0a192f] disabled:opacity-70 transition-colors"
-              >
-                {isLoading ? 'Aguarde...' : 'Entrar no Painel'}
-              </button>
-            </div>
+            <button
+              type="submit"
+              disabled={isLoading}
+              className="w-full py-4 px-4 rounded-2xl text-sm font-bold text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-[#020817] focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg shadow-blue-500/25 flex justify-center items-center gap-2 group mt-4 border border-blue-500/20"
+            >
+              {isLoading ? (
+                <>
+                  <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  <span>Autenticando...</span>
+                </>
+              ) : (
+                <>
+                  <span>Acessar Painel</span>
+                  <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
+                </>
+              )}
+            </button>
           </form>
 
-          <div className="mt-8 pt-6 border-t border-gray-100">
+          <div className="mt-8 pt-6 border-t border-slate-800/60">
             <a 
               href="?shared=true" 
-              className="w-full flex justify-center items-center gap-2 py-3 px-4 border border-gray-200 rounded-xl shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-200 transition-colors"
+              className="w-full flex justify-center items-center gap-2 py-3.5 px-4 border border-slate-700/50 rounded-2xl text-sm font-medium text-slate-400 bg-slate-900/30 hover:bg-slate-800 hover:text-slate-200 hover:border-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-700 transition-all group"
             >
-              Acesso Restrito: Mestre de Obras <ArrowRight size={16} />
+              <span>Acesso Restrito: <strong className="font-semibold text-slate-300 group-hover:text-white">Mestre de Obras</strong></span>
+              <ArrowRight size={16} className="opacity-50 group-hover:opacity-100 group-hover:translate-x-1 transition-all" />
             </a>
           </div>
         </div>

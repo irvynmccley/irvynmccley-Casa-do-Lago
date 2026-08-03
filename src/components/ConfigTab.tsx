@@ -144,28 +144,28 @@ export function ConfigTab({ state }: ConfigTabProps) {
   };
 
   return (
-    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 relative z-10">
       <header className="flex items-center justify-between">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight mb-2">Configurações</h2>
-          <p className="text-black">Gerencie as configurações do sistema e backups</p>
+          <h2 className="text-3xl font-bold tracking-tight mb-2 text-white drop-shadow-sm">Configurações</h2>
+          <p className="text-slate-400 font-medium tracking-wide">Gerencie as configurações do sistema e backups</p>
         </div>
       </header>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+        <div className="bg-slate-900/60 backdrop-blur-xl rounded-2xl border border-slate-700/50 shadow-xl p-6 ring-1 ring-white/5 hover:bg-slate-800/60 transition-colors">
           <div className="flex items-start gap-4">
-            <div className="p-3 bg-blue-50 text-blue-600 rounded-xl">
+            <div className="p-3 bg-blue-500/10 text-blue-400 rounded-xl ring-1 ring-blue-500/20 shadow-[0_0_15px_rgba(59,130,246,0.1)]">
               <Database size={24} />
             </div>
             <div className="flex-1">
-              <h3 className="text-lg font-bold mb-1">Backup Completo (JSON)</h3>
-              <p className="text-sm text-gray-600 mb-4">
+              <h3 className="text-lg font-bold mb-1 text-white">Backup Completo (JSON)</h3>
+              <p className="text-sm text-slate-400 mb-5">
                 Exporte todos os dados do sistema em um único arquivo JSON. Ideal para restauração futura ou migração.
               </p>
               <button
                 onClick={handleBackupJSON}
-                className="flex items-center gap-2 bg-[#0a192f] text-white px-4 py-2 rounded-xl font-medium hover:bg-[#112240] transition-colors"
+                className="flex items-center justify-center gap-2 w-full sm:w-auto bg-slate-800 text-slate-200 px-5 py-2.5 rounded-xl font-bold hover:bg-slate-700 hover:text-white transition-all ring-1 ring-slate-600/50"
               >
                 <Download size={18} />
                 Baixar JSON
@@ -174,27 +174,27 @@ export function ConfigTab({ state }: ConfigTabProps) {
           </div>
         </div>
 
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+        <div className="bg-slate-900/60 backdrop-blur-xl rounded-2xl border border-slate-700/50 shadow-xl p-6 ring-1 ring-white/5 hover:bg-slate-800/60 transition-colors">
           <div className="flex items-start gap-4">
-            <div className="p-3 bg-emerald-50 text-emerald-600 rounded-xl">
+            <div className="p-3 bg-emerald-500/10 text-emerald-400 rounded-xl ring-1 ring-emerald-500/20 shadow-[0_0_15px_rgba(16,185,129,0.1)]">
               <FileSpreadsheet size={24} />
             </div>
             <div className="flex-1">
-              <h3 className="text-lg font-bold mb-1">Exportar Planilhas</h3>
-              <p className="text-sm text-gray-600 mb-4">
+              <h3 className="text-lg font-bold mb-1 text-white">Exportar Planilhas</h3>
+              <p className="text-sm text-slate-400 mb-5">
                 Baixe todos os lançamentos em um único arquivo para visualizar no Excel ou Google Sheets.
               </p>
               <div className="flex flex-col sm:flex-row gap-3">
                 <button
                   onClick={handleBackupExcel}
-                  className="flex items-center justify-center gap-2 bg-emerald-600 text-white px-4 py-2 rounded-xl font-medium hover:bg-emerald-700 transition-colors"
+                  className="flex items-center justify-center gap-2 flex-1 bg-gradient-to-r from-emerald-600 to-teal-600 text-white px-4 py-2.5 rounded-xl font-bold hover:from-emerald-500 hover:to-teal-500 transition-all ring-1 ring-emerald-500/30 shadow-lg shadow-emerald-500/20"
                 >
                   <FileSpreadsheet size={18} />
                   Baixar Excel (.xlsx)
                 </button>
                 <button
                   onClick={handleBackupCSV}
-                  className="flex items-center justify-center gap-2 bg-gray-100 text-gray-800 px-4 py-2 rounded-xl font-medium hover:bg-gray-200 transition-colors"
+                  className="flex items-center justify-center gap-2 flex-1 bg-slate-800 text-slate-300 px-4 py-2.5 rounded-xl font-bold hover:bg-slate-700 hover:text-white transition-all ring-1 ring-slate-600/50"
                 >
                   <FileText size={18} />
                   Baixar CSV

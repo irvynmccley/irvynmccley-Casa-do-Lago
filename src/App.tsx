@@ -27,7 +27,7 @@ import { Login } from './components/Login';
 import { supabase } from './supabaseClient';
 import { Toaster, toast } from 'sonner';
 import { ConfirmDialog } from './components/ui/ConfirmDialog';
-import { useOfflineSync } from './hooks/useOfflineSync';
+import { useOfflineSync } from './useOfflineSync';
 
 const ENABLE_SUPABASE_SYNC = true; // Trava de segurança
 
@@ -93,14 +93,14 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
   render() {
     if (this.state.hasError) {
       return (
-        <div className="min-h-screen flex flex-col items-center justify-center bg-[#f5f5f5] text-black p-4">
-          <h1 className="text-2xl font-bold text-red-600 mb-4">Algo deu errado.</h1>
-          <pre className="bg-white p-4 rounded-xl shadow-sm text-sm overflow-auto max-w-full">
+        <div className="min-h-screen flex flex-col items-center justify-center bg-[#020817] text-slate-200 p-4">
+          <h1 className="text-2xl font-bold text-red-400 mb-4">Algo deu errado.</h1>
+          <pre className="bg-slate-900/60 p-4 rounded-xl border border-slate-800 text-sm overflow-auto max-w-full text-slate-300">
             {this.state.error?.toString()}
           </pre>
           <button 
             onClick={() => window.location.reload()}
-            className="mt-6 px-4 py-2 bg-[#0a192f] text-white rounded-xl"
+            className="mt-6 px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl shadow-lg shadow-blue-500/20"
           >
             Recarregar página
           </button>
@@ -874,7 +874,7 @@ function App() {
   };
 
   if (!isAuthReady) {
-    return <div className="min-h-screen flex items-center justify-center bg-[#f5f5f5] text-black">Carregando...</div>;
+    return <div className="min-h-screen flex items-center justify-center bg-[#020817] text-slate-200 font-sans"><div className="w-8 h-8 border-4 border-blue-500/30 border-t-blue-500 rounded-full animate-spin"></div></div>;
   }
 
   if (!user && !isSharedMode) {
@@ -882,33 +882,37 @@ function App() {
   }
 
   return (
-    <div className="min-h-screen bg-[#f5f5f5] text-black font-sans">
+    <div className="min-h-screen bg-[#020817] text-slate-200 font-sans relative overflow-x-hidden selection:bg-blue-500/30">
+      {/* Background Orbs */}
+      <div className="fixed top-[-10%] left-[-10%] w-96 h-96 bg-blue-600 rounded-full mix-blend-screen filter blur-[100px] opacity-10 animate-pulse pointer-events-none z-0"></div>
+      <div className="fixed bottom-[-10%] right-[-10%] w-96 h-96 bg-indigo-600 rounded-full mix-blend-screen filter blur-[100px] opacity-10 animate-pulse pointer-events-none z-0" style={{ animationDelay: '2s' }}></div>
+
       {/* Sidebar / Navigation */}
-      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-black/5 px-4 py-2 flex justify-around items-center z-50 md:top-0 md:bottom-auto md:flex-col md:w-64 md:h-screen md:border-t-0 md:border-r md:justify-start md:py-8 md:gap-4">
+      <nav className="fixed bottom-0 left-0 right-0 bg-slate-950/80 backdrop-blur-xl border-t border-slate-800/60 px-4 py-2 flex justify-around items-center z-50 md:top-0 md:bottom-auto md:flex-col md:w-64 md:h-screen md:border-t-0 md:border-r md:border-slate-800/60 md:justify-start md:py-8 md:gap-4">
         <div className="hidden md:flex flex-col gap-1 mb-8 px-4 w-full">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-emerald-500 rounded-xl flex items-center justify-center text-white shadow-lg shadow-emerald-500/20">
+            <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-blue-500/20 ring-1 ring-white/10">
               <Wallet size={24} />
             </div>
-            <h1 className="text-xl font-bold tracking-tight">Casa do Lago</h1>
+            <h1 className="text-xl font-bold tracking-tight text-white">Casa do Lago</h1>
           </div>
           <div className="mt-2 flex items-center gap-1.5 text-[10px] font-medium px-1">
             {syncStatus === 'syncing' && (
               <>
-                <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
-                <span className="text-emerald-700" title="Tudo certo! Os dados estão indo para a nuvem e aparecerão em qualquer dispositivo.">Sincronizado</span>
+                <div className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)]"></div>
+                <span className="text-emerald-400" title="Tudo certo! Os dados estão indo para a nuvem e aparecerão em qualquer dispositivo.">Sincronizado</span>
               </>
             )}
             {syncStatus === 'local' && (
               <>
-                <div className="w-2 h-2 rounded-full bg-amber-500"></div>
-                <span className="text-amber-700" title="As chaves não foram encontradas. Os dados ficam presos no aparelho atual.">Modo Local</span>
+                <div className="w-2 h-2 rounded-full bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.8)]"></div>
+                <span className="text-amber-400" title="As chaves não foram encontradas. Os dados ficam presos no aparelho atual.">Modo Local</span>
               </>
             )}
             {syncStatus === 'error' && (
               <>
-                <div className="w-2 h-2 rounded-full bg-red-500"></div>
-                <span className="text-red-700" title="As chaves estão lá, mas há algo errado (talvez as tabelas não foram criadas no Supabase).">Erro de Conexão</span>
+                <div className="w-2 h-2 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)]"></div>
+                <span className="text-red-400" title="As chaves estão lá, mas há algo errado (talvez as tabelas não foram criadas no Supabase).">Erro de Conexão</span>
               </>
             )}
           </div>
@@ -928,7 +932,7 @@ function App() {
             <div className="mt-auto hidden md:block w-full px-4 pb-4">
               <button 
                 onClick={handleLogout}
-                className="flex items-center gap-3 w-full px-4 py-3 text-sm font-medium text-red-600 hover:bg-red-50 rounded-xl transition-all"
+                className="flex items-center gap-3 w-full px-4 py-3 text-sm font-medium text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-xl transition-all"
               >
                 <LogOut size={20} />
                 Sair
@@ -948,7 +952,7 @@ function App() {
             <div className="mt-auto hidden md:block w-full px-4 pb-4">
               <button 
                 onClick={() => window.location.href = '/'}
-                className="flex items-center gap-3 w-full px-4 py-3 text-sm font-medium text-red-600 hover:bg-red-50 rounded-xl transition-all"
+                className="flex items-center gap-3 w-full px-4 py-3 text-sm font-medium text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-xl transition-all"
               >
                 <LogOut size={20} />
                 Voltar para Login
@@ -959,7 +963,7 @@ function App() {
       </nav>
 
       {/* Main Content */}
-      <main className="pb-24 pt-4 px-2 sm:px-4 md:pl-72 md:pr-8 md:pt-12 max-w-7xl mx-auto w-full overflow-x-hidden">
+      <main className="pb-24 pt-4 px-2 sm:px-4 md:pl-72 md:pr-8 md:pt-12 max-w-7xl mx-auto w-full relative z-10 overflow-x-hidden">
         {activeTab === 'inicio' && (
           <Dashboard 
             totalSpent={totalSpent} 
@@ -1034,11 +1038,11 @@ function App() {
 function PlaceholderTab({ title }: { title: string }) {
   return (
     <div className="flex flex-col items-center justify-center min-h-[60vh] text-center space-y-4">
-      <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center text-black">
+      <div className="w-20 h-20 bg-slate-800/50 rounded-full flex items-center justify-center text-slate-400 ring-1 ring-slate-700/50">
         <Settings size={40} />
       </div>
-      <h2 className="text-2xl font-bold">{title}</h2>
-      <p className="text-black max-w-md">Esta aba está em desenvolvimento e será implementada em breve.</p>
+      <h2 className="text-2xl font-bold text-white">{title}</h2>
+      <p className="text-slate-400 max-w-md">Esta aba está em desenvolvimento e será implementada em breve.</p>
     </div>
   );
 }
