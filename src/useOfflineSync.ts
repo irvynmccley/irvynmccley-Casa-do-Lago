@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { supabase } from '../supabaseClient';
+import { pb } from './pocketbaseClient';
 import { toast } from 'sonner';
 
 export type SyncOperation = {
@@ -54,46 +54,51 @@ export function useOfflineSync(fetchAllData: () => Promise<void>) {
       for (const op of queue) {
         try {
           if (op.type === 'ADD_EXPENSE') {
-            const { error } = await supabase.from('expenses').insert(op.payload);
-            if (error) throw error;
-          } else if (op.type === 'EDIT_EXPENSE') {
-            const { error } = await supabase.from('expenses').update(op.payload).eq('id', op.id);
-            if (error) throw error;
-          } else if (op.type === 'DELETE_EXPENSE') {
-            const { error } = await supabase.from('expenses').delete().eq('id', op.id);
-            if (error) throw error;
+            await pb.collection('expenses').create(op.payload);
+          } else if (op.type === 'EDIT_EXPENSE' && op.id) {
+            await pb.collection('expenses').update(op.id, op.payload);
+          } else if (op.type === 'DELETE_EXPENSE' && op.id) {
+            await pb.collection('expenses').delete(op.id);
           } else if (op.type === 'ADD_INCOME') {
-            const { error } = await supabase.from('incomes').insert(op.payload);
-            if (error) throw error;
-          } else if (op.type === 'EDIT_INCOME') {
-            const { error } = await supabase.from('incomes').update(op.payload).eq('id', op.id);
-            if (error) throw error;
-          } else if (op.type === 'DELETE_INCOME') {
-            const { error } = await supabase.from('incomes').delete().eq('id', op.id);
-            if (error) throw error;
+            await pb.collection('incomes').create(op.payload);
+          } else if (op.type === 'EDIT_INCOME' && op.id) {
+            await pb.collection('incomes').update(op.id, op.payload);
+          } else if (op.type === 'DELETE_INCOME' && op.id) {
+            await pb.collection('incomes').delete(op.id);
           } else if (op.type === 'ADD_PAYMENT') {
-            const { error } = await supabase.from('payments').insert(op.payload);
-            if (error) throw error;
-          } else if (op.type === 'DELETE_PAYMENT') {
-            const { error } = await supabase.from('payments').delete().eq('id', op.id);
-            if (error) throw error;
-          } else if (op.type === 'TOGGLE_TERRENO') {
-            if (op.payload.action === 'delete') {
-               const { error } = await supabase.from('terreno_installments').delete().eq('id', op.id);
-               if (error) throw error;
+            await pb.collection('payments').create(op.payload);
+          } else if (op.type === 'DELETE_PAYMENT' && op.id) {
+            await pb.collection('payments').delete(op.id);
+          } else if (op.type === 'TOGGLE_TERRENO' && op.id) {
+            if (op.payload?.action === 'delete') {
+              try {
+                const existing = await pb.collection('terreno_installments').getFirstListItem(`month_id="${op.id}" || original_id="${op.id}" || id="${op.id}"`);
+                if (existing) {
+                  await pb.collection('terreno_installments').delete(existing.id);
+                }
+              } catch (e: any) {
+                if (e.status !== 404) throw e;
+              }
             } else {
-               const { error } = await supabase.from('terreno_installments').upsert({ id: op.id });
-               if (error) throw error;
+              try {
+                await pb.collection('terreno_installments').getFirstListItem(`month_id="${op.id}" || original_id="${op.id}"`);
+              } catch (e: any) {
+                if (e.status === 404) {
+                  await pb.collection('terreno_installments').create({
+                    month_id: op.id,
+                    original_id: op.id
+                  });
+                }
+              }
             }
           }
           successCount++;
         } catch (e: any) {
           console.error(`Failed to sync operation ${op.type}:`, e);
-          if (e.message && (e.message.includes('FetchError') || e.message.includes('Failed to fetch') || e.message.includes('network'))) {
+          if (e.isAbort || !navigator.onLine || (e.message && (e.message.includes('FetchError') || e.message.includes('Failed to fetch') || e.message.includes('network')))) {
              remainingQueue.push(op);
              syncError = true;
           } else {
-            // Drop it and log it
             console.error("Dropping failed operation due to bad request or permission:", op);
           }
         }

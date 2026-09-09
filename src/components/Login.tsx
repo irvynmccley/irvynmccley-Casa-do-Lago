@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { supabase } from '../supabaseClient';
+import { pb } from '../pocketbaseClient';
 import { AlertCircle, ArrowRight, User, KeyRound, Building2 } from 'lucide-react';
 
 export function Login() {
@@ -14,19 +14,30 @@ export function Login() {
     setIsLoading(true);
 
     try {
+      let authData = null;
+
       // Add a timeout to prevent hanging forever
-      const authPromise = supabase.auth.signInWithPassword({ email, password });
       const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Tempo limite de conexão excedido. O banco de dados (Supabase) pode estar pausado por inatividade, ou sua internet está instável. Acesse o painel do Supabase para reativá-lo se necessário.')), 20000)
+        setTimeout(() => reject(new Error('Tempo limite de conexão excedido. Verifique se o PocketBase no Coolify está ativo.')), 15000)
       );
-      
-      const { data, error } = await Promise.race([authPromise, timeoutPromise]) as any;
-      
-      if (error) throw error;
-      
-      // If successful, force a reload to ensure the app state updates correctly
-      // This is a fallback in case onAuthStateChange is delayed or blocked
-      if (data?.session) {
+
+      const authPromise = (async () => {
+        // 1. Try superusers collection (PocketBase v0.23+)
+        try {
+          return await pb.collection('_superusers').authWithPassword(email.trim(), password);
+        } catch (suErr: any) {
+          // 2. Fallback to standard users collection
+          try {
+            return await pb.collection('users').authWithPassword(email.trim(), password);
+          } catch (uErr: any) {
+            throw suErr;
+          }
+        }
+      })();
+
+      authData = await Promise.race([authPromise, timeoutPromise]) as any;
+
+      if (authData && pb.authStore.isValid) {
         window.location.href = '/';
       }
     } catch (err: any) {
@@ -34,12 +45,14 @@ export function Login() {
       
       let errorMessage = err.message || 'Ocorreu um erro. Tente novamente.';
       
-      if (errorMessage === 'Failed to fetch') {
-        errorMessage = 'Erro de conexão com o servidor. Verifique sua internet ou se o projeto no Supabase está ativo.';
+      if (err.status === 400) {
+        errorMessage = 'Credenciais inválidas. Verifique o e-mail e senha digitados.';
+      } else if (errorMessage === 'Failed to fetch' || err.status === 0) {
+        errorMessage = 'Erro de conexão com o servidor. Verifique sua internet ou se o serviço do PocketBase no Coolify está ativo.';
       }
       
       setError(errorMessage);
-      setIsLoading(false); // Only set to false on error, on success we reload
+      setIsLoading(false);
     }
   };
 

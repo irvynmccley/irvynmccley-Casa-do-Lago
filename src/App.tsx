@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback, Component, ErrorInfo, ReactNode } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, ErrorInfo, ReactNode } from 'react';
 import { 
   LayoutDashboard, 
   ArrowUpCircle, 
@@ -6,14 +6,11 @@ import {
   FileText, 
   Settings, 
   Info,
-  Wallet,
   LogOut,
   Map
 } from 'lucide-react';
 import { 
-  format, 
-  addMonths, 
-  getDate 
+  format
 } from 'date-fns';
 import { AppState, Expense, Income, Payment, Category, Person } from './types';
 import { NavItem } from './components/ui/NavItem';
@@ -24,14 +21,13 @@ import { ReportsTab } from './components/ReportsTab';
 import { TerrenoTab } from './components/TerrenoTab';
 import { ConfigTab } from './components/ConfigTab';
 import { Login } from './components/Login';
-import { supabase } from './supabaseClient';
+import { pb } from './pocketbaseClient';
 import { Toaster, toast } from 'sonner';
 import { ConfirmDialog } from './components/ui/ConfirmDialog';
 import { useOfflineSync } from './useOfflineSync';
 
-const ENABLE_SUPABASE_SYNC = true; // Trava de segurança
+const ENABLE_POCKETBASE_SYNC = true; // Trava de segurança para persistência no PocketBase
 
-const CATEGORIES: Category[] = ['Combustível', 'Documentação', 'Material', 'Mão de Obra', 'Monitoramento', 'Alimentação'];
 const PEOPLE: Person[] = ['Mccley', 'Jan', 'Saulo'];
 
 export const normalizeCategory = (cat: any): string => {
@@ -68,21 +64,6 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
   }
 
   static getDerivedStateFromError(error: Error) {
-    if (error.message?.includes('Refresh Token') || error.message?.includes('refresh_token') || error.message?.includes('not found') || error.message?.includes('Invalid Refresh Token')) {
-      try {
-        let cleared = false;
-        for (let i = 0; i < localStorage.length; i++) {
-          const key = localStorage.key(i);
-          if (key && key.startsWith('sb-') && key.endsWith('-auth-token')) {
-            localStorage.removeItem(key);
-            cleared = true;
-          }
-        }
-        if (cleared) {
-          window.location.reload();
-        }
-      } catch (e) {}
-    }
     return { hasError: true, error };
   }
 
@@ -139,128 +120,40 @@ function App() {
     }
   }, [activeTab, isSharedMode]);
 
-  // Auth logic
+  // Auth logic with PocketBase
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const shared = params.get('shared') === 'true';
     setIsSharedMode(shared);
 
-    // Pre-emptively check for broken tokens in localStorage before even calling getSession
-    try {
-      let hasBrokenToken = false;
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (key && key.startsWith('sb-') && key.endsWith('-auth-token')) {
-          const tokenData = localStorage.getItem(key);
-          if (tokenData && (tokenData.includes('Refresh Token Not Found') || tokenData.includes('invalid_refresh_token'))) {
-            hasBrokenToken = true;
-            localStorage.removeItem(key);
-          }
-        }
-      }
-      if (hasBrokenToken) {
-        console.warn("Cleared broken auth token from localStorage before session check");
-      }
-    } catch (e) {}
-
-    supabase.auth.getSession().then(({ data: { session }, error }) => {
-      if (error) {
-        console.error("Error getting session:", error);
-        if (error.message?.includes('Refresh Token') || error.message?.includes('refresh_token') || error.message?.includes('not found')) {
-          // Force clear local storage to remove broken session
-          for (let i = 0; i < localStorage.length; i++) {
-            const key = localStorage.key(i);
-            if (key && key.startsWith('sb-') && key.endsWith('-auth-token')) {
-              localStorage.removeItem(key);
-            }
-          }
-          supabase.auth.signOut().catch(() => {});
-        }
-        setUser(null);
-        setIsAuthReady(true);
-        return;
-      }
-
-      if (session?.user) {
-        if (!shared && session.user.is_anonymous) {
-          supabase.auth.signOut().then(() => {
-            setUser(null);
-            setIsAuthReady(true);
-          });
-          return;
-        }
-        setUser(session.user);
-        setIsAuthReady(true);
-      } else {
-        setUser(null);
-        if (shared) {
-          try {
-            if (typeof supabase.auth.signInAnonymously === 'function') {
-              supabase.auth.signInAnonymously().then((response) => {
-                const anonSession = response?.data?.session;
-                if (anonSession?.user) {
-                  setUser(anonSession.user);
-                }
-                setIsAuthReady(true);
-              }).catch(err => {
-                console.error("Error signing in anonymously:", err);
-                setIsAuthReady(true);
-              });
-            } else {
-              console.warn("signInAnonymously is not available. Continuing as public user.");
-              setIsAuthReady(true);
-            }
-          } catch (err) {
-            console.error("Sync error signing in anonymously:", err);
-            setIsAuthReady(true);
-          }
-          return;
-        }
-        setIsAuthReady(true);
-      }
-    }).catch(err => {
-      console.error("Unexpected error getting session:", err);
-      
-      // Aggressive cleanup on any unexpected session error
-      try {
-        for (let i = 0; i < localStorage.length; i++) {
-          const key = localStorage.key(i);
-          if (key && key.startsWith('sb-') && key.endsWith('-auth-token')) {
-            localStorage.removeItem(key);
-          }
-        }
-      } catch (e) {}
-      
+    if (shared) {
+      setUser({ id: 'shared-user', email: 'mestre@casadolago.com' });
       setIsAuthReady(true);
-    });
+      return;
+    }
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      console.log("Auth event:", event);
-      if (session?.user) {
-        if (!shared && session.user.is_anonymous) {
-          supabase.auth.signOut().then(() => {
-            setUser(null);
-          });
-        } else {
-          setUser(session.user);
-        }
-      } else {
+    // Check if PocketBase has a valid logged in session (user or superuser)
+    if (pb.authStore.isValid && pb.authStore.record) {
+      setUser(pb.authStore.record);
+    } else {
+      setUser(null);
+    }
+    setIsAuthReady(true);
+
+    const unsubscribe = pb.authStore.onChange((_token, model) => {
+      setUser(model);
+      if (!model && !shared) {
         setUser(null);
-        // Se a sessão expirou ou foi invalidada, garante que o estado local reflita isso
-        if (event === 'SIGNED_OUT' || event === 'USER_UPDATED') {
-          setUser(null);
-        }
       }
-      setIsAuthReady(true);
     });
 
     return () => {
-      subscription.unsubscribe();
+      unsubscribe();
     };
-  }, []); // Remove activeTab from dependencies to prevent re-subscribing and re-fetching session on tab change
+  }, []);
 
   const [state, setState] = useState<AppState>({ expenses: [], incomes: [], payments: [], terrenoPaidInstallments: INITIAL_PAID_TERRENO });
-  const [syncStatus, setSyncStatus] = useState<'syncing' | 'local' | 'error'>(ENABLE_SUPABASE_SYNC ? 'syncing' : 'local');
+  const [syncStatus, setSyncStatus] = useState<'syncing' | 'local' | 'error'>(ENABLE_POCKETBASE_SYNC ? 'syncing' : 'local');
   const [confirmDialog, setConfirmDialog] = useState<{
     isOpen: boolean;
     title: string;
@@ -276,124 +169,120 @@ function App() {
   });
 
   const fetchAllData = useCallback(async () => {
-    if (!ENABLE_SUPABASE_SYNC) {
+    if (!ENABLE_POCKETBASE_SYNC) {
       setSyncStatus('local');
       return;
     }
 
     let hasError = false;
 
-    const fetchTable = async (table: string) => {
+    const fetchCollection = async (collectionName: string) => {
       try {
-        const { data, error } = await supabase.from(table).select('*').order('date', { ascending: false });
-        if (error) {
-          console.error(`Error fetching ${table}:`, error);
-          hasError = true;
-        }
-        return data || [];
+        const records = await pb.collection(collectionName).getFullList({
+          sort: '-date',
+          requestKey: null
+        });
+        return records || [];
       } catch (err) {
-        console.error(`Exception fetching ${table}:`, err);
+        console.error(`Error fetching collection ${collectionName}:`, err);
         hasError = true;
         return [];
       }
     };
 
-    const [expensesData, incomesData, paymentsData, { data: terrenoData }] = await Promise.all([
-      fetchTable('expenses'),
-      fetchTable('incomes'),
-      fetchTable('payments'),
-      (async () => {
-        try {
-          const res = await supabase.from('terreno_installments').select('id');
-          if (res.error) {
-            console.error("Supabase error fetching terreno_installments:", res.error);
+    try {
+      const [expensesData, incomesData, paymentsData, terrenoData] = await Promise.all([
+        fetchCollection('expenses'),
+        fetchCollection('incomes'),
+        fetchCollection('payments'),
+        (async () => {
+          try {
+            const records = await pb.collection('terreno_installments').getFullList({ requestKey: null });
+            return records || [];
+          } catch (err) {
+            console.error("Error fetching terreno_installments:", err);
             hasError = true;
+            return [];
           }
-          return { data: res.data || [] };
-        } catch (err) {
-          console.error("Exception fetching terreno_installments:", err);
-          hasError = true;
-          return { data: [] };
-        }
-      })()
-    ]);
+        })()
+      ]);
 
-    setSyncStatus(hasError ? 'error' : 'syncing');
+      setSyncStatus(hasError ? 'error' : 'syncing');
 
-    const normalizedExpenses = (expensesData as Expense[]).map(e => ({
-      ...e,
-      category: normalizeCategory(e.category) as Category
-    }));
+      const normalizedExpenses = (expensesData as any[]).map(e => ({
+        ...e,
+        id: e.id,
+        category: normalizeCategory(e.category) as Category
+      }));
 
-    setState(prev => ({
-      ...prev,
-      expenses: normalizedExpenses,
-      incomes: incomesData as Income[],
-      payments: paymentsData as Payment[],
-      terrenoPaidInstallments: terrenoData && terrenoData.length > 0 ? terrenoData.map((t: any) => t.id) : INITIAL_PAID_TERRENO
-    }));
+      const terrenoIds = terrenoData.map((t: any) => t.month_id || t.original_id || t.id);
+
+      setState(prev => ({
+        ...prev,
+        expenses: normalizedExpenses as unknown as Expense[],
+        incomes: incomesData as unknown as Income[],
+        payments: paymentsData as unknown as Payment[],
+        terrenoPaidInstallments: terrenoIds.length > 0 ? terrenoIds : INITIAL_PAID_TERRENO
+      }));
+    } catch (e) {
+      console.error("General error in fetchAllData:", e);
+      setSyncStatus('error');
+    }
   }, [isSharedMode]);
 
   const { isOffline, isSyncing, saveToOfflineQueue } = useOfflineSync(fetchAllData);
 
+  // Realtime subscription using PocketBase Server-Sent Events
   useEffect(() => {
     if (!isAuthReady) return;
 
-    const fetchAndSubscribe = async () => {
-      // Initial fetch
-      await fetchAllData();
+    let isMounted = true;
+    fetchAllData();
 
-      const fetchTable = async (table: string) => {
-        try {
-          const { data, error } = await supabase.from(table).select('*').order('date', { ascending: false });
-          if (error) {
-            console.error(`Error fetching ${table}:`, error);
-          }
-          return data || [];
-        } catch (err) {
-          console.error(`Exception fetching ${table}:`, err);
-          return [];
-        }
-      };
-
-      // Realtime subscriptions
-      const channel = supabase.channel('schema-db-changes')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'expenses' }, async () => {
-          const data = await fetchTable('expenses');
-          const normalizedExpenses = (data as Expense[]).map(e => ({
+    const subscribeRealtime = async () => {
+      try {
+        await pb.collection('expenses').subscribe('*', async () => {
+          if (!isMounted) return;
+          const records = await pb.collection('expenses').getFullList({ sort: '-date', requestKey: null });
+          const normalizedExpenses = records.map(e => ({
             ...e,
             category: normalizeCategory(e.category) as Category
           }));
-          setState(prev => ({ ...prev, expenses: normalizedExpenses }));
-        })
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'incomes' }, async () => {
-          const data = await fetchTable('incomes');
-          setState(prev => ({ ...prev, incomes: data as Income[] }));
-        })
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'payments' }, async () => {
-          const data = await fetchTable('payments');
-          setState(prev => ({ ...prev, payments: data as Payment[] }));
-        })
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'terreno_installments' }, async () => {
-          const { data } = await supabase.from('terreno_installments').select('id');
-          if (data) {
-            setState(prev => ({ ...prev, terrenoPaidInstallments: data.map(d => d.id) }));
-          }
+          setState(prev => ({ ...prev, expenses: normalizedExpenses as unknown as Expense[] }));
         });
 
-      channel.subscribe();
+        await pb.collection('incomes').subscribe('*', async () => {
+          if (!isMounted) return;
+          const records = await pb.collection('incomes').getFullList({ sort: '-date', requestKey: null });
+          setState(prev => ({ ...prev, incomes: records as unknown as Income[] }));
+        });
 
-      return () => {
-        supabase.removeChannel(channel);
-      };
+        await pb.collection('payments').subscribe('*', async () => {
+          if (!isMounted) return;
+          const records = await pb.collection('payments').getFullList({ sort: '-date', requestKey: null });
+          setState(prev => ({ ...prev, payments: records as unknown as Payment[] }));
+        });
+
+        await pb.collection('terreno_installments').subscribe('*', async () => {
+          if (!isMounted) return;
+          const records = await pb.collection('terreno_installments').getFullList({ requestKey: null });
+          const ids = records.map((t: any) => t.month_id || t.original_id || t.id);
+          setState(prev => ({ ...prev, terrenoPaidInstallments: ids }));
+        });
+      } catch (err) {
+        console.warn("PocketBase realtime subscription notice:", err);
+      }
     };
 
-    let cleanup = () => {};
-    fetchAndSubscribe().then(unsub => {
-      if (unsub) cleanup = unsub;
-    });
+    subscribeRealtime();
 
-    return () => cleanup();
+    return () => {
+      isMounted = false;
+      pb.collection('expenses').unsubscribe('*').catch(() => {});
+      pb.collection('incomes').unsubscribe('*').catch(() => {});
+      pb.collection('payments').unsubscribe('*').catch(() => {});
+      pb.collection('terreno_installments').unsubscribe('*').catch(() => {});
+    };
   }, [isAuthReady, isSharedMode, fetchAllData]);
 
   // --- Calculations ---
@@ -483,8 +372,6 @@ function App() {
     const currentMonthKey = format(new Date(), 'yyyy-MM');
     const currentYear = new Date().getFullYear();
     
-    // Pegamos todos os meses e filtramos apenas os atuais/futuros do ano atual
-    // Para manter o comportamento original, também adicionamos meses vazios do ano atual
     const monthlyTotals: Record<string, number> = {};
     for (let i = 1; i <= 12; i++) {
       const monthKey = `${currentYear}-${String(i).padStart(2, '0')}`;
@@ -544,40 +431,39 @@ function App() {
   // --- Handlers ---
 
   const addExpense = async (expense: Omit<Expense, 'id'>) => {
-    if (!ENABLE_SUPABASE_SYNC) {
+    if (!ENABLE_POCKETBASE_SYNC) {
       setState(prev => ({ ...prev, expenses: [{ ...expense, id: Date.now().toString() } as Expense, ...prev.expenses] }));
       toast.success("Lançamento com Sucesso");
       return;
     }
     const cleanExpense = Object.fromEntries(Object.entries(expense).filter(([_, v]) => v !== undefined));
-    const payload = { ...cleanExpense, createdBy: user?.id };
+    const payload = { ...cleanExpense, createdBy: user?.id || null };
     
     if (isOffline) {
        saveToOfflineQueue('ADD_EXPENSE', payload);
-       setState(prev => ({ ...prev, expenses: [{ ...payload, id: 'temp-' + Date.now().toString() } as Expense, ...prev.expenses] }));
+       setState(prev => ({ ...prev, expenses: [{ ...payload, id: 'temp-' + Date.now().toString() } as unknown as Expense, ...prev.expenses] }));
        toast.success("Salvo offline. Rastreando até reconectar.");
        return;
     }
 
     try {
-      const { error } = await supabase.from('expenses').insert(payload);
-      if (error) throw error;
+      await pb.collection('expenses').create(payload);
       await fetchAllData();
       toast.success("Lançamento com Sucesso");
     } catch (error: any) {
       console.error("Error adding expense: ", error);
-      if (error.message && (error.message.includes('FetchError') || error.message.includes('Failed to fetch') || error.message.includes('network'))) {
+      if (error.isAbort || !navigator.onLine || (error.message && (error.message.includes('FetchError') || error.message.includes('Failed to fetch') || error.message.includes('network')))) {
          saveToOfflineQueue('ADD_EXPENSE', payload);
-         setState(prev => ({ ...prev, expenses: [{ ...payload, id: 'temp-' + Date.now().toString() } as Expense, ...prev.expenses] }));
+         setState(prev => ({ ...prev, expenses: [{ ...payload, id: 'temp-' + Date.now().toString() } as unknown as Expense, ...prev.expenses] }));
          toast.success("Salvo offline (Erro de rede).");
       } else {
-         toast.error(`Erro ao adicionar despesa: ${error.message || 'Verifique suas permissões.'}`);
+         toast.error(`Erro ao adicionar despesa: ${error.message || 'Verifique os dados.'}`);
       }
     }
   };
 
   const editExpense = async (id: string, expense: Partial<Omit<Expense, 'id'>>) => {
-    if (!ENABLE_SUPABASE_SYNC) {
+    if (!ENABLE_POCKETBASE_SYNC) {
       setState(prev => ({ ...prev, expenses: prev.expenses.map(e => e.id === id ? { ...e, ...expense } as Expense : e) }));
       toast.success("Lançamento alterado com sucesso");
       return;
@@ -592,88 +478,85 @@ function App() {
     }
 
     try {
-      const { error } = await supabase.from('expenses').update(cleanExpense).eq('id', id);
-      if (error) throw error;
+      await pb.collection('expenses').update(id, cleanExpense);
       await fetchAllData();
       toast.success("Lançamento alterado com sucesso");
     } catch (error: any) {
       console.error("Error editing expense: ", error);
-      if (error.message && (error.message.includes('FetchError') || error.message.includes('Failed to fetch') || error.message.includes('network'))) {
+      if (error.isAbort || !navigator.onLine || (error.message && (error.message.includes('FetchError') || error.message.includes('Failed to fetch') || error.message.includes('network')))) {
          saveToOfflineQueue('EDIT_EXPENSE', cleanExpense, id);
          setState(prev => ({ ...prev, expenses: prev.expenses.map(e => e.id === id ? { ...e, ...cleanExpense } as Expense : e) }));
          toast.success("Editado offline (Erro de rede).");
       } else {
-         toast.error(`Erro ao editar despesa: ${error.message || 'Verifique suas permissões.'}`);
+         toast.error(`Erro ao editar despesa: ${error.message || 'Verifique os dados.'}`);
       }
     }
   };
 
   const addIncome = async (income: Omit<Income, 'id'>) => {
-    if (!ENABLE_SUPABASE_SYNC) {
+    if (!ENABLE_POCKETBASE_SYNC) {
       setState(prev => ({ ...prev, incomes: [{ ...income, id: Date.now().toString() } as Income, ...prev.incomes] }));
       toast.success("Lançamento com Sucesso");
       return;
     }
-    const payload = { ...income, createdBy: user?.id };
+    const payload = { ...income, createdBy: user?.id || null };
 
     if (isOffline) {
        saveToOfflineQueue('ADD_INCOME', payload);
-       setState(prev => ({ ...prev, incomes: [{ ...payload, id: 'temp-' + Date.now().toString() } as Income, ...prev.incomes] }));
+       setState(prev => ({ ...prev, incomes: [{ ...payload, id: 'temp-' + Date.now().toString() } as unknown as Income, ...prev.incomes] }));
        toast.success("Salvo offline. Será sincronizado na próxima conexão.");
        return;
     }
 
     try {
-      const { error } = await supabase.from('incomes').insert(payload);
-      if (error) throw error;
+      await pb.collection('incomes').create(payload);
       await fetchAllData();
       toast.success("Lançamento com Sucesso");
     } catch (error: any) {
       console.error("Error adding income: ", error);
-      if (error.message && (error.message.includes('FetchError') || error.message.includes('Failed to fetch') || error.message.includes('network'))) {
+      if (error.isAbort || !navigator.onLine || (error.message && (error.message.includes('FetchError') || error.message.includes('Failed to fetch') || error.message.includes('network')))) {
          saveToOfflineQueue('ADD_INCOME', payload);
-         setState(prev => ({ ...prev, incomes: [{ ...payload, id: 'temp-' + Date.now().toString() } as Income, ...prev.incomes] }));
+         setState(prev => ({ ...prev, incomes: [{ ...payload, id: 'temp-' + Date.now().toString() } as unknown as Income, ...prev.incomes] }));
          toast.success("Salvo offline (Erro de rede).");
       } else {
-         toast.error(`Erro ao adicionar entrada: ${error.message || 'Verifique suas permissões.'}`);
+         toast.error(`Erro ao adicionar entrada: ${error.message || 'Verifique os dados.'}`);
       }
     }
   };
 
   const addPayment = async (payment: Omit<Payment, 'id'>) => {
-    if (!ENABLE_SUPABASE_SYNC) {
+    if (!ENABLE_POCKETBASE_SYNC) {
       setState(prev => ({ ...prev, payments: [{ ...payment, id: Date.now().toString() } as Payment, ...prev.payments] }));
       toast.success("Lançamento com Sucesso");
       return;
     }
-    const payload = { ...payment, createdBy: user?.id };
+    const payload = { ...payment, createdBy: user?.id || null };
     
     if (isOffline) {
        saveToOfflineQueue('ADD_PAYMENT', payload);
-       setState(prev => ({ ...prev, payments: [{ ...payload, id: 'temp-' + Date.now().toString() } as Payment, ...prev.payments] }));
+       setState(prev => ({ ...prev, payments: [{ ...payload, id: 'temp-' + Date.now().toString() } as unknown as Payment, ...prev.payments] }));
        toast.success("Salvo offline. Rastreando até reconectar.");
        return;
     }
 
     try {
-      const { error } = await supabase.from('payments').insert(payload);
-      if (error) throw error;
+      await pb.collection('payments').create(payload);
       await fetchAllData();
       toast.success("Lançamento com Sucesso");
     } catch (error: any) {
       console.error("Error adding payment: ", error);
-      if (error.message && (error.message.includes('FetchError') || error.message.includes('Failed to fetch') || error.message.includes('network'))) {
+      if (error.isAbort || !navigator.onLine || (error.message && (error.message.includes('FetchError') || error.message.includes('Failed to fetch') || error.message.includes('network')))) {
          saveToOfflineQueue('ADD_PAYMENT', payload);
-         setState(prev => ({ ...prev, payments: [{ ...payload, id: 'temp-' + Date.now().toString() } as Payment, ...prev.payments] }));
+         setState(prev => ({ ...prev, payments: [{ ...payload, id: 'temp-' + Date.now().toString() } as unknown as Payment, ...prev.payments] }));
          toast.success("Salvo offline (Erro de rede).");
       } else {
-         toast.error(`Erro ao adicionar pagamento: ${error.message || 'Verifique suas permissões.'}`);
+         toast.error(`Erro ao adicionar pagamento: ${error.message || 'Verifique os dados.'}`);
       }
     }
   };
 
   const deleteExpense = async (id: string) => {
-    if (!ENABLE_SUPABASE_SYNC) {
+    if (!ENABLE_POCKETBASE_SYNC) {
       setState(prev => ({ ...prev, expenses: prev.expenses.filter(e => e.id !== id) }));
       toast.success("Lançamento excluído com sucesso");
       return;
@@ -687,13 +570,12 @@ function App() {
     }
 
     try {
-      const { error } = await supabase.from('expenses').delete().eq('id', id);
-      if (error) throw error;
+      await pb.collection('expenses').delete(id);
       await fetchAllData();
       toast.success("Lançamento excluído com sucesso");
     } catch (error: any) {
       console.error("Error deleting expense: ", error);
-      if (error.message && (error.message.includes('FetchError') || error.message.includes('Failed to fetch') || error.message.includes('network'))) {
+      if (error.isAbort || !navigator.onLine || (error.message && (error.message.includes('FetchError') || error.message.includes('Failed to fetch') || error.message.includes('network')))) {
          saveToOfflineQueue('DELETE_EXPENSE', null, id);
          setState(prev => ({ ...prev, expenses: prev.expenses.filter(e => e.id !== id) }));
          toast.success("Excluído offline (Erro de rede).");
@@ -704,7 +586,7 @@ function App() {
   };
 
   const editIncome = async (id: string, income: Partial<Omit<Income, 'id'>>) => {
-    if (!ENABLE_SUPABASE_SYNC) {
+    if (!ENABLE_POCKETBASE_SYNC) {
       setState(prev => ({ ...prev, incomes: prev.incomes.map(i => i.id === id ? { ...i, ...income } as Income : i) }));
       toast.success("Lançamento alterado com sucesso");
       return;
@@ -719,13 +601,12 @@ function App() {
     }
 
     try {
-      const { error } = await supabase.from('incomes').update(cleanIncome).eq('id', id);
-      if (error) throw error;
+      await pb.collection('incomes').update(id, cleanIncome);
       await fetchAllData();
       toast.success("Lançamento alterado com sucesso");
     } catch (error: any) {
       console.error("Error editing income: ", error);
-      if (error.message && (error.message.includes('FetchError') || error.message.includes('Failed to fetch') || error.message.includes('network'))) {
+      if (error.isAbort || !navigator.onLine || (error.message && (error.message.includes('FetchError') || error.message.includes('Failed to fetch') || error.message.includes('network')))) {
          saveToOfflineQueue('EDIT_INCOME', cleanIncome, id);
          setState(prev => ({ ...prev, incomes: prev.incomes.map(i => i.id === id ? { ...i, ...cleanIncome } as Income : i) }));
          toast.success("Editado offline (Erro de rede).");
@@ -736,7 +617,7 @@ function App() {
   };
 
   const deleteIncome = async (id: string) => {
-    if (!ENABLE_SUPABASE_SYNC) {
+    if (!ENABLE_POCKETBASE_SYNC) {
       setState(prev => ({ ...prev, incomes: prev.incomes.filter(i => i.id !== id) }));
       toast.success("Lançamento excluído com sucesso");
       return;
@@ -750,13 +631,12 @@ function App() {
     }
 
     try {
-      const { error } = await supabase.from('incomes').delete().eq('id', id);
-      if (error) throw error;
+      await pb.collection('incomes').delete(id);
       await fetchAllData();
       toast.success("Lançamento excluído com sucesso");
     } catch (error: any) {
       console.error("Error deleting income: ", error);
-      if (error.message && (error.message.includes('FetchError') || error.message.includes('Failed to fetch') || error.message.includes('network'))) {
+      if (error.isAbort || !navigator.onLine || (error.message && (error.message.includes('FetchError') || error.message.includes('Failed to fetch') || error.message.includes('network')))) {
          saveToOfflineQueue('DELETE_INCOME', null, id);
          setState(prev => ({ ...prev, incomes: prev.incomes.filter(i => i.id !== id) }));
          toast.success("Excluído offline (Erro de rede).");
@@ -767,7 +647,7 @@ function App() {
   };
 
   const deletePayment = async (id: string) => {
-    if (!ENABLE_SUPABASE_SYNC) {
+    if (!ENABLE_POCKETBASE_SYNC) {
       setState(prev => ({ ...prev, payments: prev.payments.filter(p => p.id !== id) }));
       toast.success("Lançamento excluído com sucesso");
       return;
@@ -781,13 +661,12 @@ function App() {
     }
 
     try {
-      const { error } = await supabase.from('payments').delete().eq('id', id);
-      if (error) throw error;
+      await pb.collection('payments').delete(id);
       await fetchAllData();
       toast.success("Lançamento excluído com sucesso");
     } catch (error: any) {
       console.error("Error deleting payment: ", error);
-      if (error.message && (error.message.includes('FetchError') || error.message.includes('Failed to fetch') || error.message.includes('network'))) {
+      if (error.isAbort || !navigator.onLine || (error.message && (error.message.includes('FetchError') || error.message.includes('Failed to fetch') || error.message.includes('network')))) {
          saveToOfflineQueue('DELETE_PAYMENT', null, id);
          setState(prev => ({ ...prev, payments: prev.payments.filter(p => p.id !== id) }));
          toast.success("Excluído offline (Erro de rede).");
@@ -826,7 +705,9 @@ function App() {
 
   const handleLogout = async () => {
     try {
-      await supabase.auth.signOut();
+      pb.authStore.clear();
+      setUser(null);
+      window.location.href = '/';
     } catch (error) {
       console.error("Error signing out: ", error);
     }
@@ -841,7 +722,7 @@ function App() {
     
     setState(prev => ({ ...prev, terrenoPaidInstallments: newPaid }));
 
-    if (ENABLE_SUPABASE_SYNC) {
+    if (ENABLE_POCKETBASE_SYNC) {
       if (isOffline) {
         saveToOfflineQueue('TOGGLE_TERRENO', { action: isPaid ? 'delete' : 'insert' }, id);
         toast.success("Ação salva offline. Será sincronizada na próxima conexão.");
@@ -849,19 +730,32 @@ function App() {
       }
       try {
         if (isPaid) {
-          const { error } = await supabase.from('terreno_installments').delete().eq('id', id);
-          if (error) throw error;
+          try {
+            const existing = await pb.collection('terreno_installments').getFirstListItem(`month_id="${id}" || original_id="${id}" || id="${id}"`);
+            if (existing) {
+              await pb.collection('terreno_installments').delete(existing.id);
+            }
+          } catch (e: any) {
+            if (e.status !== 404) throw e;
+          }
         } else {
-          const { error } = await supabase.from('terreno_installments').upsert({ id });
-          if (error) throw error;
+          try {
+            await pb.collection('terreno_installments').getFirstListItem(`month_id="${id}" || original_id="${id}"`);
+          } catch (e: any) {
+            if (e.status === 404) {
+              await pb.collection('terreno_installments').create({
+                month_id: id,
+                original_id: id
+              });
+            }
+          }
         }
       } catch (error: any) {
         console.error("Error syncing terreno payment: ", error);
-        if (error.message && (error.message.includes('FetchError') || error.message.includes('Failed to fetch') || error.message.includes('network'))) {
+        if (error.isAbort || !navigator.onLine || (error.message && (error.message.includes('FetchError') || error.message.includes('Failed to fetch') || error.message.includes('network')))) {
            saveToOfflineQueue('TOGGLE_TERRENO', { action: isPaid ? 'delete' : 'insert' }, id);
            toast.success("Ação salva offline (Erro de rede).");
         } else {
-           // Revert state on error if it's a hard error
            setState(prev => ({ ...prev, terrenoPaidInstallments: currentPaid }));
            toast.error(`Erro ao sincronizar pagamento: ${error.message || "Tabela 'terreno_installments' não encontrada."}`);
         }
@@ -888,31 +782,33 @@ function App() {
       <div className="fixed bottom-[-10%] right-[-10%] w-96 h-96 bg-indigo-600 rounded-full mix-blend-screen filter blur-[100px] opacity-10 animate-pulse pointer-events-none z-0" style={{ animationDelay: '2s' }}></div>
 
       {/* Sidebar / Navigation */}
-      <nav className="fixed bottom-0 left-0 right-0 bg-slate-950/80 backdrop-blur-xl border-t border-slate-800/60 px-4 py-2 flex justify-around items-center z-50 md:top-0 md:bottom-auto md:flex-col md:w-64 md:h-screen md:border-t-0 md:border-r md:border-slate-800/60 md:justify-start md:py-8 md:gap-4">
-        <div className="hidden md:flex flex-col gap-1 mb-8 px-4 w-full">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-blue-500/20 ring-1 ring-white/10">
-              <Wallet size={24} />
-            </div>
-            <h1 className="text-xl font-bold tracking-tight text-white">Casa do Lago</h1>
+      <nav className="fixed bottom-0 left-0 right-0 z-50 bg-slate-900/80 backdrop-blur-xl border-t border-slate-800/80 px-4 py-2 flex justify-around items-center md:top-0 md:bottom-0 md:right-auto md:w-64 md:flex-col md:justify-start md:border-t-0 md:border-r md:p-6 md:space-y-4">
+        <div className="hidden md:flex flex-col items-center gap-3 mb-6 w-full px-2">
+          <div className="w-12 h-12 bg-gradient-to-tr from-blue-600 to-indigo-500 rounded-2xl flex items-center justify-center shadow-lg shadow-blue-500/20 ring-1 ring-white/20">
+            <span className="font-bold text-white text-xl tracking-wider">CL</span>
           </div>
-          <div className="mt-2 flex items-center gap-1.5 text-[10px] font-medium px-1">
+          <div className="text-center">
+            <h1 className="font-bold text-white tracking-wide text-lg">Casa do Lago</h1>
+            <p className="text-xs text-slate-400 font-medium">Gestão Financeira</p>
+          </div>
+          
+          <div className="flex items-center gap-2 mt-2 px-3 py-1 bg-slate-800/40 rounded-full border border-slate-700/50 text-[11px] font-medium text-slate-300">
             {syncStatus === 'syncing' && (
               <>
                 <div className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)]"></div>
-                <span className="text-emerald-400" title="Tudo certo! Os dados estão indo para a nuvem e aparecerão em qualquer dispositivo.">Sincronizado</span>
+                <span className="text-emerald-400" title="Tudo certo! Os dados estão no PocketBase sincronizados em tempo real.">Sincronizado</span>
               </>
             )}
             {syncStatus === 'local' && (
               <>
                 <div className="w-2 h-2 rounded-full bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.8)]"></div>
-                <span className="text-amber-400" title="As chaves não foram encontradas. Os dados ficam presos no aparelho atual.">Modo Local</span>
+                <span className="text-amber-400" title="Modo local ativo.">Modo Local</span>
               </>
             )}
             {syncStatus === 'error' && (
               <>
                 <div className="w-2 h-2 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)]"></div>
-                <span className="text-red-400" title="As chaves estão lá, mas há algo errado (talvez as tabelas não foram criadas no Supabase).">Erro de Conexão</span>
+                <span className="text-red-400" title="Verifique a conexão com o PocketBase no Coolify.">Erro de Conexão</span>
               </>
             )}
           </div>
@@ -1015,7 +911,7 @@ function App() {
           <TerrenoTab 
             paidInstallments={state.terrenoPaidInstallments}
             onTogglePayment={handleToggleTerrenoPayment}
-            formatCurrency={formatCurrency}
+            formatCurrency={formatCurrency} 
           />
         )}
         {activeTab === 'config' && <ConfigTab state={state} />}
