@@ -1,9 +1,10 @@
-import React, { useState, useRef } from 'react';
-import { Plus, Trash2, CreditCard, User, Wallet, FileUp, Download, Share2, Edit2 } from 'lucide-react';
+import React, { useState, useRef, useMemo } from 'react';
+import { Plus, Trash2, CreditCard, User, Wallet, FileUp, Download, Share2, Edit2, Search } from 'lucide-react';
 import { format } from 'date-fns';
 import { Expense, Category, PaymentMethod, Donor } from '../types';
 import { Card } from './ui/Card';
 import { ConfirmDialog } from './ui/ConfirmDialog';
+import { formatAuditId, copyAuditIdToClipboard } from '../utils/audit';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import * as XLSX from 'xlsx';
@@ -28,6 +29,7 @@ interface ExpensesTabProps {
 export function ExpensesTab({ expenses, onAdd, onEdit, onDelete, formatCurrency, isSharedMode }: ExpensesTabProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState('');
   const [isConfirmingEdit, setIsConfirmingEdit] = useState(false);
   const [pendingEditData, setPendingEditData] = useState<any>(null);
   const [formData, setFormData] = useState({
@@ -275,10 +277,31 @@ export function ExpensesTab({ expenses, onAdd, onEdit, onDelete, formatCurrency,
     }
   };
 
-  const sortedExpenses = [...expenses].sort((a, b) => b.date.localeCompare(a.date));
+  const filteredExpenses = useMemo(() => {
+    const sorted = [...expenses].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    if (!searchTerm.trim()) return sorted;
+
+    const term = searchTerm.toLowerCase().trim();
+    return sorted.filter(exp => {
+      const auditId = formatAuditId('EXP', exp.id).toLowerCase();
+      const local = (exp.local || '').toLowerCase();
+      const obs = (exp.observation || '').toLowerCase();
+      const cat = (exp.category || '').toLowerCase();
+      const method = (exp.paymentMethod || '').toLowerCase();
+      const donor = (exp.donor || '').toLowerCase();
+      return (
+        auditId.includes(term) ||
+        local.includes(term) ||
+        obs.includes(term) ||
+        cat.includes(term) ||
+        method.includes(term) ||
+        donor.includes(term)
+      );
+    });
+  }, [expenses, searchTerm]);
 
   return (
-    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 relative z-10">
+    <div className="space-y-6 sm:space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 relative z-10">
       <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-3xl font-bold tracking-tight mb-2 text-white drop-shadow-sm">Saídas</h2>
@@ -580,81 +603,126 @@ export function ExpensesTab({ expenses, onAdd, onEdit, onDelete, formatCurrency,
           </form>
         </Card>
 
-        <div className="lg:col-span-2 space-y-4">
-          <h3 className="text-lg font-bold text-white mb-4">Últimos Lançamentos</h3>
-          {sortedExpenses.length === 0 ? (
-            <div className="bg-slate-900/40 rounded-2xl p-12 text-center text-slate-400 border border-dashed border-slate-700/50">
-              Nenhuma despesa lançada ainda.
+        <div className="lg:col-span-2 space-y-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-2">
+            <div className="flex items-center gap-2">
+              <h3 className="text-base sm:text-lg font-bold text-white">Últimos Lançamentos</h3>
+              <span className="text-xs font-mono font-medium text-slate-400 bg-slate-800/80 px-2 py-0.5 rounded-md border border-slate-700">
+                {filteredExpenses.length}
+              </span>
+            </div>
+            
+            <div className="relative w-full sm:w-64">
+              <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input 
+                type="text"
+                placeholder="Buscar local, ID (#EXP)..."
+                value={searchTerm}
+                onChange={e => setSearchTerm(e.target.value)}
+                className="w-full pl-9 pr-3 py-1.5 bg-slate-900/60 border border-slate-700/60 rounded-xl text-xs text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-blue-500/50"
+              />
+            </div>
+          </div>
+
+          {filteredExpenses.length === 0 ? (
+            <div className="bg-slate-900/40 rounded-xl p-8 text-center text-slate-400 border border-dashed border-slate-800">
+              {searchTerm ? "Nenhum lançamento encontrado para esta busca." : "Nenhuma despesa lançada ainda."}
             </div>
           ) : (
-            sortedExpenses.map((exp) => (
-              <Card key={exp.id} className="bg-slate-900/40 backdrop-blur-md border-slate-800 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 group hover:bg-slate-800/60 transition-all ring-1 ring-white/5">
-                <div className="flex items-start sm:items-center gap-4 w-full sm:w-auto overflow-hidden">
-                  <div className={cn(
-                    "w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ring-1",
-                    exp.paymentMethod === 'Cartão' ? "bg-blue-500/10 text-blue-400 ring-blue-500/20" : 
-                    exp.paymentMethod === 'doação' ? "bg-purple-500/10 text-purple-400 ring-purple-500/20" : 
-                    exp.paymentMethod === 'Caixa' ? "bg-amber-500/10 text-amber-400 ring-amber-500/20" : "bg-emerald-500/10 text-emerald-400 ring-emerald-500/20"
-                  )}>
-                    {exp.paymentMethod === 'Cartão' ? <CreditCard size={20} /> : 
-                     exp.paymentMethod === 'doação' ? <User size={20} /> : 
-                     exp.paymentMethod === 'Caixa' ? <Wallet size={20} /> : <Wallet size={20} />}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <h4 className="font-bold text-slate-200 truncate">{exp.local}</h4>
-                    <div className="flex flex-wrap items-center gap-1 sm:gap-2 text-[11px] text-slate-400 uppercase font-semibold tracking-wider">
-                      <span>{exp.date ? exp.date.split('-').reverse().join('/') : '-'}</span>
-                      <span className="hidden sm:inline text-slate-600">•</span>
-                      <span className="text-slate-300">{exp.category}</span>
-                      {exp.paymentMethod === 'Cartão' && (
-                        <>
-                          <span className="hidden sm:inline text-slate-600">•</span>
-                          <span className="text-blue-400">Cartão ({exp.installments}x)</span>
-                        </>
-                      )}
-                      {exp.paymentMethod === 'doação' && (
-                        <>
-                          <span className="hidden sm:inline text-slate-600">•</span>
-                          <span className="text-purple-400">Doador: {exp.donor}</span>
-                        </>
-                      )}
-                      {exp.paymentMethod === 'Pix' && (
-                        <>
-                          <span className="hidden sm:inline text-slate-600">•</span>
-                          <span className="text-emerald-400">Pix</span>
-                        </>
-                      )}
-                      {exp.paymentMethod === 'Caixa' && (
-                        <>
-                          <span className="hidden sm:inline text-slate-600">•</span>
-                          <span className="text-amber-400">Caixa</span>
-                        </>
+            <div className="space-y-1.5 sm:space-y-2">
+              {filteredExpenses.map((exp) => {
+                const auditId = formatAuditId('EXP', exp.id);
+                return (
+                  <div 
+                    key={exp.id} 
+                    className="bg-slate-900/50 hover:bg-slate-800/50 backdrop-blur-md border border-slate-800/80 hover:border-slate-700/80 px-3 py-2 sm:px-4 sm:py-2.5 rounded-xl flex items-center justify-between gap-2.5 sm:gap-4 group transition-all ring-1 ring-white/5"
+                  >
+                    <div className="flex items-center gap-2.5 sm:gap-3.5 min-w-0 flex-1">
+                      <div className={cn(
+                        "w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ring-1",
+                        exp.paymentMethod === 'Cartão' ? "bg-blue-500/10 text-blue-400 ring-blue-500/20" : 
+                        exp.paymentMethod === 'doação' ? "bg-purple-500/10 text-purple-400 ring-purple-500/20" : 
+                        exp.paymentMethod === 'Caixa' ? "bg-amber-500/10 text-amber-400 ring-amber-500/20" : "bg-emerald-500/10 text-emerald-400 ring-emerald-500/20"
+                      )}>
+                        {exp.paymentMethod === 'Cartão' ? <CreditCard size={15} /> : 
+                         exp.paymentMethod === 'doação' ? <User size={15} /> : 
+                         exp.paymentMethod === 'Caixa' ? <Wallet size={15} /> : <Wallet size={15} />}
+                      </div>
+
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+                          <span className="font-bold text-slate-200 text-xs sm:text-sm truncate max-w-[140px] sm:max-w-[260px]">
+                            {exp.local}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={(e) => copyAuditIdToClipboard(auditId, e)}
+                            title="Clique para copiar ID de auditoria"
+                            className="font-mono text-[9px] sm:text-[10px] text-blue-400 bg-blue-500/10 hover:bg-blue-500/25 border border-blue-500/20 px-1.5 py-0.5 rounded transition-all active:scale-95 inline-flex items-center"
+                          >
+                            {auditId}
+                          </button>
+                          <span className="text-[10px] font-medium text-slate-400 bg-slate-800/80 px-1.5 py-0.2 rounded border border-slate-700/60 hidden xs:inline">
+                            {exp.category}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-1.5 text-[10px] sm:text-[11px] text-slate-400 font-medium mt-0.5 truncate">
+                          <span>{exp.date ? exp.date.split('-').reverse().join('/') : '-'}</span>
+                          <span className="text-slate-600">•</span>
+                          {exp.paymentMethod === 'Cartão' && (
+                            <span className="text-blue-400">Cartão {exp.installments ? `(${exp.installments}x)` : ''}</span>
+                          )}
+                          {exp.paymentMethod === 'doação' && (
+                            <span className="text-purple-400">Doação ({exp.donor})</span>
+                          )}
+                          {exp.paymentMethod === 'Pix' && (
+                            <span className="text-emerald-400">Pix</span>
+                          )}
+                          {exp.paymentMethod === 'Caixa' && (
+                            <span className="text-amber-400">Caixa</span>
+                          )}
+                          {exp.observation && (
+                            <>
+                              <span className="text-slate-600">•</span>
+                              <span className="italic text-slate-500 truncate max-w-[120px] sm:max-w-[200px]" title={exp.observation}>
+                                "{exp.observation}"
+                              </span>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+                      <span className="font-mono font-bold text-xs sm:text-sm text-white bg-slate-950/60 px-2 sm:px-2.5 py-1 rounded-lg border border-slate-800">
+                        {formatCurrency(exp.value)}
+                      </span>
+                      {!isSharedMode && (
+                        <div className="flex items-center gap-0.5">
+                          <button 
+                            type="button"
+                            onClick={() => handleEditClick(exp)}
+                            className="p-1.5 text-slate-400 hover:text-blue-400 hover:bg-blue-500/10 rounded-lg transition-colors"
+                            title="Editar lançamento"
+                          >
+                            <Edit2 size={15} />
+                          </button>
+                          <button 
+                            type="button"
+                            onClick={() => onDelete(exp.id)}
+                            className="p-1.5 text-slate-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
+                            title="Excluir lançamento"
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        </div>
                       )}
                     </div>
-                    {exp.observation && (
-                      <p className="text-sm text-slate-400 mt-1.5 italic truncate bg-slate-950/30 px-2 py-1 rounded-md inline-block max-w-full">"{exp.observation}"</p>
-                    )}
                   </div>
-                </div>
-                <div className="flex items-center justify-between sm:justify-end gap-4 w-full sm:w-auto mt-3 sm:mt-0 pt-3 sm:pt-0 border-t sm:border-0 border-slate-800">
-                  <span className="font-mono font-bold text-lg text-white bg-slate-950/50 px-3 py-1.5 rounded-lg border border-slate-800">{formatCurrency(exp.value)}</span>
-                  <div className="flex items-center gap-1">
-                    <button 
-                      onClick={() => handleEditClick(exp)}
-                      className="p-2 text-slate-500 hover:text-blue-400 hover:bg-blue-500/10 rounded-lg transition-colors"
-                    >
-                      <Edit2 size={18} />
-                    </button>
-                    <button 
-                      onClick={() => onDelete(exp.id)}
-                      className="p-2 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
-                    >
-                      <Trash2 size={18} />
-                    </button>
-                  </div>
-                </div>
-              </Card>
-            ))
+                );
+              })}
+            </div>
           )}
         </div>
       </div>

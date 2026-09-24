@@ -127,10 +127,10 @@ export interface AppState {
   - **Datas**: `date-fns` com locale `ptBR`.
 
 - **Backend & Banco de Dados**:
-  - **Supabase**: PostgreSQL na nuvem com Row Level Security (RLS).
-  - **Tabelas**: `expenses`, `incomes`, `payments`, `terreno_installments`.
-  - **Tempo Real**: Subscrição a canais PostgreSQL via WebSocket (`supabase.channel('schema-db-changes')`).
-  - **Autenticação**: Supabase Auth com persistência e limpeza defensiva de tokens corrompidos.
+  - **PocketBase (Self-Hosted no Coolify)**: Instância ativa em `https://pb-casadolago.janagencia.com.br`, com redução drástica de consumo de memória (~30MB) e persistência SQLite ultrarrápida.
+  - **Coleções**: `expenses`, `incomes`, `payments`, `terreno_installments`.
+  - **Tempo Real**: Subscrição em tempo real nativa via Server-Sent Events (`pb.collection(name).subscribe('*')`).
+  - **Autenticação**: Autenticação com suporte a Superusers e coleções de usuários com timeout defensivo.
   - **Modo Compartilhado**: Acesso via URL com parâmetro `?shared=true` (acesso anônimo restrito para visualização das abas Início, Saídas e Terreno).
   - **Resiliência Offline (`useOfflineSync.ts`)**: Armazena inserções, edições e exclusões em fila no `localStorage` (`offline_sync_queue`) se a rede oscilar ou falhar, sincronizando em lote assim que a conexão retorna.
 
@@ -139,7 +139,7 @@ export interface AppState {
 ## 6. Telas e Módulos
 
 1. **Login (`src/components/Login.tsx`)**:
-   - Acesso seguro de administradores com timeout defensivo contra instabilidades do Supabase e interface dark moderna.
+   - Acesso seguro de administradores com timeout defensivo contra instabilidades do PocketBase e interface dark moderna.
 2. **Dashboard (`src/components/Dashboard.tsx`)**:
    - KPIs de Total da Obra, Saldo do Caixa, Saldo do Terreno e Total de Doações.
    - Gráficos de despesas por categoria.
@@ -160,12 +160,25 @@ export interface AppState {
    - Abas Geral, A Pagar e Faturas.
    - Filtros por categoria, termo de busca e exportação detalhada.
 7. **Configurações & Backup (`src/components/ConfigTab.tsx`)**:
-   - Geração de backups em JSON, CSV e planilhas Excel multi-abas.
+   - Geração de backups em JSON, CSV e planilhas Excel multi-abas enriquecidas com coluna de Código de Auditoria.
+   - **Módulo de Logs de Alterações ("logs")**: Sistema completo de trilha de auditoria (`auditLogger`) registrando criações, edições, exclusões e sincronizações com data, hora, usuário, ação e Código de Auditoria. Inclui busca, filtros por entidade/ação e exportação de logs em CSV e JSON.
 
 ---
 
-## 7. Diretrizes para Modificações Futuras
+## 7. Estrutura de IDs & Rastreabilidade de Auditoria
+- **Saídas**: `#EXP-XXXXXX` (baseado nos 6 primeiros caracteres alfanuméricos do ID original).
+- **Entradas**: `#REC-XXXXXX`.
+- **Pagamentos**: `#PAG-XXXXXX`.
+- **Terreno**: `#TER-YYYYMM` (ex: `#TER-202402`).
+- *Preservação de Dados*: O ID original do PocketBase é 100% mantido para todas as mutações e integridade relacional; os códigos de auditoria são determinísticos, facilitam conferência visual, comunicação rápida entre sócios e auditoria contábil.
+- *Interatividade*: Clique direto sobre qualquer tag de ID copia o código para a área de transferência com notificação Toast.
+
+---
+
+## 8. Diretrizes para Modificações Futuras
 - O código-fonte ativo da aplicação está localizado dentro de **`src/`** (sendo `src/main.tsx` o entrypoint configurado no `index.html`).
+- Para documentação técnica exaustiva e histórico completo da engenharia do app, consulte sempre o arquivo [`RELATORIO_TECNICO_DO_PROJETO.md`](./RELATORIO_TECNICO_DO_PROJETO.md).
 - Mantenha sempre a normalização de categorias via `normalizeCategory` para prevenir divergências com ou sem acentuação.
 - Ao alterar cálculos de rateio ou faturas, respeite a regra de fechamento no dia 28 e a divisão de custos fixos de R$ 750,00 entre 4 participantes.
-- Todas as mutações com o Supabase devem passar ou se integrar ao `useOfflineSync` para garantir que o sistema não perca dados em caso de conexão fraca no canteiro de obras.
+- Todas as mutações com o PocketBase devem passar ou se integrar ao `useOfflineSync` para garantir que o sistema não perca dados em caso de conexão fraca no canteiro de obras.
+- Mantenha as linhas de listas e tabelas compactas e com espaçamento otimizado para navegação touch fluida em smartphones.

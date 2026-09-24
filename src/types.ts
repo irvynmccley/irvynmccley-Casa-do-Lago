@@ -13,6 +13,7 @@ export interface Expense {
   installments?: number;
   donor?: Donor;
   observation?: string;
+  auditId?: string;
 }
 
 export interface Income {
@@ -21,6 +22,7 @@ export interface Income {
   value: number;
   description: string;
   isCaixa?: boolean;
+  auditId?: string;
 }
 
 export interface Payment {
@@ -28,6 +30,7 @@ export interface Payment {
   date: string;
   value: number;
   person: Person;
+  auditId?: string;
 }
 
 export interface AppState {

@@ -3,6 +3,7 @@ import { Trash2, User, Edit2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { Income, Payment, Person } from '../types';
 import { Card } from './ui/Card';
+import { formatAuditId, copyAuditIdToClipboard } from '../utils/audit';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
@@ -231,51 +232,96 @@ export function IncomesTab({
           </Card>
         </div>
 
-        <div className="lg:col-span-2 space-y-6">
-          <h3 className="text-lg font-bold text-white">Saldos Individuais</h3>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="lg:col-span-2 space-y-5">
+          <h3 className="text-base sm:text-lg font-bold text-white">Saldos Individuais</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
             {individualStats.map((stat: any) => (
-              <Card key={stat.name} className="bg-slate-900/60 backdrop-blur-xl border border-slate-700/50 p-6 flex flex-col items-center text-center ring-1 ring-white/5 hover:bg-slate-800/60 transition-all">
-                <div className="w-12 h-12 bg-emerald-500/10 rounded-full flex items-center justify-center mb-4 text-emerald-400 ring-1 ring-emerald-500/20 shadow-[0_0_15px_rgba(16,185,129,0.1)]">
-                  <User size={24} />
+              <Card key={stat.name} className="bg-slate-900/60 backdrop-blur-xl border border-slate-700/50 p-4 sm:p-5 flex flex-col items-center text-center ring-1 ring-white/5 hover:bg-slate-800/60 transition-all">
+                <div className="w-9 h-9 bg-emerald-500/10 rounded-full flex items-center justify-center mb-2.5 text-emerald-400 ring-1 ring-emerald-500/20 shadow-[0_0_15px_rgba(16,185,129,0.1)]">
+                  <User size={18} />
                 </div>
-                <h4 className="font-bold text-lg text-white mb-1">{stat.name}</h4>
-                <div className="text-[10px] text-slate-400 uppercase tracking-widest font-semibold mb-4">Saldo Devedor</div>
+                <h4 className="font-bold text-base text-white mb-0.5">{stat.name}</h4>
+                <div className="text-[9px] text-slate-400 uppercase tracking-widest font-semibold mb-2">Saldo Devedor</div>
                 <div className={cn(
-                  "text-xl font-mono font-bold bg-slate-950/50 px-4 py-1.5 rounded-lg border border-slate-800",
+                  "text-lg font-mono font-bold bg-slate-950/50 px-3 py-1 rounded-lg border border-slate-800",
                   stat.debt > 0 ? "text-red-400 shadow-[inset_0_0_10px_rgba(239,68,68,0.1)]" : "text-emerald-400 shadow-[inset_0_0_10px_rgba(16,185,129,0.1)]"
                 )}>
                   {formatCurrency(stat.debt)}
                 </div>
-                <div className="mt-4 pt-4 border-t border-slate-700/50 w-full text-xs text-slate-400 font-medium">
+                <div className="mt-3 pt-3 border-t border-slate-700/50 w-full text-xs text-slate-400 font-medium">
                   Total Pago: <span className="text-slate-200">{formatCurrency(stat.paid)}</span>
                 </div>
               </Card>
             ))}
           </div>
 
-          <h3 className="text-lg font-bold text-white mt-8">Histórico de Entradas</h3>
-          <div className="space-y-3">
-            {sortedIncomes.map((inc: Income) => (
-              <div key={inc.id} className="bg-slate-900/40 backdrop-blur-md border border-slate-800 p-4 rounded-xl flex justify-between items-center shadow-sm hover:bg-slate-800/60 transition-all ring-1 ring-white/5 group">
-                <div>
-                  <div className="font-bold text-slate-200 flex items-center gap-2">
-                    {inc.description}
-                    {inc.isCaixa && <span className="px-2 py-0.5 bg-amber-500/10 text-amber-400 text-[10px] font-bold uppercase rounded-md ring-1 ring-amber-500/20">Caixa</span>}
+          <div className="flex items-center justify-between mt-6 mb-2">
+            <h3 className="text-base sm:text-lg font-bold text-white">Histórico de Entradas</h3>
+            <span className="text-xs font-mono font-medium text-slate-400 bg-slate-800/80 px-2 py-0.5 rounded-md border border-slate-700">
+              {sortedIncomes.length}
+            </span>
+          </div>
+
+          <div className="space-y-1.5 sm:space-y-2">
+            {sortedIncomes.map((inc: Income) => {
+              const auditId = formatAuditId('REC', inc.id);
+              return (
+                <div 
+                  key={inc.id} 
+                  className="bg-slate-900/50 hover:bg-slate-800/50 backdrop-blur-md border border-slate-800/80 hover:border-slate-700/80 px-3 py-2 sm:px-4 sm:py-2.5 rounded-xl flex justify-between items-center shadow-sm transition-all ring-1 ring-white/5 group"
+                >
+                  <div className="min-w-0 flex-1 pr-2">
+                    <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+                      <span className="font-semibold text-slate-200 text-xs sm:text-sm truncate">
+                        {inc.description}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={(e) => copyAuditIdToClipboard(auditId, e)}
+                        title="Clique para copiar ID de auditoria"
+                        className="font-mono text-[9px] sm:text-[10px] text-blue-400 bg-blue-500/10 hover:bg-blue-500/25 border border-blue-500/20 px-1.5 py-0.5 rounded transition-all active:scale-95 inline-flex items-center"
+                      >
+                        {auditId}
+                      </button>
+                      {inc.isCaixa && (
+                        <span className="px-1.5 py-0.2 bg-amber-500/10 text-amber-400 text-[9px] sm:text-[10px] font-bold uppercase rounded border border-amber-500/20">
+                          Caixa
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-[10px] sm:text-[11px] text-slate-400 font-medium mt-0.5">
+                      {inc.date ? inc.date.split('-').reverse().join('/') : '-'}
+                    </div>
                   </div>
-                  <div className="text-xs text-slate-400 mt-1">{inc.date ? inc.date.split('-').reverse().join('/') : '-'}</div>
-                </div>
-                <div className="flex items-center gap-4">
-                  <span className="font-mono font-bold text-emerald-400 bg-emerald-500/10 px-3 py-1 rounded-lg border border-emerald-500/20">+{formatCurrency(inc.value)}</span>
-                  <div className="flex items-center gap-1 opacity-70 group-hover:opacity-100 transition-opacity">
-                    <button onClick={() => handleEditIncomeClick(inc)} className="p-2 text-slate-500 hover:text-blue-400 hover:bg-blue-500/10 rounded-lg transition-colors"><Edit2 size={16} /></button>
-                    <button onClick={() => onDeleteIncome(inc.id)} className="p-2 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"><Trash2 size={16} /></button>
+
+                  <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+                    <span className="font-mono font-bold text-xs sm:text-sm text-emerald-400 bg-emerald-500/10 px-2 sm:px-2.5 py-1 rounded-lg border border-emerald-500/20">
+                      +{formatCurrency(inc.value)}
+                    </span>
+                    <div className="flex items-center gap-0.5">
+                      <button 
+                        type="button"
+                        onClick={() => handleEditIncomeClick(inc)} 
+                        className="p-1.5 text-slate-400 hover:text-blue-400 hover:bg-blue-500/10 rounded-lg transition-colors"
+                        title="Editar entrada"
+                      >
+                        <Edit2 size={15} />
+                      </button>
+                      <button 
+                        type="button"
+                        onClick={() => onDeleteIncome(inc.id)} 
+                        className="p-1.5 text-slate-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
+                        title="Excluir entrada"
+                      >
+                        <Trash2 size={15} />
+                      </button>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
             {sortedIncomes.length === 0 && (
-              <div className="bg-slate-900/40 rounded-2xl p-8 text-center text-slate-400 border border-dashed border-slate-700/50">
+              <div className="bg-slate-900/40 rounded-xl p-8 text-center text-slate-400 border border-dashed border-slate-800">
                 Nenhuma entrada registrada ainda.
               </div>
             )}

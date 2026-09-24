@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { pb } from './pocketbaseClient';
 import { toast } from 'sonner';
+import { auditLogger } from './utils/auditLogger';
 
 export type SyncOperation = {
   type: string;
@@ -112,6 +113,15 @@ export function useOfflineSync(fetchAllData: () => Promise<void>) {
 
       if (successCount > 0) {
         await fetchAllData();
+        auditLogger.log({
+          action: 'SYNC',
+          actionLabel: 'Sincronização Offline',
+          entity: 'Sistema',
+          recordId: `sync-${Date.now()}`,
+          auditId: '#SYS-SYNC',
+          user: 'Sistema',
+          details: `${successCount} registros sincronizados com o banco de dados com sucesso`
+        });
         toast.success(`Sincronizados ${successCount} registros pendentes!`);
       }
       

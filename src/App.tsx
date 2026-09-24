@@ -25,6 +25,8 @@ import { pb } from './pocketbaseClient';
 import { Toaster, toast } from 'sonner';
 import { ConfirmDialog } from './components/ui/ConfirmDialog';
 import { useOfflineSync } from './useOfflineSync';
+import { formatAuditId } from './utils/audit';
+import { auditLogger } from './utils/auditLogger';
 
 const ENABLE_POCKETBASE_SYNC = true; // Trava de segurança para persistência no PocketBase
 
@@ -212,7 +214,18 @@ function App() {
       const normalizedExpenses = (expensesData as any[]).map(e => ({
         ...e,
         id: e.id,
+        auditId: formatAuditId('EXP', e.id),
         category: normalizeCategory(e.category) as Category
+      }));
+
+      const normalizedIncomes = (incomesData as any[]).map(i => ({
+        ...i,
+        auditId: formatAuditId('REC', i.id)
+      }));
+
+      const normalizedPayments = (paymentsData as any[]).map(p => ({
+        ...p,
+        auditId: formatAuditId('PAG', p.id)
       }));
 
       const terrenoIds = terrenoData.map((t: any) => t.month_id || t.original_id || t.id);
@@ -220,8 +233,8 @@ function App() {
       setState(prev => ({
         ...prev,
         expenses: normalizedExpenses as unknown as Expense[],
-        incomes: incomesData as unknown as Income[],
-        payments: paymentsData as unknown as Payment[],
+        incomes: normalizedIncomes as unknown as Income[],
+        payments: normalizedPayments as unknown as Payment[],
         terrenoPaidInstallments: terrenoIds.length > 0 ? terrenoIds : INITIAL_PAID_TERRENO
       }));
     } catch (e) {
@@ -428,11 +441,25 @@ function App() {
     return 40000 - totalPaid;
   }, [state.terrenoPaidInstallments]);
 
-  // --- Handlers ---
+  // --- Handlers & Audit Helpers ---
+
+  const getUserName = () => {
+    return user?.email?.split('@')[0] || user?.username || 'Mccley';
+  };
 
   const addExpense = async (expense: Omit<Expense, 'id'>) => {
     if (!ENABLE_POCKETBASE_SYNC) {
-      setState(prev => ({ ...prev, expenses: [{ ...expense, id: Date.now().toString() } as Expense, ...prev.expenses] }));
+      const newId = Date.now().toString();
+      setState(prev => ({ ...prev, expenses: [{ ...expense, id: newId, auditId: formatAuditId('EXP', newId) } as Expense, ...prev.expenses] }));
+      auditLogger.log({
+        action: 'CREATE',
+        actionLabel: 'Saída Criada',
+        entity: 'Saída',
+        recordId: newId,
+        auditId: formatAuditId('EXP', newId),
+        user: getUserName(),
+        details: `${expense.local} - R$ ${expense.value.toFixed(2)} (${expense.paymentMethod})`
+      });
       toast.success("Lançamento com Sucesso");
       return;
     }
@@ -440,21 +467,50 @@ function App() {
     const payload = { ...cleanExpense, createdBy: user?.id || null };
     
     if (isOffline) {
+       const tempId = 'temp-' + Date.now().toString();
        saveToOfflineQueue('ADD_EXPENSE', payload);
-       setState(prev => ({ ...prev, expenses: [{ ...payload, id: 'temp-' + Date.now().toString() } as unknown as Expense, ...prev.expenses] }));
+       setState(prev => ({ ...prev, expenses: [{ ...payload, id: tempId, auditId: formatAuditId('EXP', tempId) } as unknown as Expense, ...prev.expenses] }));
+       auditLogger.log({
+         action: 'CREATE',
+         actionLabel: 'Saída Criada (Offline)',
+         entity: 'Saída',
+         recordId: tempId,
+         auditId: formatAuditId('EXP', tempId),
+         user: getUserName(),
+         details: `${expense.local} - R$ ${expense.value.toFixed(2)} (${expense.paymentMethod})`
+       });
        toast.success("Salvo offline. Rastreando até reconectar.");
        return;
     }
 
     try {
-      await pb.collection('expenses').create(payload);
+      const record = await pb.collection('expenses').create(payload);
       await fetchAllData();
+      auditLogger.log({
+        action: 'CREATE',
+        actionLabel: 'Saída Criada',
+        entity: 'Saída',
+        recordId: record.id,
+        auditId: formatAuditId('EXP', record.id),
+        user: getUserName(),
+        details: `${expense.local} - R$ ${expense.value.toFixed(2)} (${expense.paymentMethod})`
+      });
       toast.success("Lançamento com Sucesso");
     } catch (error: any) {
       console.error("Error adding expense: ", error);
       if (error.isAbort || !navigator.onLine || (error.message && (error.message.includes('FetchError') || error.message.includes('Failed to fetch') || error.message.includes('network')))) {
+         const tempId = 'temp-' + Date.now().toString();
          saveToOfflineQueue('ADD_EXPENSE', payload);
-         setState(prev => ({ ...prev, expenses: [{ ...payload, id: 'temp-' + Date.now().toString() } as unknown as Expense, ...prev.expenses] }));
+         setState(prev => ({ ...prev, expenses: [{ ...payload, id: tempId, auditId: formatAuditId('EXP', tempId) } as unknown as Expense, ...prev.expenses] }));
+         auditLogger.log({
+           action: 'CREATE',
+           actionLabel: 'Saída Criada (Offline)',
+           entity: 'Saída',
+           recordId: tempId,
+           auditId: formatAuditId('EXP', tempId),
+           user: getUserName(),
+           details: `${expense.local} - R$ ${expense.value.toFixed(2)} (${expense.paymentMethod})`
+         });
          toast.success("Salvo offline (Erro de rede).");
       } else {
          toast.error(`Erro ao adicionar despesa: ${error.message || 'Verifique os dados.'}`);
@@ -465,6 +521,15 @@ function App() {
   const editExpense = async (id: string, expense: Partial<Omit<Expense, 'id'>>) => {
     if (!ENABLE_POCKETBASE_SYNC) {
       setState(prev => ({ ...prev, expenses: prev.expenses.map(e => e.id === id ? { ...e, ...expense } as Expense : e) }));
+      auditLogger.log({
+        action: 'UPDATE',
+        actionLabel: 'Saída Editada',
+        entity: 'Saída',
+        recordId: id,
+        auditId: formatAuditId('EXP', id),
+        user: getUserName(),
+        details: `${expense.local || 'Item'} - R$ ${expense.value !== undefined ? expense.value.toFixed(2) : 'alterado'}`
+      });
       toast.success("Lançamento alterado com sucesso");
       return;
     }
@@ -473,6 +538,15 @@ function App() {
     if (isOffline) {
        saveToOfflineQueue('EDIT_EXPENSE', cleanExpense, id);
        setState(prev => ({ ...prev, expenses: prev.expenses.map(e => e.id === id ? { ...e, ...cleanExpense } as Expense : e) }));
+       auditLogger.log({
+         action: 'UPDATE',
+         actionLabel: 'Saída Editada (Offline)',
+         entity: 'Saída',
+         recordId: id,
+         auditId: formatAuditId('EXP', id),
+         user: getUserName(),
+         details: `${expense.local || 'Item'} - R$ ${expense.value !== undefined ? expense.value.toFixed(2) : 'alterado'}`
+       });
        toast.success("Editado offline. Será sincronizado na próxima conexão.");
        return;
     }
@@ -480,6 +554,15 @@ function App() {
     try {
       await pb.collection('expenses').update(id, cleanExpense);
       await fetchAllData();
+      auditLogger.log({
+        action: 'UPDATE',
+        actionLabel: 'Saída Editada',
+        entity: 'Saída',
+        recordId: id,
+        auditId: formatAuditId('EXP', id),
+        user: getUserName(),
+        details: `${expense.local || 'Item'} - R$ ${expense.value !== undefined ? expense.value.toFixed(2) : 'alterado'}`
+      });
       toast.success("Lançamento alterado com sucesso");
     } catch (error: any) {
       console.error("Error editing expense: ", error);
@@ -493,71 +576,19 @@ function App() {
     }
   };
 
-  const addIncome = async (income: Omit<Income, 'id'>) => {
-    if (!ENABLE_POCKETBASE_SYNC) {
-      setState(prev => ({ ...prev, incomes: [{ ...income, id: Date.now().toString() } as Income, ...prev.incomes] }));
-      toast.success("Lançamento com Sucesso");
-      return;
-    }
-    const payload = { ...income, createdBy: user?.id || null };
-
-    if (isOffline) {
-       saveToOfflineQueue('ADD_INCOME', payload);
-       setState(prev => ({ ...prev, incomes: [{ ...payload, id: 'temp-' + Date.now().toString() } as unknown as Income, ...prev.incomes] }));
-       toast.success("Salvo offline. Será sincronizado na próxima conexão.");
-       return;
-    }
-
-    try {
-      await pb.collection('incomes').create(payload);
-      await fetchAllData();
-      toast.success("Lançamento com Sucesso");
-    } catch (error: any) {
-      console.error("Error adding income: ", error);
-      if (error.isAbort || !navigator.onLine || (error.message && (error.message.includes('FetchError') || error.message.includes('Failed to fetch') || error.message.includes('network')))) {
-         saveToOfflineQueue('ADD_INCOME', payload);
-         setState(prev => ({ ...prev, incomes: [{ ...payload, id: 'temp-' + Date.now().toString() } as unknown as Income, ...prev.incomes] }));
-         toast.success("Salvo offline (Erro de rede).");
-      } else {
-         toast.error(`Erro ao adicionar entrada: ${error.message || 'Verifique os dados.'}`);
-      }
-    }
-  };
-
-  const addPayment = async (payment: Omit<Payment, 'id'>) => {
-    if (!ENABLE_POCKETBASE_SYNC) {
-      setState(prev => ({ ...prev, payments: [{ ...payment, id: Date.now().toString() } as Payment, ...prev.payments] }));
-      toast.success("Lançamento com Sucesso");
-      return;
-    }
-    const payload = { ...payment, createdBy: user?.id || null };
-    
-    if (isOffline) {
-       saveToOfflineQueue('ADD_PAYMENT', payload);
-       setState(prev => ({ ...prev, payments: [{ ...payload, id: 'temp-' + Date.now().toString() } as unknown as Payment, ...prev.payments] }));
-       toast.success("Salvo offline. Rastreando até reconectar.");
-       return;
-    }
-
-    try {
-      await pb.collection('payments').create(payload);
-      await fetchAllData();
-      toast.success("Lançamento com Sucesso");
-    } catch (error: any) {
-      console.error("Error adding payment: ", error);
-      if (error.isAbort || !navigator.onLine || (error.message && (error.message.includes('FetchError') || error.message.includes('Failed to fetch') || error.message.includes('network')))) {
-         saveToOfflineQueue('ADD_PAYMENT', payload);
-         setState(prev => ({ ...prev, payments: [{ ...payload, id: 'temp-' + Date.now().toString() } as unknown as Payment, ...prev.payments] }));
-         toast.success("Salvo offline (Erro de rede).");
-      } else {
-         toast.error(`Erro ao adicionar pagamento: ${error.message || 'Verifique os dados.'}`);
-      }
-    }
-  };
-
   const deleteExpense = async (id: string) => {
+    const target = state.expenses.find(e => e.id === id);
     if (!ENABLE_POCKETBASE_SYNC) {
       setState(prev => ({ ...prev, expenses: prev.expenses.filter(e => e.id !== id) }));
+      auditLogger.log({
+        action: 'DELETE',
+        actionLabel: 'Saída Excluída',
+        entity: 'Saída',
+        recordId: id,
+        auditId: formatAuditId('EXP', id),
+        user: getUserName(),
+        details: target ? `${target.local} - R$ ${target.value.toFixed(2)}` : `ID ${id}`
+      });
       toast.success("Lançamento excluído com sucesso");
       return;
     }
@@ -565,6 +596,15 @@ function App() {
     if (isOffline) {
        saveToOfflineQueue('DELETE_EXPENSE', null, id);
        setState(prev => ({ ...prev, expenses: prev.expenses.filter(e => e.id !== id) }));
+       auditLogger.log({
+         action: 'DELETE',
+         actionLabel: 'Saída Excluída (Offline)',
+         entity: 'Saída',
+         recordId: id,
+         auditId: formatAuditId('EXP', id),
+         user: getUserName(),
+         details: target ? `${target.local} - R$ ${target.value.toFixed(2)}` : `ID ${id}`
+       });
        toast.success("Excluído offline. Será sincronizado na próxima conexão.");
        return;
     }
@@ -572,6 +612,15 @@ function App() {
     try {
       await pb.collection('expenses').delete(id);
       await fetchAllData();
+      auditLogger.log({
+        action: 'DELETE',
+        actionLabel: 'Saída Excluída',
+        entity: 'Saída',
+        recordId: id,
+        auditId: formatAuditId('EXP', id),
+        user: getUserName(),
+        details: target ? `${target.local} - R$ ${target.value.toFixed(2)}` : `ID ${id}`
+      });
       toast.success("Lançamento excluído com sucesso");
     } catch (error: any) {
       console.error("Error deleting expense: ", error);
@@ -585,9 +634,158 @@ function App() {
     }
   };
 
+  const addIncome = async (income: Omit<Income, 'id'>) => {
+    if (!ENABLE_POCKETBASE_SYNC) {
+      const newId = Date.now().toString();
+      setState(prev => ({ ...prev, incomes: [{ ...income, id: newId, auditId: formatAuditId('REC', newId) } as Income, ...prev.incomes] }));
+      auditLogger.log({
+        action: 'CREATE',
+        actionLabel: 'Entrada Criada',
+        entity: 'Entrada',
+        recordId: newId,
+        auditId: formatAuditId('REC', newId),
+        user: getUserName(),
+        details: `${income.description} - R$ ${income.value.toFixed(2)}${income.isCaixa ? ' (Caixa)' : ''}`
+      });
+      toast.success("Lançamento com Sucesso");
+      return;
+    }
+    const payload = { ...income, createdBy: user?.id || null };
+
+    if (isOffline) {
+       const tempId = 'temp-' + Date.now().toString();
+       saveToOfflineQueue('ADD_INCOME', payload);
+       setState(prev => ({ ...prev, incomes: [{ ...payload, id: tempId, auditId: formatAuditId('REC', tempId) } as unknown as Income, ...prev.incomes] }));
+       auditLogger.log({
+         action: 'CREATE',
+         actionLabel: 'Entrada Criada (Offline)',
+         entity: 'Entrada',
+         recordId: tempId,
+         auditId: formatAuditId('REC', tempId),
+         user: getUserName(),
+         details: `${income.description} - R$ ${income.value.toFixed(2)}${income.isCaixa ? ' (Caixa)' : ''}`
+       });
+       toast.success("Salvo offline. Será sincronizado na próxima conexão.");
+       return;
+    }
+
+    try {
+      const record = await pb.collection('incomes').create(payload);
+      await fetchAllData();
+      auditLogger.log({
+        action: 'CREATE',
+        actionLabel: 'Entrada Criada',
+        entity: 'Entrada',
+        recordId: record.id,
+        auditId: formatAuditId('REC', record.id),
+        user: getUserName(),
+        details: `${income.description} - R$ ${income.value.toFixed(2)}${income.isCaixa ? ' (Caixa)' : ''}`
+      });
+      toast.success("Lançamento com Sucesso");
+    } catch (error: any) {
+      console.error("Error adding income: ", error);
+      if (error.isAbort || !navigator.onLine || (error.message && (error.message.includes('FetchError') || error.message.includes('Failed to fetch') || error.message.includes('network')))) {
+         const tempId = 'temp-' + Date.now().toString();
+         saveToOfflineQueue('ADD_INCOME', payload);
+         setState(prev => ({ ...prev, incomes: [{ ...payload, id: tempId, auditId: formatAuditId('REC', tempId) } as unknown as Income, ...prev.incomes] }));
+         auditLogger.log({
+           action: 'CREATE',
+           actionLabel: 'Entrada Criada (Offline)',
+           entity: 'Entrada',
+           recordId: tempId,
+           auditId: formatAuditId('REC', tempId),
+           user: getUserName(),
+           details: `${income.description} - R$ ${income.value.toFixed(2)}${income.isCaixa ? ' (Caixa)' : ''}`
+         });
+         toast.success("Salvo offline (Erro de rede).");
+      } else {
+         toast.error(`Erro ao adicionar entrada: ${error.message || 'Verifique os dados.'}`);
+      }
+    }
+  };
+
+  const addPayment = async (payment: Omit<Payment, 'id'>) => {
+    if (!ENABLE_POCKETBASE_SYNC) {
+      const newId = Date.now().toString();
+      setState(prev => ({ ...prev, payments: [{ ...payment, id: newId, auditId: formatAuditId('PAG', newId) } as Payment, ...prev.payments] }));
+      auditLogger.log({
+        action: 'CREATE',
+        actionLabel: 'Pagamento Registrado',
+        entity: 'Pagamento',
+        recordId: newId,
+        auditId: formatAuditId('PAG', newId),
+        user: getUserName(),
+        details: `${payment.person} - R$ ${payment.value.toFixed(2)}`
+      });
+      toast.success("Lançamento com Sucesso");
+      return;
+    }
+    const payload = { ...payment, createdBy: user?.id || null };
+    
+    if (isOffline) {
+       const tempId = 'temp-' + Date.now().toString();
+       saveToOfflineQueue('ADD_PAYMENT', payload);
+       setState(prev => ({ ...prev, payments: [{ ...payload, id: tempId, auditId: formatAuditId('PAG', tempId) } as unknown as Payment, ...prev.payments] }));
+       auditLogger.log({
+         action: 'CREATE',
+         actionLabel: 'Pagamento Registrado (Offline)',
+         entity: 'Pagamento',
+         recordId: tempId,
+         auditId: formatAuditId('PAG', tempId),
+         user: getUserName(),
+         details: `${payment.person} - R$ ${payment.value.toFixed(2)}`
+       });
+       toast.success("Salvo offline. Rastreando até reconectar.");
+       return;
+    }
+
+    try {
+      const record = await pb.collection('payments').create(payload);
+      await fetchAllData();
+      auditLogger.log({
+        action: 'CREATE',
+        actionLabel: 'Pagamento Registrado',
+        entity: 'Pagamento',
+        recordId: record.id,
+        auditId: formatAuditId('PAG', record.id),
+        user: getUserName(),
+        details: `${payment.person} - R$ ${payment.value.toFixed(2)}`
+      });
+      toast.success("Lançamento com Sucesso");
+    } catch (error: any) {
+      console.error("Error adding payment: ", error);
+      if (error.isAbort || !navigator.onLine || (error.message && (error.message.includes('FetchError') || error.message.includes('Failed to fetch') || error.message.includes('network')))) {
+         const tempId = 'temp-' + Date.now().toString();
+         saveToOfflineQueue('ADD_PAYMENT', payload);
+         setState(prev => ({ ...prev, payments: [{ ...payload, id: tempId, auditId: formatAuditId('PAG', tempId) } as unknown as Payment, ...prev.payments] }));
+         auditLogger.log({
+           action: 'CREATE',
+           actionLabel: 'Pagamento Registrado (Offline)',
+           entity: 'Pagamento',
+           recordId: tempId,
+           auditId: formatAuditId('PAG', tempId),
+           user: getUserName(),
+           details: `${payment.person} - R$ ${payment.value.toFixed(2)}`
+         });
+         toast.success("Salvo offline (Erro de rede).");
+      } else {
+         toast.error(`Erro ao adicionar pagamento: ${error.message || 'Verifique os dados.'}`);
+      }
+    }
+  };
+
   const editIncome = async (id: string, income: Partial<Omit<Income, 'id'>>) => {
     if (!ENABLE_POCKETBASE_SYNC) {
       setState(prev => ({ ...prev, incomes: prev.incomes.map(i => i.id === id ? { ...i, ...income } as Income : i) }));
+      auditLogger.log({
+        action: 'UPDATE',
+        actionLabel: 'Entrada Editada',
+        entity: 'Entrada',
+        recordId: id,
+        auditId: formatAuditId('REC', id),
+        user: getUserName(),
+        details: `${income.description || 'Entrada'} - R$ ${income.value !== undefined ? income.value.toFixed(2) : 'alterado'}`
+      });
       toast.success("Lançamento alterado com sucesso");
       return;
     }
@@ -596,6 +794,15 @@ function App() {
     if (isOffline) {
        saveToOfflineQueue('EDIT_INCOME', cleanIncome, id);
        setState(prev => ({ ...prev, incomes: prev.incomes.map(i => i.id === id ? { ...i, ...cleanIncome } as Income : i) }));
+       auditLogger.log({
+         action: 'UPDATE',
+         actionLabel: 'Entrada Editada (Offline)',
+         entity: 'Entrada',
+         recordId: id,
+         auditId: formatAuditId('REC', id),
+         user: getUserName(),
+         details: `${income.description || 'Entrada'} - R$ ${income.value !== undefined ? income.value.toFixed(2) : 'alterado'}`
+       });
        toast.success("Editado offline. Será sincronizado na próxima conexão.");
        return;
     }
@@ -603,6 +810,15 @@ function App() {
     try {
       await pb.collection('incomes').update(id, cleanIncome);
       await fetchAllData();
+      auditLogger.log({
+        action: 'UPDATE',
+        actionLabel: 'Entrada Editada',
+        entity: 'Entrada',
+        recordId: id,
+        auditId: formatAuditId('REC', id),
+        user: getUserName(),
+        details: `${cleanIncome.description || 'Entrada'} - R$ ${cleanIncome.value !== undefined ? Number(cleanIncome.value).toFixed(2) : 'alterado'}`
+      });
       toast.success("Lançamento alterado com sucesso");
     } catch (error: any) {
       console.error("Error editing income: ", error);
@@ -617,8 +833,18 @@ function App() {
   };
 
   const deleteIncome = async (id: string) => {
+    const target = state.incomes.find(i => i.id === id);
     if (!ENABLE_POCKETBASE_SYNC) {
       setState(prev => ({ ...prev, incomes: prev.incomes.filter(i => i.id !== id) }));
+      auditLogger.log({
+        action: 'DELETE',
+        actionLabel: 'Entrada Excluída',
+        entity: 'Entrada',
+        recordId: id,
+        auditId: formatAuditId('REC', id),
+        user: getUserName(),
+        details: target ? `${target.description} - R$ ${target.value.toFixed(2)}` : `ID ${id}`
+      });
       toast.success("Lançamento excluído com sucesso");
       return;
     }
@@ -626,6 +852,15 @@ function App() {
     if (isOffline) {
        saveToOfflineQueue('DELETE_INCOME', null, id);
        setState(prev => ({ ...prev, incomes: prev.incomes.filter(i => i.id !== id) }));
+       auditLogger.log({
+         action: 'DELETE',
+         actionLabel: 'Entrada Excluída (Offline)',
+         entity: 'Entrada',
+         recordId: id,
+         auditId: formatAuditId('REC', id),
+         user: getUserName(),
+         details: target ? `${target.description} - R$ ${target.value.toFixed(2)}` : `ID ${id}`
+       });
        toast.success("Excluído offline. Será sincronizado na próxima conexão.");
        return;
     }
@@ -633,6 +868,15 @@ function App() {
     try {
       await pb.collection('incomes').delete(id);
       await fetchAllData();
+      auditLogger.log({
+        action: 'DELETE',
+        actionLabel: 'Entrada Excluída',
+        entity: 'Entrada',
+        recordId: id,
+        auditId: formatAuditId('REC', id),
+        user: getUserName(),
+        details: target ? `${target.description} - R$ ${target.value.toFixed(2)}` : `ID ${id}`
+      });
       toast.success("Lançamento excluído com sucesso");
     } catch (error: any) {
       console.error("Error deleting income: ", error);
@@ -647,8 +891,18 @@ function App() {
   };
 
   const deletePayment = async (id: string) => {
+    const target = state.payments.find(p => p.id === id);
     if (!ENABLE_POCKETBASE_SYNC) {
       setState(prev => ({ ...prev, payments: prev.payments.filter(p => p.id !== id) }));
+      auditLogger.log({
+        action: 'DELETE',
+        actionLabel: 'Pagamento Excluído',
+        entity: 'Pagamento',
+        recordId: id,
+        auditId: formatAuditId('PAG', id),
+        user: getUserName(),
+        details: target ? `${target.person} - R$ ${target.value.toFixed(2)}` : `ID ${id}`
+      });
       toast.success("Lançamento excluído com sucesso");
       return;
     }
@@ -656,6 +910,15 @@ function App() {
     if (isOffline) {
        saveToOfflineQueue('DELETE_PAYMENT', null, id);
        setState(prev => ({ ...prev, payments: prev.payments.filter(p => p.id !== id) }));
+       auditLogger.log({
+         action: 'DELETE',
+         actionLabel: 'Pagamento Excluído (Offline)',
+         entity: 'Pagamento',
+         recordId: id,
+         auditId: formatAuditId('PAG', id),
+         user: getUserName(),
+         details: target ? `${target.person} - R$ ${target.value.toFixed(2)}` : `ID ${id}`
+       });
        toast.success("Excluído offline. Será sincronizado na próxima conexão.");
        return;
     }
@@ -663,6 +926,15 @@ function App() {
     try {
       await pb.collection('payments').delete(id);
       await fetchAllData();
+      auditLogger.log({
+        action: 'DELETE',
+        actionLabel: 'Pagamento Excluído',
+        entity: 'Pagamento',
+        recordId: id,
+        auditId: formatAuditId('PAG', id),
+        user: getUserName(),
+        details: target ? `${target.person} - R$ ${target.value.toFixed(2)}` : `ID ${id}`
+      });
       toast.success("Lançamento excluído com sucesso");
     } catch (error: any) {
       console.error("Error deleting payment: ", error);
@@ -721,6 +993,16 @@ function App() {
       : [...currentPaid, id];
     
     setState(prev => ({ ...prev, terrenoPaidInstallments: newPaid }));
+
+    auditLogger.log({
+      action: isPaid ? 'DELETE' : 'PAYMENT',
+      actionLabel: isPaid ? 'Parcela Terreno Desmarcada' : 'Parcela Terreno Paga',
+      entity: 'Terreno',
+      recordId: id,
+      auditId: formatAuditId('TER', id),
+      user: getUserName(),
+      details: `Parcela ${id} - R$ 700,00`
+    });
 
     if (ENABLE_POCKETBASE_SYNC) {
       if (isOffline) {

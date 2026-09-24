@@ -6,6 +6,7 @@ import { Card } from './ui/Card';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { Search, ChevronDown, ChevronUp } from 'lucide-react';
+import { formatAuditId, copyAuditIdToClipboard } from '../utils/audit';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -43,11 +44,15 @@ export function ReportsTab({ expenses, allCardInstallments = [], formatCurrency 
     }
     if (searchTerm) {
       const lowerSearch = searchTerm.toLowerCase();
-      result = result.filter((e: Expense) => 
-        (e.local && typeof e.local === 'string' && e.local.toLowerCase().includes(lowerSearch)) ||
-        (e.observation && typeof e.observation === 'string' && e.observation.toLowerCase().includes(lowerSearch)) ||
-        (e.paymentMethod && typeof e.paymentMethod === 'string' && e.paymentMethod.toLowerCase().includes(lowerSearch))
-      );
+      result = result.filter((e: Expense) => {
+        const auditId = formatAuditId('EXP', e.id).toLowerCase();
+        return (
+          auditId.includes(lowerSearch) ||
+          (e.local && typeof e.local === 'string' && e.local.toLowerCase().includes(lowerSearch)) ||
+          (e.observation && typeof e.observation === 'string' && e.observation.toLowerCase().includes(lowerSearch)) ||
+          (e.paymentMethod && typeof e.paymentMethod === 'string' && e.paymentMethod.toLowerCase().includes(lowerSearch))
+        );
+      });
     }
     return [...result].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
   }, [expenses, filter, searchTerm]);
@@ -128,43 +133,63 @@ export function ReportsTab({ expenses, allCardInstallments = [], formatCurrency 
             <div className="overflow-x-auto hide-scrollbar">
               <table className="w-full text-left border-collapse">
                 <thead>
-                  <tr className="bg-slate-950/50 border-b border-slate-700/50">
-                    <th className="px-4 sm:px-6 py-4 text-[10px] tracking-wider font-bold uppercase text-slate-400">Data</th>
-                    <th className="px-4 sm:px-6 py-4 text-[10px] tracking-wider font-bold uppercase text-slate-400">Categoria</th>
-                    <th className="px-4 sm:px-6 py-4 text-[10px] tracking-wider font-bold uppercase text-slate-400">Local</th>
-                    <th className="px-4 sm:px-6 py-4 text-[10px] tracking-wider font-bold uppercase text-slate-400">Pagamento</th>
-                    <th className="px-4 sm:px-6 py-4 text-[10px] tracking-wider font-bold uppercase text-slate-400 text-right">Valor R$</th>
+                  <tr className="bg-slate-950/60 border-b border-slate-700/60">
+                    <th className="px-3 sm:px-4 py-2.5 sm:py-3 text-[10px] tracking-wider font-bold uppercase text-slate-400">ID</th>
+                    <th className="px-3 sm:px-4 py-2.5 sm:py-3 text-[10px] tracking-wider font-bold uppercase text-slate-400">Data</th>
+                    <th className="px-3 sm:px-4 py-2.5 sm:py-3 text-[10px] tracking-wider font-bold uppercase text-slate-400">Categoria</th>
+                    <th className="px-3 sm:px-4 py-2.5 sm:py-3 text-[10px] tracking-wider font-bold uppercase text-slate-400">Local</th>
+                    <th className="px-3 sm:px-4 py-2.5 sm:py-3 text-[10px] tracking-wider font-bold uppercase text-slate-400">Pagamento</th>
+                    <th className="px-3 sm:px-4 py-2.5 sm:py-3 text-[10px] tracking-wider font-bold uppercase text-slate-400 text-right">Valor R$</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-700/50">
-                  {filteredExpenses.map((exp: Expense) => (
-                    <tr key={exp.id} className="hover:bg-slate-800/40 transition-colors group">
-                      <td className="px-4 sm:px-6 py-3 sm:py-4 text-sm text-slate-300 whitespace-nowrap">{exp.date ? exp.date.split('-').reverse().join('/') : '-'}</td>
-                      <td className="px-4 sm:px-6 py-3 sm:py-4 text-sm text-slate-300 capitalize whitespace-nowrap">{exp.category}</td>
-                      <td className="px-4 sm:px-6 py-3 sm:py-4 text-sm font-medium text-slate-200">
-                        <div className="whitespace-nowrap">{exp.local}</div>
-                        {exp.observation && (
-                          <div className="text-[10px] text-slate-400 font-normal italic mt-1 max-w-[150px] sm:max-w-[200px] truncate bg-slate-950/30 inline-block px-1.5 py-0.5 rounded-md border border-slate-800" title={exp.observation}>
-                            {exp.observation}
-                          </div>
-                        )}
-                      </td>
-                      <td className="px-4 sm:px-6 py-3 sm:py-4 text-sm whitespace-nowrap">
-                        <span className={cn(
-                          "px-2 py-1 rounded-md text-[10px] font-bold uppercase ring-1",
-                          exp.paymentMethod === 'Cartão' ? "bg-blue-500/10 text-blue-400 ring-blue-500/20" : 
-                          exp.paymentMethod === 'doação' ? "bg-purple-500/10 text-purple-400 ring-purple-500/20" : 
-                          exp.paymentMethod === 'Caixa' ? "bg-amber-500/10 text-amber-400 ring-amber-500/20" : "bg-emerald-500/10 text-emerald-400 ring-emerald-500/20"
-                        )}>
-                          {exp.paymentMethod} {exp.installments ? `(${exp.installments}x)` : ''}
-                        </span>
-                      </td>
-                      <td className="px-4 sm:px-6 py-3 sm:py-4 text-sm font-mono font-bold text-slate-200 text-right whitespace-nowrap">{formatCurrency(exp.value)}</td>
-                    </tr>
-                  ))}
+                <tbody className="divide-y divide-slate-800/60">
+                  {filteredExpenses.map((exp: Expense) => {
+                    const auditId = formatAuditId('EXP', exp.id);
+                    return (
+                      <tr key={exp.id} className="hover:bg-slate-800/40 transition-colors group">
+                        <td className="px-3 sm:px-4 py-2 sm:py-2.5 text-xs whitespace-nowrap">
+                          <button
+                            type="button"
+                            onClick={(e) => copyAuditIdToClipboard(auditId, e)}
+                            title="Clique para copiar ID de auditoria"
+                            className="font-mono text-[9px] sm:text-[10px] text-blue-400 bg-blue-500/10 hover:bg-blue-500/25 border border-blue-500/20 px-1.5 py-0.5 rounded transition-all active:scale-95 inline-flex items-center"
+                          >
+                            {auditId}
+                          </button>
+                        </td>
+                        <td className="px-3 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm text-slate-300 whitespace-nowrap">
+                          {exp.date ? exp.date.split('-').reverse().join('/') : '-'}
+                        </td>
+                        <td className="px-3 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm text-slate-300 capitalize whitespace-nowrap">
+                          {exp.category}
+                        </td>
+                        <td className="px-3 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm font-medium text-slate-200">
+                          <div className="whitespace-nowrap">{exp.local}</div>
+                          {exp.observation && (
+                            <div className="text-[10px] text-slate-400 font-normal italic mt-0.5 max-w-[150px] sm:max-w-[200px] truncate bg-slate-950/30 inline-block px-1.5 py-0.5 rounded-md border border-slate-800" title={exp.observation}>
+                              {exp.observation}
+                            </div>
+                          )}
+                        </td>
+                        <td className="px-3 sm:px-4 py-2 sm:py-2.5 text-xs whitespace-nowrap">
+                          <span className={cn(
+                            "px-2 py-0.5 rounded-md text-[10px] font-bold uppercase ring-1",
+                            exp.paymentMethod === 'Cartão' ? "bg-blue-500/10 text-blue-400 ring-blue-500/20" : 
+                            exp.paymentMethod === 'doação' ? "bg-purple-500/10 text-purple-400 ring-purple-500/20" : 
+                            exp.paymentMethod === 'Caixa' ? "bg-amber-500/10 text-amber-400 ring-amber-500/20" : "bg-emerald-500/10 text-emerald-400 ring-emerald-500/20"
+                          )}>
+                            {exp.paymentMethod} {exp.installments ? `(${exp.installments}x)` : ''}
+                          </span>
+                        </td>
+                        <td className="px-3 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm font-mono font-bold text-slate-200 text-right whitespace-nowrap">
+                          {formatCurrency(exp.value)}
+                        </td>
+                      </tr>
+                    );
+                  })}
                   {filteredExpenses.length === 0 && (
                     <tr>
-                      <td colSpan={5} className="px-6 py-12 text-center text-slate-500 border-t border-slate-700/50">
+                      <td colSpan={6} className="px-6 py-8 text-center text-slate-500 border-t border-slate-700/50 text-sm">
                         Nenhum lançamento encontrado.
                       </td>
                     </tr>
@@ -177,34 +202,34 @@ export function ReportsTab({ expenses, allCardInstallments = [], formatCurrency 
       )}
 
       {activeReportTab === 'apagar' && (
-        <Card className="bg-slate-900/60 backdrop-blur-xl overflow-hidden border border-slate-700/50 shadow-xl ring-1 ring-white/5 p-4 sm:p-6">
-          <h3 className="text-lg font-bold mb-6 text-white">A Pagar (Mensal por Pessoa)</h3>
-          <div className="space-y-4">
+        <Card className="bg-slate-900/60 backdrop-blur-xl overflow-hidden border border-slate-700/50 shadow-xl ring-1 ring-white/5 p-3.5 sm:p-5">
+          <h3 className="text-base sm:text-lg font-bold mb-4 text-white">A Pagar (Mensal por Pessoa)</h3>
+          <div className="space-y-2">
             {allCardInstallments.length > 0 ? (
               allCardInstallments.map((item) => {
                 const cardPerPerson = item.total / PEOPLE_COUNT;
                 const totalPerPerson = cardPerPerson + FIXED_PER_PERSON;
                 
                 return (
-                  <div key={item.month} className="flex flex-col sm:flex-row sm:items-center justify-between p-5 bg-slate-950/30 rounded-xl border border-slate-800 hover:bg-slate-800/40 transition-colors">
+                  <div key={item.month} className="flex flex-col sm:flex-row sm:items-center justify-between px-3.5 py-2.5 sm:px-4 sm:py-3 bg-slate-950/40 rounded-xl border border-slate-800/80 hover:bg-slate-800/40 transition-colors gap-2">
                     <div>
-                      <div className="text-base font-bold text-slate-200 capitalize">
+                      <div className="text-sm sm:text-base font-bold text-slate-200 capitalize">
                         {format(new Date(parseInt(item.month.split('-')[0]), parseInt(item.month.split('-')[1]) - 1, 1), 'MMMM yyyy', { locale: ptBR })}
                       </div>
-                      <div className="text-[11px] text-slate-400 font-semibold tracking-wide uppercase mt-1.5 flex items-center gap-2">
+                      <div className="text-[10px] sm:text-[11px] text-slate-400 font-semibold tracking-wide uppercase mt-0.5 flex items-center gap-2">
                         <span>Cartão: <span className="text-slate-300">{formatCurrency(cardPerPerson)}</span></span>
                         <span className="text-slate-600">+</span>
                         <span>Fixo: <span className="text-slate-300">{formatCurrency(FIXED_PER_PERSON)}</span></span>
                       </div>
                     </div>
-                    <div className="text-xl font-bold text-emerald-400 mt-3 sm:mt-0 bg-emerald-500/10 px-4 py-2 rounded-lg border border-emerald-500/20">
+                    <div className="text-base sm:text-lg font-mono font-bold text-emerald-400 bg-emerald-500/10 px-3 py-1 rounded-lg border border-emerald-500/20 self-start sm:self-auto">
                       {formatCurrency(totalPerPerson)}
                     </div>
                   </div>
                 );
               })
             ) : (
-              <div className="text-center py-12 text-slate-500 border border-dashed border-slate-700/50 rounded-xl bg-slate-950/30">Nenhuma parcela a pagar encontrada.</div>
+              <div className="text-center py-8 text-slate-500 border border-dashed border-slate-700/50 rounded-xl bg-slate-950/30 text-sm">Nenhuma parcela a pagar encontrada.</div>
             )}
           </div>
         </Card>

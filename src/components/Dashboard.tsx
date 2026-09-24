@@ -18,6 +18,7 @@ import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { Card } from './ui/Card';
 import { toPng } from 'html-to-image';
+import { formatAuditId, copyAuditIdToClipboard } from '../utils/audit';
 
 const COLORS = ['#10b981', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6'];
 
@@ -412,39 +413,53 @@ export function Dashboard({ totalSpent, totalDonations, categoryTotals, cardInst
                     </div>
                     
                     {isExpanded && item.items && item.items.length > 0 && (
-                      <div className="border-t border-slate-700/50 bg-slate-900/40 p-4 breakdown-section">
+                      <div className="border-t border-slate-700/50 bg-slate-900/40 p-3 sm:p-4 breakdown-section">
                         <div className="overflow-x-auto custom-scrollbar pb-2">
                           <table className="w-full text-left border-collapse min-w-[500px]">
                             <thead>
-                              <tr className="bg-slate-800/50 border-b border-slate-700">
-                                <th className="px-4 py-3 text-xs font-bold uppercase text-slate-400 rounded-tl-lg">Data da Compra</th>
-                                <th className="px-4 py-3 text-xs font-bold uppercase text-slate-400">Local</th>
-                                <th className="px-4 py-3 text-xs font-bold uppercase text-slate-400 text-center">Parcela</th>
-                                <th className="px-4 py-3 text-xs font-bold uppercase text-slate-400 text-right rounded-tr-lg">Valor</th>
+                              <tr className="bg-slate-800/60 border-b border-slate-700">
+                                <th className="px-3 sm:px-4 py-2 text-[10px] font-bold uppercase text-slate-400">ID</th>
+                                <th className="px-3 sm:px-4 py-2 text-[10px] font-bold uppercase text-slate-400">Data</th>
+                                <th className="px-3 sm:px-4 py-2 text-[10px] font-bold uppercase text-slate-400">Local</th>
+                                <th className="px-3 sm:px-4 py-2 text-[10px] font-bold uppercase text-slate-400 text-center">Parcela</th>
+                                <th className="px-3 sm:px-4 py-2 text-[10px] font-bold uppercase text-slate-400 text-right">Valor</th>
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-700/50">
-                              {item.items.sort((a, b) => (b.date || '').localeCompare(a.date || '')).map((detail, idx) => (
-                                <tr key={`${detail.id}-${idx}`} className="hover:bg-slate-800/50 transition-colors">
-                                  <td className="px-4 py-3 text-sm text-slate-300 whitespace-nowrap">
-                                    {detail.date ? detail.date.split('-').reverse().join('/') : '-'}
-                                  </td>
-                                  <td className="px-4 py-3 text-sm font-medium text-slate-200">
-                                    {detail.local}
-                                    {detail.originalExp?.observation && (
-                                      <div className="text-[10px] text-slate-500 font-normal italic mt-0.5 truncate max-w-[200px]" title={detail.originalExp.observation}>
-                                        {detail.originalExp.observation}
-                                      </div>
-                                    )}
-                                  </td>
-                                  <td className="px-4 py-3 text-sm font-medium text-center text-slate-400">
-                                    {detail.installment}
-                                  </td>
-                                  <td className="px-4 py-3 text-sm font-mono font-bold text-slate-200 text-right whitespace-nowrap">
-                                    {formatCurrency(detail.value)}
-                                  </td>
-                                </tr>
-                              ))}
+                              {item.items.sort((a, b) => (b.date || '').localeCompare(a.date || '')).map((detail, idx) => {
+                                const auditId = formatAuditId('EXP', detail.id);
+                                return (
+                                  <tr key={`${detail.id}-${idx}`} className="hover:bg-slate-800/50 transition-colors">
+                                    <td className="px-3 sm:px-4 py-2 text-xs whitespace-nowrap">
+                                      <button
+                                        type="button"
+                                        onClick={(e) => copyAuditIdToClipboard(auditId, e)}
+                                        title="Clique para copiar ID de auditoria"
+                                        className="font-mono text-[9px] text-blue-400 bg-blue-500/10 hover:bg-blue-500/25 border border-blue-500/20 px-1.5 py-0.5 rounded transition-all active:scale-95 inline-flex items-center"
+                                      >
+                                        {auditId}
+                                      </button>
+                                    </td>
+                                    <td className="px-3 sm:px-4 py-2 text-xs sm:text-sm text-slate-300 whitespace-nowrap">
+                                      {detail.date ? detail.date.split('-').reverse().join('/') : '-'}
+                                    </td>
+                                    <td className="px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium text-slate-200">
+                                      {detail.local}
+                                      {detail.originalExp?.observation && (
+                                        <div className="text-[10px] text-slate-500 font-normal italic mt-0.5 truncate max-w-[200px]" title={detail.originalExp.observation}>
+                                          {detail.originalExp.observation}
+                                        </div>
+                                      )}
+                                    </td>
+                                    <td className="px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium text-center text-slate-400">
+                                      {detail.installment}
+                                    </td>
+                                    <td className="px-3 sm:px-4 py-2 text-xs sm:text-sm font-mono font-bold text-slate-200 text-right whitespace-nowrap">
+                                      {formatCurrency(detail.value)}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
                             </tbody>
                           </table>
                         </div>
