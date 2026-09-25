@@ -439,47 +439,8 @@ export function ExpensesTab({
         </div>
       </header>
 
-      {/* Card Informativo de Reembolsos Pendentes */}
-      {totalPendingRefundValue > 0 && (
-        <div className="bg-gradient-to-r from-amber-500/10 via-amber-600/5 to-transparent border border-amber-500/30 rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 ring-1 ring-amber-500/20 shadow-xl backdrop-blur-xl">
-          <div className="flex items-center gap-3.5">
-            <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
-              <RotateCcw size={20} className="animate-spin-slow" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-bold uppercase tracking-wider text-amber-400">Ressarcimentos a Sócios</span>
-                <span className="text-[10px] bg-amber-500/20 text-amber-300 border border-amber-500/30 px-2 py-0.5 rounded-full font-bold">
-                  {pendingRefunds.length} {pendingRefunds.length === 1 ? 'pendência' : 'pendências'}
-                </span>
-              </div>
-              <p className="text-xs text-slate-300 mt-0.5">
-                Despesas pagas por sócios que devem ser ressarcidas pelo caixa da obra.
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-3 self-end sm:self-center">
-            <div className="text-right">
-              <span className="text-[10px] uppercase font-bold text-slate-400 block">Total a Devolver</span>
-              <span className="text-lg sm:text-xl font-bold font-mono text-amber-300">{formatCurrency(totalPendingRefundValue)}</span>
-            </div>
-            <button
-              type="button"
-              onClick={() => setFilterMode(prev => prev === 'reimbursements' ? 'all' : 'reimbursements')}
-              className={cn(
-                "px-3 py-1.5 rounded-xl text-xs font-bold transition-all border",
-                filterMode === 'reimbursements'
-                  ? "bg-amber-500 text-slate-950 border-amber-400 shadow-md"
-                  : "bg-amber-500/15 text-amber-300 border-amber-500/30 hover:bg-amber-500/25"
-              )}
-            >
-              {filterMode === 'reimbursements' ? 'Ver Todas' : 'Filtrar Devoluções'}
-            </button>
-          </div>
-        </div>
-      )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <Card className="bg-slate-900/60 backdrop-blur-xl border border-slate-700/50 ring-1 ring-white/5 p-6 h-fit lg:sticky lg:top-24 shadow-xl">
           <div className="flex items-center justify-between mb-5">
             <h3 className="text-lg font-bold text-white flex items-center gap-2">
@@ -802,49 +763,6 @@ export function ExpensesTab({
                         ))}
                       </div>
                     </div>
-
-                    <div>
-                      <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1.5 px-0.5">
-                        Status do Ressarcimento
-                      </label>
-                      <div className="grid grid-cols-2 gap-2">
-                        <button
-                          type="button"
-                          disabled={isSubmitting}
-                          onClick={() => setFormData({ ...formData, refundStatus: 'Pendente' })}
-                          className={cn(
-                            "py-1.5 px-2 rounded-lg text-xs font-bold transition-all text-center border flex items-center justify-center gap-1.5",
-                            formData.refundStatus === 'Pendente'
-                              ? "bg-amber-500/20 text-amber-300 border-amber-500/50 ring-1 ring-amber-500/20"
-                              : "bg-slate-900/60 text-slate-400 border-slate-800 hover:bg-slate-800 hover:text-slate-200"
-                          )}
-                        >
-                          <Clock size={12} />
-                          Pendente (A Devolver)
-                        </button>
-                        <button
-                          type="button"
-                          disabled={isSubmitting}
-                          onClick={() => setFormData({ ...formData, refundStatus: 'Devolvido' })}
-                          className={cn(
-                            "py-1.5 px-2 rounded-lg text-xs font-bold transition-all text-center border flex items-center justify-center gap-1.5",
-                            formData.refundStatus === 'Devolvido'
-                              ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/50 ring-1 ring-emerald-500/20"
-                              : "bg-slate-900/60 text-slate-400 border-slate-800 hover:bg-slate-800 hover:text-slate-200"
-                          )}
-                        >
-                          <CheckCircle2 size={12} />
-                          Já Devolvido
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="p-2 rounded-lg bg-amber-500/5 border border-amber-500/20 flex items-start gap-2">
-                      <AlertCircle size={13} className="text-amber-400 shrink-0 mt-0.5" />
-                      <p className="text-[10px] text-amber-300/90 leading-tight">
-                        Este valor entra nos custos totais da obra e alimenta os gráficos normalmente, ficando sinalizado para devolução ao sócio.
-                      </p>
-                    </div>
                   </div>
                 )}
               </div>
@@ -991,17 +909,15 @@ export function ExpensesTab({
                             {exp.category}
                           </span>
 
-                          {/* BADGE DE REEMBOLSO / DEVOLUÇÃO */}
+                          {/* BADGE INFORMATIVO DE REEMBOLSO / DEVOLUÇÃO */}
                           {exp.isReimbursement && (
-                            <button
-                              type="button"
-                              onClick={() => onToggleRefund && onToggleRefund(exp.id)}
-                              title={exp.refundStatus === 'Devolvido' ? "Clique para reabrir como pendente de devolução" : "Clique para marcar como devolvido pelo caixa"}
+                            <div
+                              title={exp.refundStatus === 'Devolvido' ? "Ressarcimento já efetuado pelo caixa da obra" : "Despesa a devolver ao sócio pelo caixa da obra"}
                               className={cn(
-                                "text-[9px] sm:text-[10px] font-bold px-2 py-0.5 rounded-md border flex items-center gap-1 transition-all active:scale-95 cursor-pointer shadow-sm",
+                                "text-[9px] sm:text-[10px] font-bold px-2 py-0.5 rounded-md border flex items-center gap-1 select-none shadow-sm",
                                 exp.refundStatus === 'Devolvido'
-                                  ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/40 hover:bg-emerald-500/25"
-                                  : "bg-amber-500/20 text-amber-300 border-amber-500/50 hover:bg-amber-500/30 ring-1 ring-amber-500/30"
+                                  ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/40"
+                                  : "bg-amber-500/20 text-amber-300 border-amber-500/50 ring-1 ring-amber-500/30"
                               )}
                             >
                               {exp.refundStatus === 'Devolvido' ? (
@@ -1011,11 +927,11 @@ export function ExpensesTab({
                                 </>
                               ) : (
                                 <>
-                                  <RotateCcw size={11} className="text-amber-400 animate-spin-slow" />
+                                  <Clock size={11} className="text-amber-400" />
                                   <span>Devolver p/ {exp.reimburseTo || exp.donor || 'Sócio'}</span>
                                 </>
                               )}
-                            </button>
+                            </div>
                           )}
                         </div>
 

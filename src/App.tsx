@@ -27,6 +27,12 @@ import { ConfirmDialog } from './components/ui/ConfirmDialog';
 import { useOfflineSync } from './useOfflineSync';
 import { formatAuditId } from './utils/audit';
 import { auditLogger } from './utils/auditLogger';
+import { clsx, type ClassValue } from 'clsx';
+import { twMerge } from 'tailwind-merge';
+
+function cn(...inputs: ClassValue[]) {
+  return twMerge(clsx(inputs));
+}
 
 const ENABLE_POCKETBASE_SYNC = true; // Trava de segurança para persistência no PocketBase
 
@@ -1214,7 +1220,7 @@ function App() {
       <div className="fixed bottom-[-10%] right-[-10%] w-96 h-96 bg-indigo-600 rounded-full mix-blend-screen filter blur-[100px] opacity-10 animate-pulse pointer-events-none z-0" style={{ animationDelay: '2s' }}></div>
 
       {/* Sidebar / Navigation */}
-      <nav className="fixed bottom-0 left-0 right-0 z-50 bg-slate-900/80 backdrop-blur-xl border-t border-slate-800/80 px-4 py-2 flex justify-around items-center md:top-0 md:bottom-0 md:right-auto md:w-64 md:flex-col md:justify-start md:border-t-0 md:border-r md:p-6 md:space-y-4">
+      <nav className="fixed bottom-0 left-0 right-0 z-50 bg-slate-900/90 backdrop-blur-xl border-t border-slate-800/80 px-2 py-1.5 flex justify-between items-center md:top-0 md:bottom-0 md:right-auto md:w-64 md:flex-col md:justify-start md:border-t-0 md:border-r md:p-6 md:space-y-4 overflow-x-auto custom-scrollbar">
         <div className="hidden md:flex flex-col items-center gap-3 mb-6 w-full px-2">
           <div className="w-12 h-12 bg-gradient-to-tr from-blue-600 to-indigo-500 rounded-2xl flex items-center justify-center shadow-lg shadow-blue-500/20 ring-1 ring-white/20">
             <span className="font-bold text-white text-xl tracking-wider">CL</span>
@@ -1255,12 +1261,28 @@ function App() {
             <NavItem icon={<ArrowUpCircle size={20} />} label="Entradas" active={activeTab === 'entradas'} onClick={() => setActiveTab('entradas')} />
             <NavItem icon={<FileText size={20} />} label="Relatórios" active={activeTab === 'relatorios'} onClick={() => setActiveTab('relatorios')} />
             <NavItem icon={<Settings size={20} />} label="Config" active={activeTab === 'config'} onClick={() => setActiveTab('config')} />
-            <NavItem icon={<Info size={20} />} label="Sobre" active={activeTab === 'sobre'} onClick={() => setActiveTab('sobre')} />
+            <div className="hidden md:block w-full">
+              <NavItem icon={<Info size={20} />} label="Sobre" active={activeTab === 'sobre'} onClick={() => setActiveTab('sobre')} />
+            </div>
             
+            {/* Botão Sair no Smartphone (Mobile Bottom Bar) */}
+            <div className="md:hidden">
+              <button 
+                type="button"
+                onClick={handleLogout}
+                className="flex flex-col items-center gap-1 px-2.5 py-1.5 rounded-xl transition-all duration-200 text-red-400 hover:text-red-300 hover:bg-red-500/10 cursor-pointer shrink-0"
+                title="Sair do painel administrativo"
+              >
+                <LogOut size={20} className="text-red-400" />
+                <span className="text-[10px] font-bold text-red-400">Sair</span>
+              </button>
+            </div>
+
+            {/* Botão Sair no Desktop (Sidebar) */}
             <div className="mt-auto hidden md:block w-full px-4 pb-4">
               <button 
                 onClick={handleLogout}
-                className="flex items-center gap-3 w-full px-4 py-3 text-sm font-medium text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-xl transition-all"
+                className="flex items-center gap-3 w-full px-4 py-3 text-sm font-medium text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-xl transition-all cursor-pointer"
               >
                 <LogOut size={20} />
                 Sair
@@ -1271,7 +1293,7 @@ function App() {
           <>
             <div className="md:hidden">
               <NavItem 
-                icon={<LogOut size={20} />} 
+                icon={<LogOut size={20} className="text-red-400" />} 
                 label="Sair" 
                 active={false} 
                 onClick={() => window.location.href = '/'} 
@@ -1280,7 +1302,7 @@ function App() {
             <div className="mt-auto hidden md:block w-full px-4 pb-4">
               <button 
                 onClick={() => window.location.href = '/'}
-                className="flex items-center gap-3 w-full px-4 py-3 text-sm font-medium text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-xl transition-all"
+                className="flex items-center gap-3 w-full px-4 py-3 text-sm font-medium text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-xl transition-all cursor-pointer"
               >
                 <LogOut size={20} />
                 Voltar para Login
@@ -1289,6 +1311,46 @@ function App() {
           </>
         )}
       </nav>
+
+      {/* Header Superior Mobile com Botão Sair Visível no Smartphone */}
+      <div className="md:hidden sticky top-0 z-40 bg-slate-950/90 backdrop-blur-xl border-b border-slate-800/80 px-3.5 py-2.5 flex items-center justify-between">
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 bg-gradient-to-tr from-blue-600 to-indigo-500 rounded-xl flex items-center justify-center shadow-md shadow-blue-500/20 text-white font-bold text-xs ring-1 ring-white/10">
+            CL
+          </div>
+          <div>
+            <span className="font-bold text-white text-xs sm:text-sm block leading-none">Casa do Lago</span>
+            <div className="flex items-center gap-1.5 mt-0.5">
+              <div className={cn("w-1.5 h-1.5 rounded-full", syncStatus === 'syncing' ? "bg-emerald-400 animate-pulse" : syncStatus === 'local' ? "bg-amber-400" : "bg-red-400")} />
+              <span className="text-[10px] text-slate-400 font-medium">
+                {syncStatus === 'syncing' ? 'Sincronizado' : syncStatus === 'local' ? 'Modo Local' : 'Erro de Conexão'}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {!isSharedMode ? (
+          <button
+            type="button"
+            onClick={handleLogout}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-red-500/15 hover:bg-red-500/25 text-red-400 border border-red-500/30 rounded-xl text-xs font-bold transition-all active:scale-95 cursor-pointer shadow-sm"
+            title="Sair do painel administrativo"
+          >
+            <LogOut size={13} />
+            <span>Sair</span>
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => window.location.href = '/'}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-800/80 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded-xl text-xs font-bold transition-all cursor-pointer"
+            title="Ir para o Login"
+          >
+            <LogOut size={13} />
+            <span>Login</span>
+          </button>
+        )}
+      </div>
 
       {/* Main Content */}
       <main className="pb-24 pt-4 px-2 sm:px-4 md:pl-72 md:pr-8 md:pt-12 max-w-7xl mx-auto w-full relative z-10 overflow-x-hidden">
@@ -1304,6 +1366,9 @@ function App() {
             formatCurrency={formatCurrency} 
             onRefresh={fetchAllData}
             syncStatus={syncStatus}
+            expenses={state.expenses}
+            onToggleRefund={toggleExpenseRefundStatus}
+            isSharedMode={isSharedMode}
           />
         )}
         {activeTab === 'saidas' && (

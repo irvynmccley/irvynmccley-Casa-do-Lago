@@ -13,12 +13,13 @@ import {
   LabelList,
   Legend
 } from 'recharts';
-import { Banknote, TrendingUp, CreditCard, BarChart as BarChartIcon, User, RefreshCw, Wallet, ChevronDown, ChevronUp, Download } from 'lucide-react';
+import { Banknote, TrendingUp, CreditCard, BarChart as BarChartIcon, User, RefreshCw, Wallet, ChevronDown, ChevronUp, Download, RotateCcw, CheckCircle2, Clock, ShieldCheck, Check } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { Card } from './ui/Card';
 import { toPng } from 'html-to-image';
 import { formatAuditId, copyAuditIdToClipboard } from '../utils/audit';
+import { Expense, Person } from '../types';
 
 const COLORS = ['#10b981', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6'];
 
@@ -44,6 +45,9 @@ interface DashboardProps {
   formatCurrency: (v: number) => string;
   onRefresh: () => Promise<void>;
   syncStatus?: 'syncing' | 'local' | 'error';
+  expenses?: Expense[];
+  onToggleRefund?: (id: string) => Promise<void>;
+  isSharedMode?: boolean;
 }
 
 const TriangleBar = (props: any) => {
@@ -62,9 +66,82 @@ const TriangleBar = (props: any) => {
   );
 };
 
-export function Dashboard({ totalSpent, totalDonations, categoryTotals, cardInstallments, allCardInstallments, caixaBalance, terrenoBalance, formatCurrency, onRefresh, syncStatus }: DashboardProps) {
+export function Dashboard({ 
+  totalSpent, 
+  totalDonations, 
+  categoryTotals, 
+  cardInstallments, 
+  allCardInstallments, 
+  caixaBalance, 
+  terrenoBalance, 
+  formatCurrency, 
+  onRefresh, 
+  syncStatus,
+  expenses = [],
+  onToggleRefund,
+  isSharedMode = false
+}: DashboardProps) {
   const [isRefreshing, setIsRefreshing] = React.useState(false);
   const [expandedInvoice, setExpandedInvoice] = React.useState<string | null>(null);
+
+  // Estados do Painel de Gestão de Devoluções aos Sócios
+  const [refundStatusFilter, setRefundStatusFilter] = React.useState<'pendente' | 'devolvido' | 'todos'>('pendente');
+  const [refundPartnerFilter, setRefundPartnerFilter] = React.useState<string>('todos');
+  const [processingRefundId, setProcessingRefundId] = React.useState<string | null>(null);
+
+  const allReimbursements = React.useMemo(() => {
+    return (expenses || []).filter(e => Boolean(e.isReimbursement));
+  }, [expenses]);
+
+  const pendingReimbursements = React.useMemo(() => {
+    return allReimbursements.filter(e => e.refundStatus === 'Pendente' || (!e.refundStatus && e.status !== 'DEVOLVIDO'));
+  }, [allReimbursements]);
+
+  const settledReimbursements = React.useMemo(() => {
+    return allReimbursements.filter(e => e.refundStatus === 'Devolvido' || e.status === 'DEVOLVIDO');
+  }, [allReimbursements]);
+
+  const totalPendingRefunds = React.useMemo(() => {
+    return pendingReimbursements.reduce((acc, e) => acc + (Number(e.value) || 0), 0);
+  }, [pendingReimbursements]);
+
+  const totalSettledRefunds = React.useMemo(() => {
+    return settledReimbursements.reduce((acc, e) => acc + (Number(e.value) || 0), 0);
+  }, [settledReimbursements]);
+
+  const partnerBalances = React.useMemo(() => {
+    const partners: Person[] = ['Mccley', 'Jan', 'Saulo', 'Jorge'];
+    return partners.map(p => {
+      const pPending = pendingReimbursements.filter(e => (e.reimburseTo || e.donor) === p);
+      const total = pPending.reduce((acc, e) => acc + (Number(e.value) || 0), 0);
+      return { partner: p, count: pPending.length, total };
+    });
+  }, [pendingReimbursements]);
+
+  const filteredReimbursements = React.useMemo(() => {
+    let list = allReimbursements;
+    if (refundStatusFilter === 'pendente') {
+      list = pendingReimbursements;
+    } else if (refundStatusFilter === 'devolvido') {
+      list = settledReimbursements;
+    }
+
+    if (refundPartnerFilter !== 'todos') {
+      list = list.filter(e => (e.reimburseTo || e.donor) === refundPartnerFilter);
+    }
+
+    return [...list].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  }, [allReimbursements, pendingReimbursements, settledReimbursements, refundStatusFilter, refundPartnerFilter]);
+
+  const handleAcknowledgeRefund = async (id: string) => {
+    if (!onToggleRefund || processingRefundId) return;
+    setProcessingRefundId(id);
+    try {
+      await onToggleRefund(id);
+    } finally {
+      setProcessingRefundId(null);
+    }
+  };
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
@@ -175,14 +252,6 @@ export function Dashboard({ totalSpent, totalDonations, categoryTotals, cardInst
           </div>
           <p className="text-slate-400 font-medium tracking-wide">Visão geral da sua obra</p>
         </div>
-        <button 
-          onClick={handleRefresh}
-          disabled={isRefreshing}
-          className="flex items-center gap-2 bg-slate-800/50 border border-slate-700/50 rounded-xl px-4 py-2.5 text-sm font-semibold text-slate-300 hover:bg-slate-700 hover:text-white transition-all disabled:opacity-50 ring-1 ring-white/5 shadow-lg"
-        >
-          <RefreshCw size={16} className={isRefreshing ? "animate-spin text-blue-400" : "text-slate-400"} />
-          {isRefreshing ? "Atualizando..." : "Atualizar"}
-        </button>
       </header>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
@@ -476,6 +545,293 @@ export function Dashboard({ totalSpent, totalDonations, categoryTotals, cardInst
             </div>
           </Card>
         )}
+
+        {/* ======================================================== */}
+        {/* PAINEL DE GESTÃO DE VALORES A RESTITUIR AOS SÓCIOS       */}
+        {/* ======================================================== */}
+        <Card id="painel-gestao-reembolsos" className="bg-slate-900/60 backdrop-blur-xl border border-slate-700/50 shadow-2xl rounded-2xl p-4 sm:p-6 ring-1 ring-white/5 space-y-6">
+          {/* Cabeçalho do Painel */}
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-5 border-b border-slate-800">
+            <div className="flex items-center gap-3.5">
+              <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-amber-500/20 via-amber-500/10 to-transparent border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0 shadow-lg shadow-amber-500/10">
+                <RotateCcw size={22} className="animate-spin-slow" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2.5 flex-wrap">
+                  <h3 className="text-lg sm:text-xl font-bold text-white tracking-tight">
+                    Gestão de Valores a Restituir aos Sócios
+                  </h3>
+                  {pendingReimbursements.length > 0 ? (
+                    <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 animate-pulse">
+                      {pendingReimbursements.length} {pendingReimbursements.length === 1 ? 'pendência' : 'pendências'}
+                    </span>
+                  ) : (
+                    <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 flex items-center gap-1">
+                      <ShieldCheck size={12} />
+                      Tudo Quitado
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs sm:text-sm text-slate-400 mt-0.5">
+                  Controle centralizado de despesas custeadas pelos sócios e baixa de ressarcimentos pendentes pelo caixa da obra.
+                </p>
+              </div>
+            </div>
+
+            {/* Indicadores Principais */}
+            <div className="flex items-center gap-3">
+              <div className="bg-slate-950/60 border border-slate-800/80 rounded-xl px-4 py-2 text-right">
+                <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">Total em Aberto</span>
+                <span className="text-xl sm:text-2xl font-mono font-bold text-amber-300">
+                  {formatCurrency(totalPendingRefunds)}
+                </span>
+              </div>
+              {settledReimbursements.length > 0 && (
+                <div className="bg-slate-950/40 border border-slate-800/60 rounded-xl px-3 py-2 text-right hidden sm:block">
+                  <span className="text-[10px] uppercase font-bold text-slate-500 block tracking-wider">Já Devolvido</span>
+                  <span className="text-sm sm:text-base font-mono font-bold text-emerald-400">
+                    {formatCurrency(totalSettledRefunds)}
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Cards de Saldo Individual por Sócio */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {partnerBalances.map(({ partner, count, total }) => {
+              const isSelected = refundPartnerFilter === partner;
+              const hasPending = total > 0;
+
+              return (
+                <button
+                  key={partner}
+                  type="button"
+                  onClick={() => setRefundPartnerFilter(prev => prev === partner ? 'todos' : partner)}
+                  className={`p-3 rounded-xl border text-left transition-all relative overflow-hidden group cursor-pointer ${
+                    isSelected
+                      ? 'bg-amber-500/15 border-amber-500/50 ring-2 ring-amber-500/20 shadow-lg'
+                      : hasPending
+                        ? 'bg-slate-950/50 border-slate-800 hover:border-amber-500/30 hover:bg-slate-800/40'
+                        : 'bg-slate-950/30 border-slate-800/60 hover:bg-slate-800/30 opacity-75'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-xs font-bold text-slate-200 group-hover:text-white flex items-center gap-1.5">
+                      <span className={`w-2 h-2 rounded-full ${hasPending ? 'bg-amber-400' : 'bg-emerald-400'}`} />
+                      {partner}
+                    </span>
+                    {count > 0 && (
+                      <span className="text-[10px] bg-amber-500/20 text-amber-300 px-1.5 py-0.2 rounded font-bold">
+                        {count} pend.
+                      </span>
+                    )}
+                  </div>
+                  <div className={`text-sm sm:text-base font-mono font-bold ${hasPending ? 'text-amber-300' : 'text-slate-500'}`}>
+                    {formatCurrency(total)}
+                  </div>
+                  <div className="text-[10px] text-slate-500 mt-0.5">
+                    {hasPending ? 'A restituir' : 'Sem pendências'}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Barra de Filtros e Busca de Devoluções */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
+            {/* Filtro de Status */}
+            <div className="flex items-center bg-slate-950/70 p-1 rounded-xl border border-slate-800/80 w-fit">
+              <button
+                type="button"
+                onClick={() => setRefundStatusFilter('pendente')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                  refundStatusFilter === 'pendente'
+                    ? 'bg-amber-500 text-slate-950 shadow-md font-semibold'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <Clock size={13} />
+                <span>Em Aberto ({pendingReimbursements.length})</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setRefundStatusFilter('devolvido')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                  refundStatusFilter === 'devolvido'
+                    ? 'bg-emerald-500 text-slate-950 shadow-md font-semibold'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <CheckCircle2 size={13} />
+                <span>Já Devolvidos ({settledReimbursements.length})</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setRefundStatusFilter('todos')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  refundStatusFilter === 'todos'
+                    ? 'bg-slate-700 text-white shadow-md font-semibold'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                Todos ({allReimbursements.length})
+              </button>
+            </div>
+
+            {/* Filtro de sócio ativo indicador */}
+            {refundPartnerFilter !== 'todos' && (
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-slate-400">Filtrando por sócio:</span>
+                <span className="text-xs font-bold text-amber-300 bg-amber-500/10 border border-amber-500/30 px-2 py-0.5 rounded-md flex items-center gap-1">
+                  {refundPartnerFilter}
+                  <button
+                    type="button"
+                    onClick={() => setRefundPartnerFilter('todos')}
+                    className="hover:text-white ml-1 text-slate-400 cursor-pointer"
+                    title="Remover filtro"
+                  >
+                    ×
+                  </button>
+                </span>
+              </div>
+            )}
+          </div>
+
+          {/* Listagem dos Lançamentos */}
+          <div className="space-y-2.5">
+            {filteredReimbursements.length === 0 ? (
+              <div className="py-10 px-4 rounded-xl border border-dashed border-slate-800 text-center bg-slate-950/30">
+                <div className="w-12 h-12 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 mx-auto flex items-center justify-center mb-3">
+                  <ShieldCheck size={24} />
+                </div>
+                <h4 className="text-sm font-bold text-slate-300">
+                  {refundStatusFilter === 'pendente' 
+                    ? 'Nenhum valor em aberto para restituição!' 
+                    : 'Nenhum registro encontrado com estes filtros.'}
+                </h4>
+                <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
+                  {refundStatusFilter === 'pendente'
+                    ? 'Todas as despesas custeadas pelos sócios foram devidamente ressarcidas pelo caixa da obra.'
+                    : 'Alterne os filtros de status ou de sócio acima para consultar outros registros.'}
+                </p>
+              </div>
+            ) : (
+              filteredReimbursements.map((item) => {
+                const auditId = formatAuditId('EXP', item.id);
+                const partnerName = item.reimburseTo || (item.donor as Person) || 'Sócio';
+                const isPending = item.refundStatus === 'Pendente' || (!item.refundStatus && item.status !== 'DEVOLVIDO');
+                const isProcessing = processingRefundId === item.id;
+
+                return (
+                  <div
+                    key={item.id}
+                    className={`p-3.5 sm:p-4 rounded-xl border transition-all flex flex-col md:flex-row md:items-center justify-between gap-3 sm:gap-4 ${
+                      isPending
+                        ? 'bg-slate-950/60 border-amber-500/30 hover:border-amber-500/50 hover:bg-slate-900/50 ring-1 ring-amber-500/10 shadow-md'
+                        : 'bg-slate-950/30 border-slate-800/80 hover:bg-slate-900/30 opacity-80'
+                    }`}
+                  >
+                    <div className="flex items-start gap-3 min-w-0">
+                      <div className="mt-0.5">
+                        <button
+                          type="button"
+                          onClick={(e) => copyAuditIdToClipboard(auditId, e)}
+                          title="Clique para copiar código de auditoria"
+                          className="font-mono text-[9px] sm:text-[10px] text-blue-400 bg-blue-500/10 hover:bg-blue-500/25 border border-blue-500/20 px-1.5 py-0.5 rounded transition-all active:scale-95 inline-flex items-center shrink-0 cursor-pointer"
+                        >
+                          {auditId}
+                        </button>
+                      </div>
+
+                      <div className="min-w-0 space-y-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-sm font-bold text-white tracking-wide">
+                            {item.local}
+                          </span>
+                          <span className="text-[10px] font-semibold text-slate-400 bg-slate-800/80 px-2 py-0.5 rounded border border-slate-700/60">
+                            {item.category}
+                          </span>
+                          <span className="text-[10px] font-bold text-amber-300 bg-amber-500/15 border border-amber-500/30 px-2 py-0.5 rounded-full flex items-center gap-1">
+                            Sócio: {partnerName}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-2 text-[11px] text-slate-400 flex-wrap">
+                          <span>{item.date ? item.date.split('-').reverse().join('/') : '-'}</span>
+                          <span className="text-slate-600">•</span>
+                          <span>Origem: {item.paymentMethod} {item.installments ? `(${item.installments}x)` : ''}</span>
+                          {item.observation && (
+                            <>
+                              <span className="text-slate-600">•</span>
+                              <span className="text-slate-400 italic truncate max-w-[200px]" title={item.observation}>
+                                {item.observation}
+                              </span>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between md:justify-end gap-3.5 self-stretch md:self-center shrink-0 border-t md:border-t-0 pt-2 md:pt-0 border-slate-800/80">
+                      <div className="text-left md:text-right">
+                        <span className="text-base sm:text-lg font-mono font-bold text-white block">
+                          {formatCurrency(item.value)}
+                        </span>
+                        <span className={`text-[10px] font-bold uppercase inline-flex items-center gap-1 ${
+                          isPending ? 'text-amber-400' : 'text-emerald-400'
+                        }`}>
+                          {isPending ? (
+                            <>
+                              <Clock size={10} />
+                              A Devolver
+                            </>
+                          ) : (
+                            <>
+                              <CheckCircle2 size={10} />
+                              Devolvido
+                            </>
+                          )}
+                        </span>
+                      </div>
+
+                      {/* BOTÃO DE ACUSAR DEVOLUÇÃO */}
+                      <div>
+                        {isPending ? (
+                          <button
+                            type="button"
+                            disabled={isProcessing || isSharedMode}
+                            onClick={() => handleAcknowledgeRefund(item.id)}
+                            className="px-3.5 py-2 rounded-xl text-xs font-bold bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 shadow-lg shadow-emerald-500/20 active:scale-95 transition-all flex items-center gap-1.5 shrink-0 disabled:opacity-50 cursor-pointer"
+                            title="Confirmar que o caixa da obra efetuou a devolução deste valor ao sócio"
+                          >
+                            {isProcessing ? (
+                              <RefreshCw size={13} className="animate-spin text-slate-950" />
+                            ) : (
+                              <CheckCircle2 size={14} className="stroke-[2.5]" />
+                            )}
+                            <span>Acusar Devolução</span>
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            disabled={isProcessing || isSharedMode}
+                            onClick={() => handleAcknowledgeRefund(item.id)}
+                            className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold text-slate-400 hover:text-amber-300 hover:bg-slate-800/80 border border-slate-700/60 transition-all flex items-center gap-1 cursor-pointer"
+                            title="Reabrir como pendente se necessário"
+                          >
+                            <RotateCcw size={11} />
+                            <span>Reabrir</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </Card>
       </div>
     </div>
   );
