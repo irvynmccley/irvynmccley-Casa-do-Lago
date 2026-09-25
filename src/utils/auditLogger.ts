@@ -5,7 +5,7 @@ export interface AuditLogEntry {
   timestamp: string; // ISO date string
   action: AuditActionType;
   actionLabel: string; // 'Lançamento Criado', 'Lançamento Editado', 'Exclusão', etc.
-  entity: 'Saída' | 'Entrada' | 'Pagamento' | 'Terreno' | 'Sistema';
+  entity: 'Saída' | 'Entrada' | 'Pagamento' | 'Terreno' | 'Sistema' | 'Categoria';
   recordId: string;
   auditId: string; // e.g. #EXP-9B214A
   user: string;
@@ -57,7 +57,7 @@ export const auditLogger = {
   },
 
   logUpdate(entry: {
-    entity: 'Saída' | 'Entrada' | 'Pagamento' | 'Terreno' | 'Sistema';
+    entity: 'Saída' | 'Entrada' | 'Pagamento' | 'Terreno' | 'Sistema' | 'Categoria';
     recordId: string;
     auditId: string;
     user: string;
@@ -80,7 +80,7 @@ export const auditLogger = {
   },
 
   logDelete(entry: {
-    entity: 'Saída' | 'Entrada' | 'Pagamento' | 'Terreno' | 'Sistema';
+    entity: 'Saída' | 'Entrada' | 'Pagamento' | 'Terreno' | 'Sistema' | 'Categoria';
     recordId: string;
     auditId: string;
     user: string;

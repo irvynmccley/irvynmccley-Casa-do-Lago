@@ -12,7 +12,15 @@ import {
   Clock, 
   ShieldCheck,
   RefreshCw,
-  Filter
+  Filter,
+  Tags,
+  Plus,
+  Pencil,
+  Tag,
+  X,
+  Check,
+  AlertTriangle,
+  FolderPlus
 } from 'lucide-react';
 import { AppState } from '../types';
 import * as XLSX from 'xlsx';
@@ -28,14 +36,35 @@ function cn(...inputs: ClassValue[]) {
 
 interface ConfigTabProps {
   state: AppState;
+  categories?: string[];
+  onAddCategory?: (name: string) => boolean;
+  onRenameCategory?: (oldName: string, newName: string) => Promise<void>;
+  onDeleteCategory?: (name: string) => Promise<boolean>;
+  formatCurrency?: (v: number) => string;
 }
 
-export function ConfigTab({ state }: ConfigTabProps) {
-  const [activeSubTab, setActiveSubTab] = useState<'backup' | 'logs'>('backup');
+export function ConfigTab({ 
+  state,
+  categories = [],
+  onAddCategory = () => false,
+  onRenameCategory = async () => {},
+  onDeleteCategory = async () => false,
+  formatCurrency
+}: ConfigTabProps) {
+  const [activeSubTab, setActiveSubTab] = useState<'backup' | 'logs' | 'categories'>('backup');
   const [logs, setLogs] = useState<AuditLogEntry[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [entityFilter, setEntityFilter] = useState<string>('all');
   const [actionFilter, setActionFilter] = useState<string>('all');
+
+  // Estado para Gestão de Categorias
+  const [categorySearch, setCategorySearch] = useState('');
+  const [newCategoryName, setNewCategoryName] = useState('');
+  const [isAddingCategory, setIsAddingCategory] = useState(false);
+  const [editingCategory, setEditingCategory] = useState<{ oldName: string; newName: string; count: number } | null>(null);
+  const [isSavingCategory, setIsSavingCategory] = useState(false);
+  const [deletingCategory, setDeletingCategory] = useState<{ name: string; count: number } | null>(null);
+  const [isDeletingCategory, setIsDeletingCategory] = useState(false);
 
   // Carrega e sincroniza logs
   useEffect(() => {
@@ -355,10 +384,102 @@ export function ConfigTab({ state }: ConfigTabProps) {
     const wsTerreno = XLSX.utils.json_to_sheet(terrenoData);
     XLSX.utils.book_append_sheet(wb, wsTerreno, "Terreno");
 
+    // Categories Sheet
+    const categoriesData = categoryStats.map(c => ({
+      'Categoria': c.name,
+      'Quantidade de Despesas': c.count,
+      'Valor Total (R$)': c.total,
+      '% do Total': Number(c.percentage.toFixed(2))
+    }));
+    const wsCategories = XLSX.utils.json_to_sheet(categoriesData);
+    XLSX.utils.book_append_sheet(wb, wsCategories, "Categorias");
+
     // Save
     const date = new Date().toISOString().split('T')[0];
     XLSX.writeFile(wb, `backup_casadolago_${date}.xlsx`);
     toast.success('Backup Excel baixado com sucesso!');
+  };
+
+  const defaultFormatCurrency = (v: number) => 
+    new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v);
+  const fmt = formatCurrency || defaultFormatCurrency;
+
+  const totalAllExpensesValue = useMemo(() => {
+    return state.expenses.reduce((acc, e) => acc + (Number(e.value) || 0), 0);
+  }, [state.expenses]);
+
+  const categoryStats = useMemo(() => {
+    const map: Record<string, { count: number; total: number }> = {};
+
+    state.expenses.forEach(e => {
+      const cat = (e.category || '').trim();
+      if (!cat) return;
+      if (!map[cat]) map[cat] = { count: 0, total: 0 };
+      map[cat].count += 1;
+      map[cat].total += (Number(e.value) || 0);
+    });
+
+    const set = new Set([...categories, ...Object.keys(map)]);
+    
+    return Array.from(set).map(catName => {
+      const stat = map[catName] || { count: 0, total: 0 };
+      const pct = totalAllExpensesValue > 0 ? (stat.total / totalAllExpensesValue) * 100 : 0;
+      return {
+        name: catName,
+        count: stat.count,
+        total: stat.total,
+        percentage: pct
+      };
+    }).sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
+  }, [categories, state.expenses, totalAllExpensesValue]);
+
+  const filteredCategoryStats = useMemo(() => {
+    if (!categorySearch.trim()) return categoryStats;
+    const term = categorySearch.toLowerCase().trim();
+    return categoryStats.filter(c => c.name.toLowerCase().includes(term));
+  }, [categoryStats, categorySearch]);
+
+  const handleCreateCategorySubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newCategoryName.trim()) {
+      toast.error('Informe o nome da categoria.');
+      return;
+    }
+    const success = onAddCategory(newCategoryName);
+    if (success) {
+      setNewCategoryName('');
+      setIsAddingCategory(false);
+    }
+  };
+
+  const handleSaveRenameCategory = async () => {
+    if (!editingCategory) return;
+    if (!editingCategory.newName.trim()) {
+      toast.error('Informe o novo nome da categoria.');
+      return;
+    }
+    try {
+      setIsSavingCategory(true);
+      await onRenameCategory(editingCategory.oldName, editingCategory.newName);
+      setEditingCategory(null);
+    } catch (err: any) {
+      toast.error(`Erro ao renomear categoria: ${err.message || 'Erro inesperado'}`);
+    } finally {
+      setIsSavingCategory(false);
+    }
+  };
+
+  const handleConfirmDeleteCategory = async () => {
+    if (!deletingCategory) return;
+    try {
+      setIsDeletingCategory(true);
+      await onDeleteCategory(deletingCategory.name);
+      setDeletingCategory(null);
+    } catch (err: any) {
+      toast.error(`Erro ao excluir categoria: ${err.message || 'Erro inesperado'}`);
+    } finally {
+      setIsDeletingCategory(false);
+    }
   };
 
   return (
@@ -367,17 +488,17 @@ export function ConfigTab({ state }: ConfigTabProps) {
         <div>
           <h2 className="text-2xl sm:text-3xl font-bold tracking-tight mb-1 text-white drop-shadow-sm">Configurações</h2>
           <p className="text-xs sm:text-sm text-slate-400 font-medium tracking-wide">
-            Auditoria de alterações, estrutura de IDs e backups do sistema
+            Auditoria de alterações, estrutura de IDs, categorias e backups do sistema
           </p>
         </div>
 
         {/* Sub-navegação */}
-        <div className="flex bg-slate-900/60 p-1.5 rounded-xl border border-slate-700/50 ring-1 ring-white/5 self-start sm:self-auto">
+        <div className="flex bg-slate-900/60 p-1.5 rounded-xl border border-slate-700/50 ring-1 ring-white/5 self-start sm:self-auto flex-wrap gap-1">
           <button
             type="button"
             onClick={() => setActiveSubTab('backup')}
             className={cn(
-              "px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition-all flex items-center gap-2",
+              "px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition-all flex items-center gap-2 cursor-pointer",
               activeSubTab === 'backup' 
                 ? "bg-slate-700/80 text-white shadow-md ring-1 ring-slate-600/50" 
                 : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/50"
@@ -391,7 +512,7 @@ export function ConfigTab({ state }: ConfigTabProps) {
             type="button"
             onClick={() => setActiveSubTab('logs')}
             className={cn(
-              "px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition-all flex items-center gap-2",
+              "px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition-all flex items-center gap-2 cursor-pointer",
               activeSubTab === 'logs' 
                 ? "bg-blue-600/80 text-white shadow-md ring-1 ring-blue-500/50" 
                 : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/50"
@@ -404,6 +525,26 @@ export function ConfigTab({ state }: ConfigTabProps) {
               activeSubTab === 'logs' ? "bg-white/20 text-white" : "bg-slate-800 text-slate-400 border border-slate-700"
             )}>
               {logs.length}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveSubTab('categories')}
+            className={cn(
+              "px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition-all flex items-center gap-2 cursor-pointer",
+              activeSubTab === 'categories' 
+                ? "bg-emerald-600/80 text-white shadow-md ring-1 ring-emerald-500/50" 
+                : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/50"
+            )}
+          >
+            <Tags size={15} />
+            <span>Categorias</span>
+            <span className={cn(
+              "px-1.5 py-0.2 rounded-full text-[10px] font-mono",
+              activeSubTab === 'categories' ? "bg-white/20 text-white" : "bg-slate-800 text-slate-400 border border-slate-700"
+            )}>
+              {categoryStats.length}
             </span>
           </button>
         </div>
@@ -618,6 +759,7 @@ export function ConfigTab({ state }: ConfigTabProps) {
                 <option value="Entrada">Entradas</option>
                 <option value="Pagamento">Pagamentos</option>
                 <option value="Terreno">Terreno</option>
+                <option value="Categoria">Categorias</option>
                 <option value="Sistema">Sistema</option>
               </select>
 
@@ -777,6 +919,335 @@ export function ConfigTab({ state }: ConfigTabProps) {
                 })}
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Sub-aba 3: GESTÃO DE CATEGORIAS */}
+      {activeSubTab === 'categories' && (
+        <div className="space-y-6">
+          {/* Métricas / Resumo Superior */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="bg-slate-900/60 backdrop-blur-xl rounded-2xl border border-slate-700/50 p-4 ring-1 ring-white/5 flex items-center gap-3.5">
+              <div className="p-3 bg-emerald-500/10 text-emerald-400 rounded-xl ring-1 ring-emerald-500/20 shadow-[0_0_15px_rgba(16,185,129,0.15)] shrink-0">
+                <Tags size={22} />
+              </div>
+              <div>
+                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block">Total de Categorias</span>
+                <span className="text-xl sm:text-2xl font-black text-white">{categoryStats.length}</span>
+              </div>
+            </div>
+
+            <div className="bg-slate-900/60 backdrop-blur-xl rounded-2xl border border-slate-700/50 p-4 ring-1 ring-white/5 flex items-center gap-3.5">
+              <div className="p-3 bg-blue-500/10 text-blue-400 rounded-xl ring-1 ring-blue-500/20 shadow-[0_0_15px_rgba(59,130,246,0.15)] shrink-0">
+                <Activity size={22} />
+              </div>
+              <div>
+                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block">Despesas Lançadas</span>
+                <span className="text-xl sm:text-2xl font-black text-white">{state.expenses.length}</span>
+              </div>
+            </div>
+
+            <div className="bg-slate-900/60 backdrop-blur-xl rounded-2xl border border-slate-700/50 p-4 ring-1 ring-white/5 flex items-center gap-3.5">
+              <div className="p-3 bg-purple-500/10 text-purple-400 rounded-xl ring-1 ring-purple-500/20 shadow-[0_0_15px_rgba(168,85,247,0.15)] shrink-0">
+                <Database size={22} />
+              </div>
+              <div>
+                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block">Total Geral em Obras</span>
+                <span className="text-xl sm:text-2xl font-black text-white font-mono">{fmt(totalAllExpensesValue)}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Card de Cadastro Rápido de Nova Categoria */}
+          <div className="bg-slate-900/60 backdrop-blur-xl rounded-2xl border border-slate-700/50 p-5 sm:p-6 ring-1 ring-white/5 shadow-xl">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-2.5 bg-gradient-to-br from-emerald-500/20 to-teal-500/20 text-emerald-400 rounded-xl ring-1 ring-emerald-500/30">
+                <FolderPlus size={20} />
+              </div>
+              <div>
+                <h3 className="text-base sm:text-lg font-bold text-white">Cadastrar Nova Categoria</h3>
+                <p className="text-xs text-slate-400">
+                  Adicione novas categorias para classificação e rateio das despesas da obra
+                </p>
+              </div>
+            </div>
+
+            <form onSubmit={handleCreateCategorySubmit} className="flex flex-col sm:flex-row gap-3">
+              <div className="relative flex-1">
+                <Tag size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500" />
+                <input
+                  type="text"
+                  placeholder="Nome da categoria (Ex: Paisagismo, Elétrica, Pintura...)"
+                  value={newCategoryName}
+                  onChange={e => setNewCategoryName(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2.5 bg-slate-950/70 border border-slate-700/60 rounded-xl text-sm text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50 transition-all"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={!newCategoryName.trim()}
+                className="px-5 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-bold rounded-xl transition-all shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2 cursor-pointer shrink-0"
+              >
+                <Plus size={16} />
+                <span>Adicionar Categoria</span>
+              </button>
+            </form>
+          </div>
+
+          {/* Barra de Busca e Listagem */}
+          <div className="space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-900/60 backdrop-blur-xl p-3.5 rounded-2xl border border-slate-700/50 ring-1 ring-white/5">
+              <div className="relative flex-1">
+                <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Buscar categoria por nome..."
+                  value={categorySearch}
+                  onChange={e => setCategorySearch(e.target.value)}
+                  className="w-full pl-9 pr-3 py-1.5 bg-slate-950/60 border border-slate-700/60 rounded-xl text-xs sm:text-sm text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-emerald-500/50"
+                />
+              </div>
+              <div className="text-xs text-slate-400 px-2 font-medium">
+                Mostrando <strong className="text-white">{filteredCategoryStats.length}</strong> de {categoryStats.length} categorias
+              </div>
+            </div>
+
+            {filteredCategoryStats.length === 0 ? (
+              <div className="bg-slate-900/40 rounded-2xl border border-slate-800/80 p-12 text-center">
+                <Tags size={36} className="mx-auto text-slate-600 mb-3" />
+                <p className="text-sm font-semibold text-slate-300">Nenhuma categoria encontrada</p>
+                <p className="text-xs text-slate-500 mt-1">Tente outro termo na busca ou cadastre uma nova categoria acima.</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5 sm:gap-4">
+                {filteredCategoryStats.map((item) => {
+                  const hasExpenses = item.count > 0;
+                  return (
+                    <div
+                      key={item.name}
+                      className="bg-slate-900/70 backdrop-blur-xl rounded-2xl border border-slate-800/80 hover:border-slate-700/70 p-4.5 ring-1 ring-white/5 transition-all flex flex-col justify-between group shadow-lg"
+                    >
+                      <div>
+                        {/* Top: Nome e Ações */}
+                        <div className="flex items-start justify-between gap-2 mb-3">
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <div className="p-2 rounded-xl bg-slate-800/90 text-emerald-400 ring-1 ring-white/10 shrink-0 group-hover:bg-emerald-500/10 transition-colors">
+                              <Tag size={16} />
+                            </div>
+                            <div className="min-w-0">
+                              <h4 className="text-sm sm:text-base font-bold text-white truncate" title={item.name}>
+                                {item.name}
+                              </h4>
+                              <span className={cn(
+                                "inline-block text-[11px] font-mono px-2 py-0.5 rounded-full mt-0.5",
+                                hasExpenses 
+                                  ? "bg-blue-500/15 text-blue-300 border border-blue-500/30" 
+                                  : "bg-slate-800 text-slate-400 border border-slate-700/50"
+                              )}>
+                                {item.count} {item.count === 1 ? 'saída' : 'saídas'}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Botões de Ação */}
+                          <div className="flex items-center gap-1 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => setEditingCategory({ oldName: item.name, newName: item.name, count: item.count })}
+                              title="Editar / Renomear Categoria"
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-all cursor-pointer ring-1 ring-transparent hover:ring-slate-700"
+                            >
+                              <Pencil size={14} />
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (hasExpenses) {
+                                  toast.error(
+                                    `A categoria "${item.name}" possui ${item.count} ${
+                                      item.count === 1 ? 'despesa vinculada' : 'despesas vinculadas'
+                                    }. Renomeie-a ou transfira os lançamentos antes de excluir.`
+                                  );
+                                } else {
+                                  setDeletingCategory({ name: item.name, count: item.count });
+                                }
+                              }}
+                              disabled={hasExpenses}
+                              title={hasExpenses ? `Em uso por ${item.count} lançamentos (não pode ser excluída)` : "Excluir Categoria"}
+                              className={cn(
+                                "p-1.5 rounded-lg transition-all cursor-pointer",
+                                hasExpenses 
+                                  ? "text-slate-600 cursor-not-allowed opacity-40" 
+                                  : "text-slate-400 hover:text-red-400 hover:bg-red-500/10 ring-1 ring-transparent hover:ring-red-500/30"
+                              )}
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Valor Total e Barra de Progresso */}
+                        <div className="space-y-1.5 pt-2 border-t border-slate-800/80">
+                          <div className="flex items-baseline justify-between text-xs">
+                            <span className="text-slate-400 font-medium">Total Gasto:</span>
+                            <span className="font-mono font-bold text-white text-sm">
+                              {fmt(item.total)}
+                            </span>
+                          </div>
+
+                          <div className="space-y-1">
+                            <div className="w-full bg-slate-950/80 rounded-full h-1.5 overflow-hidden">
+                              <div
+                                className="bg-gradient-to-r from-emerald-500 to-teal-400 h-1.5 rounded-full transition-all duration-500"
+                                style={{ width: `${Math.min(100, Math.max(item.percentage > 0 ? 3 : 0, item.percentage))}%` }}
+                              />
+                            </div>
+                            <div className="flex justify-between items-center text-[10px] text-slate-500 font-mono">
+                              <span>Participação</span>
+                              <span>{item.percentage.toFixed(1)}% do total</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DE EDIÇÃO / RENOMEAÇÃO DE CATEGORIA */}
+      {editingCategory && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-slate-900/95 border border-slate-700/60 rounded-2xl shadow-2xl max-w-md w-full p-6 ring-1 ring-white/10 animate-in zoom-in-95 duration-200">
+            <div className="flex items-start justify-between gap-3 mb-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-blue-500/10 text-blue-400 rounded-xl ring-1 ring-blue-500/20">
+                  <Pencil size={20} />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-white">Editar Categoria</h3>
+                  <p className="text-xs text-slate-400">Renomear categoria e atualizar despesas</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingCategory(null)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition-colors cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">
+                  Nome Atual
+                </label>
+                <div className="px-3.5 py-2 bg-slate-950/80 border border-slate-800 rounded-xl text-sm font-semibold text-slate-300">
+                  {editingCategory.oldName}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">
+                  Novo Nome da Categoria
+                </label>
+                <input
+                  type="text"
+                  autoFocus
+                  value={editingCategory.newName}
+                  onChange={e => setEditingCategory({ ...editingCategory, newName: e.target.value })}
+                  placeholder="Ex: Materiais Hidráulicos..."
+                  className="w-full px-3.5 py-2.5 bg-slate-950/80 border border-slate-700 rounded-xl text-sm text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500 transition-all"
+                />
+              </div>
+
+              {editingCategory.count > 0 && (
+                <div className="p-3.5 rounded-xl bg-blue-500/10 border border-blue-500/30 text-blue-300 text-xs flex items-start gap-2.5">
+                  <AlertCircle size={18} className="shrink-0 mt-0.5 text-blue-400" />
+                  <div className="leading-relaxed">
+                    <strong>Atenção:</strong> Existem <strong className="text-white">{editingCategory.count}</strong> despesa(s) vinculada(s) a esta categoria. Ao salvar, todas serão atualizadas automaticamente para <strong>"{editingCategory.newName || '...'}"</strong> no banco de dados e na auditoria.
+                  </div>
+                </div>
+              )}
+
+              <div className="flex gap-2.5 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingCategory(null)}
+                  disabled={isSavingCategory}
+                  className="flex-1 px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm font-bold rounded-xl transition-all cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveRenameCategory}
+                  disabled={isSavingCategory || !editingCategory.newName.trim() || editingCategory.newName.trim() === editingCategory.oldName}
+                  className="flex-1 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-sm font-bold rounded-xl transition-all shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  {isSavingCategory ? (
+                    <>
+                      <RefreshCw size={15} className="animate-spin" />
+                      <span>Salvando...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Check size={16} />
+                      <span>Salvar Alterações</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DE CONFIRMAÇÃO DE EXCLUSÃO DE CATEGORIA */}
+      {deletingCategory && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-slate-900/95 border border-slate-700/60 rounded-2xl shadow-2xl max-w-sm w-full p-6 ring-1 ring-white/10 animate-in zoom-in-95 duration-200">
+            <div className="w-12 h-12 rounded-full bg-red-500/10 ring-1 ring-red-500/20 text-red-400 flex items-center justify-center mx-auto mb-4">
+              <AlertTriangle size={24} />
+            </div>
+            <h3 className="text-lg font-bold text-center text-white mb-2">Excluir Categoria</h3>
+            <p className="text-center text-slate-400 text-xs sm:text-sm mb-6 leading-relaxed">
+              Deseja realmente excluir a categoria <strong className="text-white">"{deletingCategory.name}"</strong>? Ela será removida da lista de categorias disponíveis.
+            </p>
+            <div className="flex gap-2.5">
+              <button
+                type="button"
+                onClick={() => setDeletingCategory(null)}
+                disabled={isDeletingCategory}
+                className="flex-1 px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs sm:text-sm font-bold rounded-xl transition-all cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteCategory}
+                disabled={isDeletingCategory}
+                className="flex-1 px-4 py-2.5 bg-red-600 hover:bg-red-500 text-white text-xs sm:text-sm font-bold rounded-xl transition-all shadow-lg shadow-red-500/20 flex items-center justify-center gap-2 cursor-pointer"
+              >
+                {isDeletingCategory ? (
+                  <>
+                    <RefreshCw size={14} className="animate-spin" />
+                    <span>Excluindo...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 size={15} />
+                    <span>Sim, Excluir</span>
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}

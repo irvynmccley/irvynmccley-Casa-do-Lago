@@ -38,6 +38,7 @@ const REIMBURSE_PEOPLE: Person[] = ['Mccley', 'Jan', 'Saulo', 'Jorge'];
 
 interface ExpensesTabProps {
   expenses: Expense[];
+  categories?: string[];
   onAdd: (e: Omit<Expense, 'id'>) => Promise<void> | void;
   onEdit: (id: string, e: Partial<Omit<Expense, 'id'>>) => Promise<void> | void;
   onDelete: (id: string) => void;
@@ -48,6 +49,7 @@ interface ExpensesTabProps {
 
 export function ExpensesTab({ 
   expenses, 
+  categories = [],
   onAdd, 
   onEdit, 
   onDelete, 
@@ -55,6 +57,15 @@ export function ExpensesTab({
   formatCurrency, 
   isSharedMode 
 }: ExpensesTabProps) {
+  const availableCategories = useMemo(() => {
+    const list = categories && categories.length > 0 ? [...categories] : [...CATEGORIES];
+    expenses.forEach(e => {
+      if (e.category && !list.includes(e.category)) {
+        list.push(e.category);
+      }
+    });
+    return Array.from(new Set(list));
+  }, [categories, expenses]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
@@ -492,7 +503,7 @@ export function ExpensesTab({
                 className="w-full bg-slate-950/50 border border-slate-700/50 text-white rounded-xl px-4 py-3 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500/50 outline-none transition-all appearance-none disabled:opacity-50"
               >
                 <option value="" disabled className="text-slate-500">Selecione uma categoria...</option>
-                {CATEGORIES.map(cat => <option key={cat} value={cat} className="bg-slate-900">{cat}</option>)}
+                {availableCategories.map(cat => <option key={cat} value={cat} className="bg-slate-900">{cat}</option>)}
               </select>
             </div>
 

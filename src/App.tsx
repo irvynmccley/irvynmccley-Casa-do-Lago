@@ -27,6 +27,12 @@ import { ConfirmDialog } from './components/ui/ConfirmDialog';
 import { useOfflineSync } from './useOfflineSync';
 import { formatAuditId } from './utils/audit';
 import { auditLogger } from './utils/auditLogger';
+import { 
+  getStoredCategories, 
+  saveStoredCategories, 
+  mergeCategoriesWithExpenses, 
+  sanitizeCategoryName 
+} from './utils/categories';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
@@ -161,7 +167,22 @@ function App() {
   }, []);
 
   const [state, setState] = useState<AppState>({ expenses: [], incomes: [], payments: [], terrenoPaidInstallments: INITIAL_PAID_TERRENO });
+  const [categories, setCategories] = useState<string[]>(() => getStoredCategories());
   const [syncStatus, setSyncStatus] = useState<'syncing' | 'local' | 'error'>(ENABLE_POCKETBASE_SYNC ? 'syncing' : 'local');
+
+  // Sincronização e descoberta automática de categorias presentes nas despesas
+  useEffect(() => {
+    if (state.expenses.length > 0) {
+      setCategories(prev => {
+        const merged = mergeCategoriesWithExpenses(prev, state.expenses);
+        if (merged.length !== prev.length || merged.some((c, i) => c !== prev[i])) {
+          saveStoredCategories(merged);
+          return merged;
+        }
+        return prev;
+      });
+    }
+  }, [state.expenses]);
   const [confirmDialog, setConfirmDialog] = useState<{
     isOpen: boolean;
     title: string;
@@ -992,6 +1013,157 @@ function App() {
     }
   };
 
+  const handleAddCategory = (newCat: string): boolean => {
+    const sanitized = sanitizeCategoryName(newCat);
+    if (!sanitized) {
+      toast.error('Informe o nome da categoria.');
+      return false;
+    }
+    const exists = categories.some(c => c.toLowerCase() === sanitized.toLowerCase());
+    if (exists) {
+      toast.error(`A categoria "${sanitized}" já existe.`);
+      return false;
+    }
+
+    const updated = [...categories, sanitized];
+    setCategories(updated);
+    saveStoredCategories(updated);
+
+    auditLogger.log({
+      action: 'CREATE',
+      actionLabel: 'Categoria Cadastrada',
+      entity: 'Categoria',
+      recordId: `cat-${Date.now()}`,
+      auditId: `#CAT-${sanitized.slice(0, 4).toUpperCase()}`,
+      user: getUserName(),
+      details: `Categoria "${sanitized}" cadastrada no sistema`
+    });
+
+    toast.success(`Categoria "${sanitized}" cadastrada com sucesso!`);
+    return true;
+  };
+
+  const handleRenameCategory = async (oldName: string, newName: string) => {
+    const sanitizedOld = sanitizeCategoryName(oldName);
+    const sanitizedNew = sanitizeCategoryName(newName);
+
+    if (!sanitizedNew) {
+      toast.error('Informe o novo nome da categoria.');
+      return;
+    }
+    if (sanitizedOld.toLowerCase() === sanitizedNew.toLowerCase()) {
+      return;
+    }
+    const alreadyExists = categories.some(
+      c => c.toLowerCase() === sanitizedNew.toLowerCase() && c.toLowerCase() !== sanitizedOld.toLowerCase()
+    );
+    if (alreadyExists) {
+      toast.error(`A categoria "${sanitizedNew}" já existe.`);
+      return;
+    }
+
+    // 1. Atualiza lista de categorias
+    const updatedCategories = categories.map(c => 
+      c.toLowerCase() === sanitizedOld.toLowerCase() ? sanitizedNew : c
+    );
+    setCategories(updatedCategories);
+    saveStoredCategories(updatedCategories);
+
+    // 2. Localiza todas as despesas que utilizam essa categoria
+    const affectedExpenses = state.expenses.filter(
+      e => (e.category || '').toLowerCase() === sanitizedOld.toLowerCase()
+    );
+
+    if (affectedExpenses.length > 0) {
+      // Atualização otimista no estado local
+      setState(prev => ({
+        ...prev,
+        expenses: prev.expenses.map(e => 
+          (e.category || '').toLowerCase() === sanitizedOld.toLowerCase()
+            ? { ...e, category: sanitizedNew }
+            : e
+        )
+      }));
+
+      // Se sincronização com PocketBase estiver ativa, persiste alterações
+      if (ENABLE_POCKETBASE_SYNC) {
+        if (isOffline) {
+          affectedExpenses.forEach(exp => {
+            saveToOfflineQueue('EDIT_EXPENSE', { category: sanitizedNew }, exp.id);
+          });
+        } else {
+          try {
+            await Promise.all(
+              affectedExpenses.map(exp => 
+                pb.collection('expenses').update(exp.id, { category: sanitizedNew })
+              )
+            );
+          } catch (err: any) {
+            console.error("[Categories] Erro ao sincronizar renomeação no PocketBase:", err);
+            affectedExpenses.forEach(exp => {
+              saveToOfflineQueue('EDIT_EXPENSE', { category: sanitizedNew }, exp.id);
+            });
+          }
+        }
+      }
+    }
+
+    // 3. Registra auditoria
+    auditLogger.logUpdate({
+      entity: 'Categoria',
+      recordId: `cat-${Date.now()}`,
+      auditId: `#CAT-${sanitizedNew.slice(0, 4).toUpperCase()}`,
+      user: getUserName(),
+      actionLabel: 'Categoria Renomeada',
+      details: `Categoria renomeada de "${sanitizedOld}" para "${sanitizedNew}" (${affectedExpenses.length} ${
+        affectedExpenses.length === 1 ? 'despesa atualizada' : 'despesas atualizadas'
+      })`,
+      previousValue: sanitizedOld,
+      newValue: sanitizedNew
+    });
+
+    toast.success(
+      `Categoria "${sanitizedNew}" salva! ${affectedExpenses.length} ${
+        affectedExpenses.length === 1 ? 'despesa atualizada' : 'despesas atualizadas'
+      }.`
+    );
+  };
+
+  const handleDeleteCategory = async (catName: string): Promise<boolean> => {
+    const sanitized = sanitizeCategoryName(catName);
+    
+    // Verifica despesas vinculadas
+    const count = state.expenses.filter(
+      e => (e.category || '').toLowerCase() === sanitized.toLowerCase()
+    ).length;
+
+    if (count > 0) {
+      toast.error(
+        `Não é possível excluir a categoria "${sanitized}" pois há ${count} ${
+          count === 1 ? 'despesa vinculada' : 'despesas vinculadas'
+        }. Renomeie-a ou transfira os lançamentos primeiro.`
+      );
+      return false;
+    }
+
+    const updated = categories.filter(c => c.toLowerCase() !== sanitized.toLowerCase());
+    setCategories(updated);
+    saveStoredCategories(updated);
+
+    auditLogger.log({
+      action: 'DELETE',
+      actionLabel: 'Categoria Removida',
+      entity: 'Categoria',
+      recordId: `cat-${Date.now()}`,
+      auditId: `#CAT-${sanitized.slice(0, 4).toUpperCase()}`,
+      user: getUserName(),
+      details: `Categoria "${sanitized}" removida do sistema`
+    });
+
+    toast.success(`Categoria "${sanitized}" removida com sucesso!`);
+    return true;
+  };
+
   const addIncome = async (income: Omit<Income, 'id'>) => {
     if (!ENABLE_POCKETBASE_SYNC) {
       const newId = Date.now().toString();
@@ -1651,6 +1823,7 @@ function App() {
         {activeTab === 'saidas' && (
           <ExpensesTab 
             expenses={state.expenses} 
+            categories={categories}
             onAdd={addExpense} 
             onEdit={editExpense}
             onDelete={confirmDeleteExpense} 
@@ -1678,6 +1851,7 @@ function App() {
         {activeTab === 'relatorios' && !isSharedMode && (
           <ReportsTab 
             expenses={state.expenses} 
+            categories={categories}
             allCardInstallments={allCardInstallmentsByMonth}
             formatCurrency={formatCurrency} 
           />
@@ -1689,7 +1863,16 @@ function App() {
             formatCurrency={formatCurrency} 
           />
         )}
-        {activeTab === 'config' && <ConfigTab state={state} />}
+        {activeTab === 'config' && (
+          <ConfigTab 
+            state={state} 
+            categories={categories}
+            onAddCategory={handleAddCategory}
+            onRenameCategory={handleRenameCategory}
+            onDeleteCategory={handleDeleteCategory}
+            formatCurrency={formatCurrency}
+          />
+        )}
         {activeTab === 'sobre' && <PlaceholderTab title="Sobre o Sistema" />}
       </main>
       <Toaster position="top-center" richColors />

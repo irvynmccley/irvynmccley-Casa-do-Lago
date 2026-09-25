@@ -38,10 +38,21 @@ interface ReportsTabProps {
     }>;
   }[];
   formatCurrency: (v: number) => string;
+  categories?: string[];
 }
 
-export function ReportsTab({ expenses, allCardInstallments = [], formatCurrency }: ReportsTabProps) {
+export function ReportsTab({ expenses, categories = [], allCardInstallments = [], formatCurrency }: ReportsTabProps) {
   const [activeReportTab, setActiveReportTab] = useState<'geral' | 'extrato' | 'apagar' | 'faturas'>('geral');
+  
+  const availableCategories = useMemo(() => {
+    const list = categories && categories.length > 0 ? [...categories] : [...CATEGORIES];
+    expenses.forEach(e => {
+      if (e.category && !list.includes(e.category)) {
+        list.push(e.category);
+      }
+    });
+    return Array.from(new Set(list));
+  }, [categories, expenses]);
   
   // Filtros da aba Geral
   const [filter, setFilter] = useState('all');
@@ -566,7 +577,7 @@ export function ReportsTab({ expenses, allCardInstallments = [], formatCurrency 
                   {expenses.length}
                 </span>
               </button>
-              {CATEGORIES.map(cat => (
+              {availableCategories.map(cat => (
                 <button 
                   key={cat}
                   onClick={() => setFilter(cat)}

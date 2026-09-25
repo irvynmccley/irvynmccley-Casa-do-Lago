@@ -21,7 +21,11 @@ import { toPng } from 'html-to-image';
 import { formatAuditId, copyAuditIdToClipboard } from '../utils/audit';
 import { Expense, Person } from '../types';
 
-const COLORS = ['#10b981', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6'];
+const COLORS = [
+  '#10b981', '#3b82f6', '#f59e0b', '#ec4899', '#8b5cf6', 
+  '#06b6d4', '#14b8a6', '#f97316', '#6366f1', '#84cc16', 
+  '#e11d48', '#d97706'
+];
 
 interface DashboardProps {
   totalSpent: number;
