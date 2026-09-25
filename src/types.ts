@@ -2,6 +2,7 @@ export type Category = 'Combustível' | 'Documentação' | 'Material' | 'Mão de
 export type PaymentMethod = 'Pix' | 'Cartão' | 'doação' | 'Caixa';
 export type Donor = 'Jorge' | 'Jane' | 'Saulo' | 'Mccley' | 'Jan';
 export type Person = 'Mccley' | 'Jan' | 'Saulo' | 'Jorge';
+export type RefundStatus = 'Pendente' | 'Devolvido';
 
 export interface Expense {
   id: string;
@@ -14,6 +15,11 @@ export interface Expense {
   donor?: Donor;
   observation?: string;
   auditId?: string;
+  original_id?: string;
+  isReimbursement?: boolean;
+  reimburseTo?: Person;
+  refundStatus?: RefundStatus;
+  status?: string;
 }
 
 export interface Income {

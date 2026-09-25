@@ -1,12 +1,30 @@
 import React, { useState, useRef, useMemo } from 'react';
-import { Plus, Trash2, CreditCard, User, Wallet, FileUp, Download, Share2, Edit2, Search } from 'lucide-react';
+import { 
+  Plus, 
+  Trash2, 
+  CreditCard, 
+  User, 
+  Wallet, 
+  FileUp, 
+  Download, 
+  Share2, 
+  Edit2, 
+  Search, 
+  RotateCcw, 
+  Check, 
+  CheckCircle2, 
+  Clock, 
+  Calendar,
+  AlertCircle
+} from 'lucide-react';
 import { format } from 'date-fns';
-import { Expense, Category, PaymentMethod, Donor } from '../types';
+import { Expense, Category, PaymentMethod, Donor, Person, RefundStatus } from '../types';
 import { Card } from './ui/Card';
 import { ConfirmDialog } from './ui/ConfirmDialog';
 import { formatAuditId, copyAuditIdToClipboard } from '../utils/audit';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import { toast } from 'sonner';
 import * as XLSX from 'xlsx';
 
 function cn(...inputs: ClassValue[]) {
@@ -16,30 +34,48 @@ function cn(...inputs: ClassValue[]) {
 const CATEGORIES: Category[] = ['Combustível', 'Documentação', 'Material', 'Mão de Obra', 'Monitoramento', 'Alimentação'];
 const PAYMENT_METHODS: PaymentMethod[] = ['Pix', 'Cartão', 'doação', 'Caixa'];
 const DONORS: Donor[] = ['Jorge', 'Jane', 'Saulo', 'Mccley', 'Jan'];
+const REIMBURSE_PEOPLE: Person[] = ['Mccley', 'Jan', 'Saulo', 'Jorge'];
 
 interface ExpensesTabProps {
   expenses: Expense[];
-  onAdd: (e: Omit<Expense, 'id'>) => void;
-  onEdit: (id: string, e: Partial<Omit<Expense, 'id'>>) => void;
+  onAdd: (e: Omit<Expense, 'id'>) => Promise<void> | void;
+  onEdit: (id: string, e: Partial<Omit<Expense, 'id'>>) => Promise<void> | void;
   onDelete: (id: string) => void;
+  onToggleRefund?: (id: string) => void;
   formatCurrency: (v: number) => string;
   isSharedMode?: boolean;
 }
 
-export function ExpensesTab({ expenses, onAdd, onEdit, onDelete, formatCurrency, isSharedMode }: ExpensesTabProps) {
+export function ExpensesTab({ 
+  expenses, 
+  onAdd, 
+  onEdit, 
+  onDelete, 
+  onToggleRefund,
+  formatCurrency, 
+  isSharedMode 
+}: ExpensesTabProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [filterMode, setFilterMode] = useState<'all' | 'reimbursements'>('all');
   const [isConfirmingEdit, setIsConfirmingEdit] = useState(false);
   const [pendingEditData, setPendingEditData] = useState<any>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const getTodayDate = () => format(new Date(), 'yyyy-MM-dd');
+
   const [formData, setFormData] = useState({
-    date: '',
+    date: getTodayDate(),
     category: '' as Category,
     local: '',
     value: '',
     paymentMethod: '' as PaymentMethod,
     installments: 1,
     donor: '' as Donor,
+    isReimbursement: false,
+    reimburseTo: 'Mccley' as Person,
+    refundStatus: 'Pendente' as RefundStatus,
     observation: ''
   });
 
@@ -55,120 +91,170 @@ export function ExpensesTab({ expenses, onAdd, onEdit, onDelete, formatCurrency,
     donor2: '' as Donor,
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  // Resumo de Reembolsos Pendentes
+  const pendingRefunds = useMemo(() => {
+    return expenses.filter(e => e.isReimbursement && e.refundStatus === 'Pendente');
+  }, [expenses]);
+
+  const totalPendingRefundValue = useMemo(() => {
+    return pendingRefunds.reduce((acc, exp) => acc + (exp.value || 0), 0);
+  }, [pendingRefunds]);
+
+  const resetForm = () => {
+    setFormData({
+      date: getTodayDate(),
+      category: '' as Category,
+      local: '',
+      value: '',
+      paymentMethod: '' as PaymentMethod,
+      installments: 1,
+      donor: '' as Donor,
+      isReimbursement: false,
+      reimburseTo: 'Mccley' as Person,
+      refundStatus: 'Pendente' as RefundStatus,
+      observation: ''
+    });
+    setSplitData({
+      value1: '',
+      paymentMethod1: '' as PaymentMethod,
+      installments1: 1,
+      donor1: '' as Donor,
+      value2: '',
+      paymentMethod2: '' as PaymentMethod,
+      installments2: 1,
+      donor2: '' as Donor,
+    });
+    setIsSplitPayment(false);
+    setEditingId(null);
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.date || !formData.category || !formData.local) return;
+    if (isSubmitting) return; // Trava contra cliques múltiplos
 
-    if (isSplitPayment) {
-      if (!splitData.value1 || !splitData.paymentMethod1 || !splitData.value2 || !splitData.paymentMethod2) return;
+    if (!formData.date || !formData.category || !formData.local) {
+      toast.error('Preencha os campos obrigatórios (Data, Categoria e Local)');
+      return;
+    }
 
-      const expense1 = {
-        date: formData.date,
-        category: formData.category,
-        local: formData.local,
-        value: parseFloat(splitData.value1),
-        paymentMethod: splitData.paymentMethod1,
-        installments: splitData.paymentMethod1 === 'Cartão' ? splitData.installments1 : undefined,
-        donor: splitData.paymentMethod1 === 'doação' ? splitData.donor1 : undefined,
-        observation: formData.observation ? `${formData.observation} (Parte 1)` : '(Parte 1)'
-      };
+    setIsSubmitting(true);
 
-      const expense2 = {
-        date: formData.date,
-        category: formData.category,
-        local: formData.local,
-        value: parseFloat(splitData.value2),
-        paymentMethod: splitData.paymentMethod2,
-        installments: splitData.paymentMethod2 === 'Cartão' ? splitData.installments2 : undefined,
-        donor: splitData.paymentMethod2 === 'doação' ? splitData.donor2 : undefined,
-        observation: formData.observation ? `${formData.observation} (Parte 2)` : '(Parte 2)'
-      };
+    try {
+      if (isSplitPayment) {
+        if (!splitData.value1 || !splitData.paymentMethod1 || !splitData.value2 || !splitData.paymentMethod2) {
+          toast.error('Informe os valores e formas de pagamento de ambas as partes');
+          setIsSubmitting(false);
+          return;
+        }
 
-      onAdd(expense1);
-      onAdd(expense2);
+        const baseOriginalId = `split_${Date.now()}`;
 
-      setFormData({
-        date: '',
-        category: '' as Category,
-        local: '',
-        value: '',
-        paymentMethod: '' as PaymentMethod,
-        installments: 1,
-        donor: '' as Donor,
-        observation: ''
-      });
-      setSplitData({
-        value1: '',
-        paymentMethod1: '' as PaymentMethod,
-        installments1: 1,
-        donor1: '' as Donor,
-        value2: '',
-        paymentMethod2: '' as PaymentMethod,
-        installments2: 1,
-        donor2: '' as Donor,
-      });
-      setIsSplitPayment(false);
-    } else {
-      if (!formData.value || !formData.paymentMethod) return;
+        const expense1: Omit<Expense, 'id'> = {
+          date: formData.date,
+          category: formData.category,
+          local: formData.local,
+          value: parseFloat(splitData.value1),
+          paymentMethod: splitData.paymentMethod1,
+          installments: splitData.paymentMethod1 === 'Cartão' ? splitData.installments1 : undefined,
+          donor: splitData.paymentMethod1 === 'doação' ? splitData.donor1 : undefined,
+          observation: formData.observation ? `${formData.observation} (Parte 1)` : '(Parte 1)',
+          isReimbursement: formData.isReimbursement,
+          reimburseTo: formData.isReimbursement ? formData.reimburseTo : undefined,
+          refundStatus: formData.isReimbursement ? formData.refundStatus : undefined,
+          original_id: `${baseOriginalId}_1`
+        };
 
-      const expenseData = {
-        date: formData.date,
-        category: formData.category,
-        local: formData.local,
-        value: parseFloat(formData.value),
-        paymentMethod: formData.paymentMethod,
-        installments: formData.paymentMethod === 'Cartão' ? formData.installments : undefined,
-        donor: formData.paymentMethod === 'doação' ? formData.donor : undefined,
-        observation: formData.observation || undefined
-      };
+        const expense2: Omit<Expense, 'id'> = {
+          date: formData.date,
+          category: formData.category,
+          local: formData.local,
+          value: parseFloat(splitData.value2),
+          paymentMethod: splitData.paymentMethod2,
+          installments: splitData.paymentMethod2 === 'Cartão' ? splitData.installments2 : undefined,
+          donor: splitData.paymentMethod2 === 'doação' ? splitData.donor2 : undefined,
+          observation: formData.observation ? `${formData.observation} (Parte 2)` : '(Parte 2)',
+          isReimbursement: formData.isReimbursement,
+          reimburseTo: formData.isReimbursement ? formData.reimburseTo : undefined,
+          refundStatus: formData.isReimbursement ? formData.refundStatus : undefined,
+          original_id: `${baseOriginalId}_2`
+        };
 
-      if (editingId) {
-        setPendingEditData(expenseData);
-        setIsConfirmingEdit(true);
+        await onAdd(expense1);
+        await onAdd(expense2);
+        resetForm();
       } else {
-        onAdd(expenseData);
-        setFormData({
-          date: '',
-          category: '' as Category,
-          local: '',
-          value: '',
-          paymentMethod: '' as PaymentMethod,
-          installments: 1,
-          donor: '' as Donor,
-          observation: ''
-        });
+        if (!formData.value || !formData.paymentMethod) {
+          toast.error('Informe o valor e a forma de pagamento');
+          setIsSubmitting(false);
+          return;
+        }
+
+        const originalId = `exp_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+
+        const expenseData: Omit<Expense, 'id'> = {
+          date: formData.date,
+          category: formData.category,
+          local: formData.local,
+          value: parseFloat(formData.value),
+          paymentMethod: formData.paymentMethod,
+          installments: formData.paymentMethod === 'Cartão' ? formData.installments : undefined,
+          donor: formData.paymentMethod === 'doação' ? formData.donor : undefined,
+          observation: formData.observation || undefined,
+          isReimbursement: formData.isReimbursement,
+          reimburseTo: formData.isReimbursement ? formData.reimburseTo : undefined,
+          refundStatus: formData.isReimbursement ? formData.refundStatus : undefined,
+          original_id: originalId
+        };
+
+        if (editingId) {
+          setPendingEditData(expenseData);
+          setIsConfirmingEdit(true);
+        } else {
+          await onAdd(expenseData);
+          resetForm();
+        }
       }
+    } catch (err: any) {
+      console.error("Erro ao salvar despesa:", err);
+      toast.error("Ocorreu um erro ao salvar a despesa. Tente novamente.");
+    } finally {
+      setTimeout(() => {
+        setIsSubmitting(false);
+      }, 700);
     }
   };
 
-  const confirmEdit = () => {
+  const confirmEdit = async () => {
     if (editingId && pendingEditData) {
-      onEdit(editingId, pendingEditData);
-      setEditingId(null);
-      setPendingEditData(null);
-      setFormData({
-        date: '',
-        category: '' as Category,
-        local: '',
-        value: '',
-        paymentMethod: '' as PaymentMethod,
-        installments: 1,
-        donor: '' as Donor,
-        observation: ''
-      });
+      setIsSubmitting(true);
+      try {
+        await onEdit(editingId, pendingEditData);
+        setEditingId(null);
+        setPendingEditData(null);
+        setIsConfirmingEdit(false);
+        resetForm();
+      } catch (err) {
+        console.error("Erro ao editar despesa:", err);
+        toast.error("Ocorreu um erro ao salvar as alterações.");
+      } finally {
+        setTimeout(() => setIsSubmitting(false), 500);
+      }
     }
   };
 
   const handleEditClick = (exp: Expense) => {
     setEditingId(exp.id);
     setFormData({
-      date: exp.date,
+      date: exp.date || getTodayDate(),
       category: exp.category,
       local: exp.local,
       value: exp.value.toString(),
       paymentMethod: exp.paymentMethod,
       installments: exp.installments || 1,
       donor: exp.donor || 'Jorge',
+      isReimbursement: Boolean(exp.isReimbursement),
+      reimburseTo: exp.reimburseTo || (exp.donor as Person) || 'Mccley',
+      refundStatus: exp.refundStatus || (exp.status === 'DEVOLVIDO' ? 'Devolvido' : 'Pendente'),
       observation: exp.observation || ''
     });
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -278,34 +364,43 @@ export function ExpensesTab({ expenses, onAdd, onEdit, onDelete, formatCurrency,
   };
 
   const filteredExpenses = useMemo(() => {
-    const sorted = [...expenses].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
-    if (!searchTerm.trim()) return sorted;
+    let list = [...expenses].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+
+    if (filterMode === 'reimbursements') {
+      list = list.filter(e => e.isReimbursement);
+    }
+
+    if (!searchTerm.trim()) return list;
 
     const term = searchTerm.toLowerCase().trim();
-    return sorted.filter(exp => {
+    return list.filter(exp => {
       const auditId = formatAuditId('EXP', exp.id).toLowerCase();
       const local = (exp.local || '').toLowerCase();
       const obs = (exp.observation || '').toLowerCase();
       const cat = (exp.category || '').toLowerCase();
       const method = (exp.paymentMethod || '').toLowerCase();
       const donor = (exp.donor || '').toLowerCase();
+      const reimburseTo = (exp.reimburseTo || '').toLowerCase();
+      const isReimbKeyword = exp.isReimbursement ? 'reembolso devolver ressarcimento' : '';
       return (
         auditId.includes(term) ||
         local.includes(term) ||
         obs.includes(term) ||
         cat.includes(term) ||
         method.includes(term) ||
-        donor.includes(term)
+        donor.includes(term) ||
+        reimburseTo.includes(term) ||
+        isReimbKeyword.includes(term)
       );
     });
-  }, [expenses, searchTerm]);
+  }, [expenses, searchTerm, filterMode]);
 
   return (
     <div className="space-y-6 sm:space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 relative z-10">
       <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-3xl font-bold tracking-tight mb-2 text-white drop-shadow-sm">Saídas</h2>
-          <p className="text-slate-400 font-medium tracking-wide">Lance suas despesas aqui</p>
+          <p className="text-slate-400 font-medium tracking-wide">Lance suas despesas com segurança e controle de devolução</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {!isSharedMode && (
@@ -344,57 +439,124 @@ export function ExpensesTab({ expenses, onAdd, onEdit, onDelete, formatCurrency,
         </div>
       </header>
 
+      {/* Card Informativo de Reembolsos Pendentes */}
+      {totalPendingRefundValue > 0 && (
+        <div className="bg-gradient-to-r from-amber-500/10 via-amber-600/5 to-transparent border border-amber-500/30 rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 ring-1 ring-amber-500/20 shadow-xl backdrop-blur-xl">
+          <div className="flex items-center gap-3.5">
+            <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
+              <RotateCcw size={20} className="animate-spin-slow" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold uppercase tracking-wider text-amber-400">Ressarcimentos a Sócios</span>
+                <span className="text-[10px] bg-amber-500/20 text-amber-300 border border-amber-500/30 px-2 py-0.5 rounded-full font-bold">
+                  {pendingRefunds.length} {pendingRefunds.length === 1 ? 'pendência' : 'pendências'}
+                </span>
+              </div>
+              <p className="text-xs text-slate-300 mt-0.5">
+                Despesas pagas por sócios que devem ser ressarcidas pelo caixa da obra.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3 self-end sm:self-center">
+            <div className="text-right">
+              <span className="text-[10px] uppercase font-bold text-slate-400 block">Total a Devolver</span>
+              <span className="text-lg sm:text-xl font-bold font-mono text-amber-300">{formatCurrency(totalPendingRefundValue)}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setFilterMode(prev => prev === 'reimbursements' ? 'all' : 'reimbursements')}
+              className={cn(
+                "px-3 py-1.5 rounded-xl text-xs font-bold transition-all border",
+                filterMode === 'reimbursements'
+                  ? "bg-amber-500 text-slate-950 border-amber-400 shadow-md"
+                  : "bg-amber-500/15 text-amber-300 border-amber-500/30 hover:bg-amber-500/25"
+              )}
+            >
+              {filterMode === 'reimbursements' ? 'Ver Todas' : 'Filtrar Devoluções'}
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <Card className="bg-slate-900/60 backdrop-blur-xl border border-slate-700/50 ring-1 ring-white/5 p-6 h-fit lg:sticky lg:top-24 shadow-xl">
-          <h3 className="text-lg font-bold text-white mb-6 flex items-center gap-2">
-            <div className="p-1.5 bg-emerald-500/10 rounded-lg ring-1 ring-emerald-500/20">
-              <Plus size={18} className="text-emerald-400" />
-            </div>
-            {editingId ? 'Editar Lançamento' : 'Novo Lançamento'}
-          </h3>
+          <div className="flex items-center justify-between mb-5">
+            <h3 className="text-lg font-bold text-white flex items-center gap-2">
+              <div className="p-1.5 bg-emerald-500/10 rounded-lg ring-1 ring-emerald-500/20">
+                <Plus size={18} className="text-emerald-400" />
+              </div>
+              {editingId ? 'Editar Lançamento' : 'Novo Lançamento'}
+            </h3>
+            {editingId && (
+              <span className="text-[10px] font-mono font-bold text-blue-400 bg-blue-500/10 border border-blue-500/20 px-2 py-0.5 rounded">
+                Editando
+              </span>
+            )}
+          </div>
+
           <form onSubmit={handleSubmit} className="space-y-4">
+            {/* DATA */}
             <div>
-              <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1.5 px-1">Data</label>
+              <div className="flex items-center justify-between mb-1.5 px-1">
+                <label className="block text-[10px] font-bold uppercase text-slate-400">Data</label>
+                <button
+                  type="button"
+                  onClick={() => setFormData(prev => ({ ...prev, date: getTodayDate() }))}
+                  className="text-[10px] font-bold text-emerald-400 hover:text-emerald-300 flex items-center gap-1 transition-colors"
+                  title="Definir data como hoje"
+                >
+                  <Calendar size={11} />
+                  Hoje
+                </button>
+              </div>
               <input 
                 type="date" 
                 required
+                disabled={isSubmitting}
                 value={formData.date}
                 onChange={e => setFormData({ ...formData, date: e.target.value })}
-                className="w-full bg-slate-950/50 border border-slate-700/50 text-white rounded-xl px-4 py-3 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500/50 outline-none transition-all placeholder:text-slate-600"
+                className="w-full bg-slate-950/50 border border-slate-700/50 text-white rounded-xl px-4 py-3 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500/50 outline-none transition-all placeholder:text-slate-600 disabled:opacity-50"
               />
             </div>
 
+            {/* CATEGORIA */}
             <div>
               <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1.5 px-1">Categoria</label>
               <select 
                 required
+                disabled={isSubmitting}
                 value={formData.category}
                 onChange={e => setFormData({ ...formData, category: e.target.value as Category })}
-                className="w-full bg-slate-950/50 border border-slate-700/50 text-white rounded-xl px-4 py-3 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500/50 outline-none transition-all appearance-none"
+                className="w-full bg-slate-950/50 border border-slate-700/50 text-white rounded-xl px-4 py-3 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500/50 outline-none transition-all appearance-none disabled:opacity-50"
               >
-                <option value="" disabled className="text-slate-500">Selecione...</option>
+                <option value="" disabled className="text-slate-500">Selecione uma categoria...</option>
                 {CATEGORIES.map(cat => <option key={cat} value={cat} className="bg-slate-900">{cat}</option>)}
               </select>
             </div>
 
+            {/* LOCAL */}
             <div>
-              <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1.5 px-1">Local</label>
+              <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1.5 px-1">Local / Fornecedor</label>
               <input 
                 type="text" 
                 required
-                placeholder="Ex: Leroy Merlin"
+                disabled={isSubmitting}
+                placeholder="Ex: Leroy Merlin, Posto Ipiranga..."
                 value={formData.local}
                 onChange={e => setFormData({ ...formData, local: e.target.value })}
-                className="w-full bg-slate-950/50 border border-slate-700/50 text-white rounded-xl px-4 py-3 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500/50 outline-none transition-all placeholder:text-slate-600"
+                className="w-full bg-slate-950/50 border border-slate-700/50 text-white rounded-xl px-4 py-3 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500/50 outline-none transition-all placeholder:text-slate-600 disabled:opacity-50"
               />
             </div>
 
+            {/* VALOR E FORMA DE PAGAMENTO */}
             <div>
               <div className="flex items-center justify-between mb-1.5 px-1">
                 <label className="block text-[10px] font-bold uppercase text-slate-400">Valor R$</label>
                 {!editingId && (
                   <button
                     type="button"
+                    disabled={isSubmitting}
                     onClick={() => setIsSplitPayment(!isSplitPayment)}
                     className="text-[10px] font-bold uppercase text-emerald-400 bg-emerald-500/10 px-2 py-1 rounded-md hover:bg-emerald-500/20 transition-colors ring-1 ring-emerald-500/20"
                   >
@@ -405,38 +567,51 @@ export function ExpensesTab({ expenses, onAdd, onEdit, onDelete, formatCurrency,
               
               {!isSplitPayment ? (
                 <div className="space-y-4">
-                  <input 
-                    type="number" 
-                    step="0.01"
-                    required
-                    placeholder="0,00"
-                    value={formData.value}
-                    onChange={e => setFormData({ ...formData, value: e.target.value })}
-                    className="w-full bg-slate-950/50 border border-slate-700/50 text-white rounded-xl px-4 py-3 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500/50 outline-none transition-all placeholder:text-slate-600"
-                  />
+                  <div className="relative">
+                    <input 
+                      type="number" 
+                      step="0.01"
+                      required
+                      disabled={isSubmitting}
+                      placeholder="0,00"
+                      value={formData.value}
+                      onChange={e => setFormData({ ...formData, value: e.target.value })}
+                      className="w-full bg-slate-950/50 border border-slate-700/50 text-white rounded-xl px-4 py-3 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500/50 outline-none transition-all placeholder:text-slate-600 disabled:opacity-50 font-mono text-base font-semibold"
+                    />
+                    {parseFloat(formData.value) > 0 && (
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-emerald-400 bg-emerald-500/10 px-2 py-1 rounded-md border border-emerald-500/20 pointer-events-none">
+                        {formatCurrency(parseFloat(formData.value))}
+                      </span>
+                    )}
+                  </div>
+
                   <div>
                     <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1.5 px-1">Forma de Pagamento</label>
                     <select 
                       required
+                      disabled={isSubmitting}
                       value={formData.paymentMethod}
                       onChange={e => setFormData({ ...formData, paymentMethod: e.target.value as PaymentMethod })}
-                      className="w-full bg-slate-950/50 border border-slate-700/50 text-white rounded-xl px-4 py-3 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500/50 outline-none transition-all appearance-none"
+                      className="w-full bg-slate-950/50 border border-slate-700/50 text-white rounded-xl px-4 py-3 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500/50 outline-none transition-all appearance-none disabled:opacity-50"
                     >
-                      <option value="" disabled className="text-slate-500">Selecione...</option>
+                      <option value="" disabled className="text-slate-500">Selecione a forma de pagamento...</option>
                       {PAYMENT_METHODS.map(pm => <option key={pm} value={pm} className="bg-slate-900">{pm}</option>)}
                     </select>
                   </div>
 
                   {formData.paymentMethod === 'Cartão' && (
                     <div className="animate-in slide-in-from-top-2 duration-300">
-                      <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1.5 px-1">Parcelas</label>
+                      <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1.5 px-1">Parcelas do Cartão</label>
                       <select 
+                        disabled={isSubmitting}
                         value={formData.installments}
                         onChange={e => setFormData({ ...formData, installments: parseInt(e.target.value) })}
-                        className="w-full bg-slate-950/50 border border-slate-700/50 text-white rounded-xl px-4 py-3 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500/50 outline-none transition-all appearance-none"
+                        className="w-full bg-slate-950/50 border border-slate-700/50 text-white rounded-xl px-4 py-3 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500/50 outline-none transition-all appearance-none disabled:opacity-50"
                       >
                         {Array.from({ length: 12 }, (_, i) => i + 1).map(n => (
-                          <option key={n} value={n} className="bg-slate-900">{n}x</option>
+                          <option key={n} value={n} className="bg-slate-900">
+                            {n}x {formData.value ? `(${formatCurrency(parseFloat(formData.value) / n)}/mês)` : ''}
+                          </option>
                         ))}
                       </select>
                     </div>
@@ -444,13 +619,14 @@ export function ExpensesTab({ expenses, onAdd, onEdit, onDelete, formatCurrency,
 
                   {formData.paymentMethod === 'doação' && (
                     <div className="animate-in slide-in-from-top-2 duration-300">
-                      <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1.5 px-1">Doador</label>
+                      <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1.5 px-1">Doador (Não gera rateio)</label>
                       <select 
+                        disabled={isSubmitting}
                         value={formData.donor}
                         onChange={e => setFormData({ ...formData, donor: e.target.value as Donor })}
-                        className="w-full bg-slate-950/50 border border-slate-700/50 text-white rounded-xl px-4 py-3 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500/50 outline-none transition-all appearance-none"
+                        className="w-full bg-slate-950/50 border border-slate-700/50 text-white rounded-xl px-4 py-3 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500/50 outline-none transition-all appearance-none disabled:opacity-50"
                       >
-                        <option value="" disabled className="text-slate-500">Selecione...</option>
+                        <option value="" disabled className="text-slate-500">Selecione o doador...</option>
                         {DONORS.map(d => <option key={d} value={d} className="bg-slate-900">{d}</option>)}
                       </select>
                     </div>
@@ -465,16 +641,18 @@ export function ExpensesTab({ expenses, onAdd, onEdit, onDelete, formatCurrency,
                       type="number" 
                       step="0.01"
                       required
+                      disabled={isSubmitting}
                       placeholder="Valor 01"
                       value={splitData.value1}
                       onChange={e => setSplitData({ ...splitData, value1: e.target.value })}
-                      className="w-full bg-slate-900/50 border border-slate-700/50 text-white rounded-xl px-4 py-2.5 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500/50 outline-none transition-all placeholder:text-slate-600"
+                      className="w-full bg-slate-900/50 border border-slate-700/50 text-white rounded-xl px-4 py-2.5 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500/50 outline-none transition-all placeholder:text-slate-600 disabled:opacity-50 font-mono text-sm"
                     />
                     <select 
                       required
+                      disabled={isSubmitting}
                       value={splitData.paymentMethod1}
                       onChange={e => setSplitData({ ...splitData, paymentMethod1: e.target.value as PaymentMethod })}
-                      className="w-full bg-slate-900/50 border border-slate-700/50 text-white rounded-xl px-4 py-2.5 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500/50 outline-none transition-all appearance-none"
+                      className="w-full bg-slate-900/50 border border-slate-700/50 text-white rounded-xl px-4 py-2.5 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500/50 outline-none transition-all appearance-none disabled:opacity-50"
                     >
                       <option value="" disabled className="text-slate-500">Forma de Pagamento 01...</option>
                       {PAYMENT_METHODS.map(pm => <option key={pm} value={pm} className="bg-slate-900">{pm}</option>)}
@@ -482,9 +660,10 @@ export function ExpensesTab({ expenses, onAdd, onEdit, onDelete, formatCurrency,
                     
                     {splitData.paymentMethod1 === 'Cartão' && (
                       <select 
+                        disabled={isSubmitting}
                         value={splitData.installments1}
                         onChange={e => setSplitData({ ...splitData, installments1: parseInt(e.target.value) })}
-                        className="w-full bg-slate-900/50 border border-slate-700/50 text-white rounded-xl px-4 py-2.5 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500/50 outline-none transition-all appearance-none"
+                        className="w-full bg-slate-900/50 border border-slate-700/50 text-white rounded-xl px-4 py-2.5 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500/50 outline-none transition-all appearance-none disabled:opacity-50"
                       >
                         {Array.from({ length: 12 }, (_, i) => i + 1).map(n => (
                           <option key={n} value={n} className="bg-slate-900">{n}x</option>
@@ -493,9 +672,10 @@ export function ExpensesTab({ expenses, onAdd, onEdit, onDelete, formatCurrency,
                     )}
                     {splitData.paymentMethod1 === 'doação' && (
                       <select 
+                        disabled={isSubmitting}
                         value={splitData.donor1}
                         onChange={e => setSplitData({ ...splitData, donor1: e.target.value as Donor })}
-                        className="w-full bg-slate-900/50 border border-slate-700/50 text-white rounded-xl px-4 py-2.5 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500/50 outline-none transition-all appearance-none"
+                        className="w-full bg-slate-900/50 border border-slate-700/50 text-white rounded-xl px-4 py-2.5 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500/50 outline-none transition-all appearance-none disabled:opacity-50"
                       >
                         <option value="" disabled className="text-slate-500">Doador 01...</option>
                         {DONORS.map(d => <option key={d} value={d} className="bg-slate-900">{d}</option>)}
@@ -510,16 +690,18 @@ export function ExpensesTab({ expenses, onAdd, onEdit, onDelete, formatCurrency,
                       type="number" 
                       step="0.01"
                       required
+                      disabled={isSubmitting}
                       placeholder="Valor 02"
                       value={splitData.value2}
                       onChange={e => setSplitData({ ...splitData, value2: e.target.value })}
-                      className="w-full bg-slate-900/50 border border-slate-700/50 text-white rounded-xl px-4 py-2.5 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500/50 outline-none transition-all placeholder:text-slate-600"
+                      className="w-full bg-slate-900/50 border border-slate-700/50 text-white rounded-xl px-4 py-2.5 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500/50 outline-none transition-all placeholder:text-slate-600 disabled:opacity-50 font-mono text-sm"
                     />
                     <select 
                       required
+                      disabled={isSubmitting}
                       value={splitData.paymentMethod2}
                       onChange={e => setSplitData({ ...splitData, paymentMethod2: e.target.value as PaymentMethod })}
-                      className="w-full bg-slate-900/50 border border-slate-700/50 text-white rounded-xl px-4 py-2.5 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500/50 outline-none transition-all appearance-none"
+                      className="w-full bg-slate-900/50 border border-slate-700/50 text-white rounded-xl px-4 py-2.5 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500/50 outline-none transition-all appearance-none disabled:opacity-50"
                     >
                       <option value="" disabled className="text-slate-500">Forma de Pagamento 02...</option>
                       {PAYMENT_METHODS.map(pm => <option key={pm} value={pm} className="bg-slate-900">{pm}</option>)}
@@ -527,9 +709,10 @@ export function ExpensesTab({ expenses, onAdd, onEdit, onDelete, formatCurrency,
                     
                     {splitData.paymentMethod2 === 'Cartão' && (
                       <select 
+                        disabled={isSubmitting}
                         value={splitData.installments2}
                         onChange={e => setSplitData({ ...splitData, installments2: parseInt(e.target.value) })}
-                        className="w-full bg-slate-900/50 border border-slate-700/50 text-white rounded-xl px-4 py-2.5 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500/50 outline-none transition-all appearance-none"
+                        className="w-full bg-slate-900/50 border border-slate-700/50 text-white rounded-xl px-4 py-2.5 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500/50 outline-none transition-all appearance-none disabled:opacity-50"
                       >
                         {Array.from({ length: 12 }, (_, i) => i + 1).map(n => (
                           <option key={n} value={n} className="bg-slate-900">{n}x</option>
@@ -538,9 +721,10 @@ export function ExpensesTab({ expenses, onAdd, onEdit, onDelete, formatCurrency,
                     )}
                     {splitData.paymentMethod2 === 'doação' && (
                       <select 
+                        disabled={isSubmitting}
                         value={splitData.donor2}
                         onChange={e => setSplitData({ ...splitData, donor2: e.target.value as Donor })}
-                        className="w-full bg-slate-900/50 border border-slate-700/50 text-white rounded-xl px-4 py-2.5 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500/50 outline-none transition-all appearance-none"
+                        className="w-full bg-slate-900/50 border border-slate-700/50 text-white rounded-xl px-4 py-2.5 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500/50 outline-none transition-all appearance-none disabled:opacity-50"
                       >
                         <option value="" disabled className="text-slate-500">Doador 02...</option>
                         {DONORS.map(d => <option key={d} value={d} className="bg-slate-900">{d}</option>)}
@@ -551,8 +735,8 @@ export function ExpensesTab({ expenses, onAdd, onEdit, onDelete, formatCurrency,
                   <div className="pt-3 border-t border-slate-800">
                     <div className="flex justify-between items-center text-sm font-bold text-white">
                       <span>Valor Total:</span>
-                      <span className="text-emerald-400">
-                        {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(
+                      <span className="text-emerald-400 font-mono">
+                        {formatCurrency(
                           (parseFloat(splitData.value1) || 0) + (parseFloat(splitData.value2) || 0)
                         )}
                       </span>
@@ -562,39 +746,150 @@ export function ExpensesTab({ expenses, onAdd, onEdit, onDelete, formatCurrency,
               )}
             </div>
 
+            {/* MÓDULO EXCLUSIVO: DESPESA A DEVOLVER (REEMBOLSO / ADIANTAMENTO DE SÓCIO) */}
+            {formData.paymentMethod !== 'doação' && (
+              <div className="p-3.5 bg-slate-950/60 rounded-xl border border-slate-700/60 space-y-3 ring-1 ring-white/5 transition-all">
+                <div className="flex items-center justify-between">
+                  <label htmlFor="isReimbursement" className="flex items-center gap-2.5 cursor-pointer select-none">
+                    <div className={cn(
+                      "w-5 h-5 rounded-md flex items-center justify-center transition-all",
+                      formData.isReimbursement ? "bg-amber-500 text-slate-950 font-bold shadow-md shadow-amber-500/30" : "bg-slate-800 border border-slate-600"
+                    )}>
+                      {formData.isReimbursement && <Check size={14} className="stroke-[3]" />}
+                    </div>
+                    <div>
+                      <span className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                        <RotateCcw size={13} className="text-amber-400" />
+                        Valor a Devolver (Reembolso)
+                      </span>
+                      <p className="text-[10px] text-slate-400">
+                        Pago do bolso de um sócio; deve ser ressarcido pelo caixa.
+                      </p>
+                    </div>
+                  </label>
+                  <input 
+                    type="checkbox"
+                    id="isReimbursement"
+                    disabled={isSubmitting}
+                    checked={formData.isReimbursement}
+                    onChange={e => setFormData({ ...formData, isReimbursement: e.target.checked })}
+                    className="sr-only"
+                  />
+                </div>
+
+                {formData.isReimbursement && (
+                  <div className="pt-3 border-t border-slate-800/80 space-y-3 animate-in fade-in slide-in-from-top-2 duration-200">
+                    <div>
+                      <label className="block text-[10px] font-bold uppercase text-amber-400 mb-1.5 px-0.5">
+                        Quem pagou? (Devolver para)
+                      </label>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+                        {REIMBURSE_PEOPLE.map(person => (
+                          <button
+                            key={person}
+                            type="button"
+                            disabled={isSubmitting}
+                            onClick={() => setFormData({ ...formData, reimburseTo: person })}
+                            className={cn(
+                              "py-1.5 px-2 rounded-lg text-xs font-bold transition-all text-center border",
+                              formData.reimburseTo === person 
+                                ? "bg-amber-500/20 text-amber-300 border-amber-500/50 shadow-sm" 
+                                : "bg-slate-900/60 text-slate-400 border-slate-800 hover:bg-slate-800 hover:text-slate-200"
+                            )}
+                          >
+                            {person}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1.5 px-0.5">
+                        Status do Ressarcimento
+                      </label>
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          disabled={isSubmitting}
+                          onClick={() => setFormData({ ...formData, refundStatus: 'Pendente' })}
+                          className={cn(
+                            "py-1.5 px-2 rounded-lg text-xs font-bold transition-all text-center border flex items-center justify-center gap-1.5",
+                            formData.refundStatus === 'Pendente'
+                              ? "bg-amber-500/20 text-amber-300 border-amber-500/50 ring-1 ring-amber-500/20"
+                              : "bg-slate-900/60 text-slate-400 border-slate-800 hover:bg-slate-800 hover:text-slate-200"
+                          )}
+                        >
+                          <Clock size={12} />
+                          Pendente (A Devolver)
+                        </button>
+                        <button
+                          type="button"
+                          disabled={isSubmitting}
+                          onClick={() => setFormData({ ...formData, refundStatus: 'Devolvido' })}
+                          className={cn(
+                            "py-1.5 px-2 rounded-lg text-xs font-bold transition-all text-center border flex items-center justify-center gap-1.5",
+                            formData.refundStatus === 'Devolvido'
+                              ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/50 ring-1 ring-emerald-500/20"
+                              : "bg-slate-900/60 text-slate-400 border-slate-800 hover:bg-slate-800 hover:text-slate-200"
+                          )}
+                        >
+                          <CheckCircle2 size={12} />
+                          Já Devolvido
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="p-2 rounded-lg bg-amber-500/5 border border-amber-500/20 flex items-start gap-2">
+                      <AlertCircle size={13} className="text-amber-400 shrink-0 mt-0.5" />
+                      <p className="text-[10px] text-amber-300/90 leading-tight">
+                        Este valor entra nos custos totais da obra e alimenta os gráficos normalmente, ficando sinalizado para devolução ao sócio.
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* OBSERVAÇÃO */}
             <div>
               <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1.5 px-1">Observação (Opcional)</label>
               <textarea 
-                placeholder="Detalhes adicionais..."
+                placeholder="Ex: Compra de emergência, detalhes da nota..."
+                disabled={isSubmitting}
                 value={formData.observation}
                 onChange={e => setFormData({ ...formData, observation: e.target.value })}
                 rows={2}
-                className="w-full bg-slate-950/50 border border-slate-700/50 text-white rounded-xl px-4 py-3 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500/50 outline-none transition-all resize-none placeholder:text-slate-600"
+                className="w-full bg-slate-950/50 border border-slate-700/50 text-white rounded-xl px-4 py-3 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500/50 outline-none transition-all resize-none placeholder:text-slate-600 disabled:opacity-50 text-sm"
               />
             </div>
 
-            <button type="submit"
-              className="w-full bg-gradient-to-r from-emerald-500 to-teal-500 text-white font-bold py-4 rounded-xl shadow-lg shadow-emerald-500/20 hover:from-emerald-400 hover:to-teal-400 transition-all flex items-center justify-center gap-2 ring-1 ring-emerald-400/30"
+            {/* BOTÃO DE SALVAMENTO COM TRAVA ANTI-DUPLICAÇÃO */}
+            <button 
+              type="submit"
+              disabled={isSubmitting}
+              className={cn(
+                "w-full bg-gradient-to-r from-emerald-500 to-teal-500 text-white font-bold py-4 rounded-xl shadow-lg shadow-emerald-500/20 hover:from-emerald-400 hover:to-teal-400 transition-all flex items-center justify-center gap-2 ring-1 ring-emerald-400/30",
+                isSubmitting && "opacity-75 cursor-not-allowed pointer-events-none"
+              )}
             >
-              {editingId ? <Edit2 size={20} /> : <Plus size={20} />}
-              {editingId ? "Salvar Alterações" : "Lançar Despesa"}
+              {isSubmitting ? (
+                <>
+                  <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  <span>Processando e Salvando...</span>
+                </>
+              ) : (
+                <>
+                  {editingId ? <Edit2 size={20} /> : <Plus size={20} />}
+                  <span>{editingId ? "Salvar Alterações" : "Lançar Despesa"}</span>
+                </>
+              )}
             </button>
+
             {editingId && (
               <button 
                 type="button"
-                onClick={() => {
-                  setEditingId(null);
-                  setFormData({
-                    date: '',
-                    category: '' as Category,
-                    local: '',
-                    value: '',
-                    paymentMethod: '' as PaymentMethod,
-                    installments: 1,
-                    donor: '' as Donor,
-                    observation: ''
-                  });
-                }}
+                disabled={isSubmitting}
+                onClick={resetForm}
                 className="w-full bg-slate-800/80 text-slate-300 font-bold py-3 rounded-xl hover:bg-slate-700 hover:text-white transition-all mt-2 border border-slate-600"
               >
                 Cancelar Edição
@@ -603,6 +898,7 @@ export function ExpensesTab({ expenses, onAdd, onEdit, onDelete, formatCurrency,
           </form>
         </Card>
 
+        {/* LISTAGEM DE SAÍDAS */}
         <div className="lg:col-span-2 space-y-3">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-2">
             <div className="flex items-center gap-2">
@@ -612,21 +908,45 @@ export function ExpensesTab({ expenses, onAdd, onEdit, onDelete, formatCurrency,
               </span>
             </div>
             
-            <div className="relative w-full sm:w-64">
-              <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input 
-                type="text"
-                placeholder="Buscar local, ID (#EXP)..."
-                value={searchTerm}
-                onChange={e => setSearchTerm(e.target.value)}
-                className="w-full pl-9 pr-3 py-1.5 bg-slate-900/60 border border-slate-700/60 rounded-xl text-xs text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-blue-500/50"
-              />
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              <div className="relative flex-1 sm:w-64">
+                <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input 
+                  type="text"
+                  placeholder="Buscar local, sócio, #EXP..."
+                  value={searchTerm}
+                  onChange={e => setSearchTerm(e.target.value)}
+                  className="w-full pl-9 pr-3 py-1.5 bg-slate-900/60 border border-slate-700/60 rounded-xl text-xs text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-blue-500/50"
+                />
+              </div>
+
+              {pendingRefunds.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setFilterMode(prev => prev === 'reimbursements' ? 'all' : 'reimbursements')}
+                  title={filterMode === 'reimbursements' ? "Mostrar todas as saídas" : "Filtrar apenas reembolsos"}
+                  className={cn(
+                    "px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all border shrink-0 flex items-center gap-1.5",
+                    filterMode === 'reimbursements'
+                      ? "bg-amber-500 text-slate-950 border-amber-400 shadow-md"
+                      : "bg-slate-900/60 text-amber-400 border-amber-500/30 hover:bg-amber-500/10"
+                  )}
+                >
+                  <RotateCcw size={13} />
+                  <span className="hidden xs:inline">Devoluções</span>
+                  <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-amber-500/30 text-amber-300">
+                    {pendingRefunds.length}
+                  </span>
+                </button>
+              )}
             </div>
           </div>
 
           {filteredExpenses.length === 0 ? (
             <div className="bg-slate-900/40 rounded-xl p-8 text-center text-slate-400 border border-dashed border-slate-800">
-              {searchTerm ? "Nenhum lançamento encontrado para esta busca." : "Nenhuma despesa lançada ainda."}
+              {searchTerm || filterMode === 'reimbursements' 
+                ? "Nenhum lançamento encontrado para os filtros selecionados." 
+                : "Nenhuma despesa lançada ainda."}
             </div>
           ) : (
             <div className="space-y-1.5 sm:space-y-2">
@@ -635,7 +955,12 @@ export function ExpensesTab({ expenses, onAdd, onEdit, onDelete, formatCurrency,
                 return (
                   <div 
                     key={exp.id} 
-                    className="bg-slate-900/50 hover:bg-slate-800/50 backdrop-blur-md border border-slate-800/80 hover:border-slate-700/80 px-3 py-2 sm:px-4 sm:py-2.5 rounded-xl flex items-center justify-between gap-2.5 sm:gap-4 group transition-all ring-1 ring-white/5"
+                    className={cn(
+                      "bg-slate-900/50 hover:bg-slate-800/50 backdrop-blur-md border px-3 py-2 sm:px-4 sm:py-2.5 rounded-xl flex items-center justify-between gap-2.5 sm:gap-4 group transition-all ring-1 ring-white/5",
+                      exp.isReimbursement && exp.refundStatus === 'Pendente' 
+                        ? "border-amber-500/40 bg-amber-950/10 hover:bg-amber-950/20" 
+                        : "border-slate-800/80 hover:border-slate-700/80"
+                    )}
                   >
                     <div className="flex items-center gap-2.5 sm:gap-3.5 min-w-0 flex-1">
                       <div className={cn(
@@ -665,6 +990,33 @@ export function ExpensesTab({ expenses, onAdd, onEdit, onDelete, formatCurrency,
                           <span className="text-[10px] font-medium text-slate-400 bg-slate-800/80 px-1.5 py-0.2 rounded border border-slate-700/60 hidden xs:inline">
                             {exp.category}
                           </span>
+
+                          {/* BADGE DE REEMBOLSO / DEVOLUÇÃO */}
+                          {exp.isReimbursement && (
+                            <button
+                              type="button"
+                              onClick={() => onToggleRefund && onToggleRefund(exp.id)}
+                              title={exp.refundStatus === 'Devolvido' ? "Clique para reabrir como pendente de devolução" : "Clique para marcar como devolvido pelo caixa"}
+                              className={cn(
+                                "text-[9px] sm:text-[10px] font-bold px-2 py-0.5 rounded-md border flex items-center gap-1 transition-all active:scale-95 cursor-pointer shadow-sm",
+                                exp.refundStatus === 'Devolvido'
+                                  ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/40 hover:bg-emerald-500/25"
+                                  : "bg-amber-500/20 text-amber-300 border-amber-500/50 hover:bg-amber-500/30 ring-1 ring-amber-500/30"
+                              )}
+                            >
+                              {exp.refundStatus === 'Devolvido' ? (
+                                <>
+                                  <CheckCircle2 size={11} className="text-emerald-400" />
+                                  <span>Devolvido p/ {exp.reimburseTo || exp.donor || 'Sócio'}</span>
+                                </>
+                              ) : (
+                                <>
+                                  <RotateCcw size={11} className="text-amber-400 animate-spin-slow" />
+                                  <span>Devolver p/ {exp.reimburseTo || exp.donor || 'Sócio'}</span>
+                                </>
+                              )}
+                            </button>
+                          )}
                         </div>
 
                         <div className="flex items-center gap-1.5 text-[10px] sm:text-[11px] text-slate-400 font-medium mt-0.5 truncate">

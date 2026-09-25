@@ -50,7 +50,10 @@ export function ReportsTab({ expenses, allCardInstallments = [], formatCurrency 
           auditId.includes(lowerSearch) ||
           (e.local && typeof e.local === 'string' && e.local.toLowerCase().includes(lowerSearch)) ||
           (e.observation && typeof e.observation === 'string' && e.observation.toLowerCase().includes(lowerSearch)) ||
-          (e.paymentMethod && typeof e.paymentMethod === 'string' && e.paymentMethod.toLowerCase().includes(lowerSearch))
+          (e.paymentMethod && typeof e.paymentMethod === 'string' && e.paymentMethod.toLowerCase().includes(lowerSearch)) ||
+          (e.reimburseTo && typeof e.reimburseTo === 'string' && e.reimburseTo.toLowerCase().includes(lowerSearch)) ||
+          (e.donor && typeof e.donor === 'string' && e.donor.toLowerCase().includes(lowerSearch)) ||
+          (e.isReimbursement && ('reembolso devolver ressarcimento'.includes(lowerSearch)))
         );
       });
     }
@@ -172,14 +175,26 @@ export function ReportsTab({ expenses, allCardInstallments = [], formatCurrency 
                           )}
                         </td>
                         <td className="px-3 sm:px-4 py-2 sm:py-2.5 text-xs whitespace-nowrap">
-                          <span className={cn(
-                            "px-2 py-0.5 rounded-md text-[10px] font-bold uppercase ring-1",
-                            exp.paymentMethod === 'Cartão' ? "bg-blue-500/10 text-blue-400 ring-blue-500/20" : 
-                            exp.paymentMethod === 'doação' ? "bg-purple-500/10 text-purple-400 ring-purple-500/20" : 
-                            exp.paymentMethod === 'Caixa' ? "bg-amber-500/10 text-amber-400 ring-amber-500/20" : "bg-emerald-500/10 text-emerald-400 ring-emerald-500/20"
-                          )}>
-                            {exp.paymentMethod} {exp.installments ? `(${exp.installments}x)` : ''}
-                          </span>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className={cn(
+                              "px-2 py-0.5 rounded-md text-[10px] font-bold uppercase ring-1",
+                              exp.paymentMethod === 'Cartão' ? "bg-blue-500/10 text-blue-400 ring-blue-500/20" : 
+                              exp.paymentMethod === 'doação' ? "bg-purple-500/10 text-purple-400 ring-purple-500/20" : 
+                              exp.paymentMethod === 'Caixa' ? "bg-amber-500/10 text-amber-400 ring-amber-500/20" : "bg-emerald-500/10 text-emerald-400 ring-emerald-500/20"
+                            )}>
+                              {exp.paymentMethod} {exp.installments ? `(${exp.installments}x)` : ''}
+                            </span>
+                            {exp.isReimbursement && (
+                              <span className={cn(
+                                "px-1.5 py-0.5 rounded text-[9px] font-bold inline-flex items-center gap-1 border",
+                                exp.refundStatus === 'Devolvido' 
+                                  ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/30"
+                                  : "bg-amber-500/15 text-amber-300 border-amber-500/40"
+                              )}>
+                                {exp.refundStatus === 'Devolvido' ? 'Devolvido' : 'Devolver'} p/ {exp.reimburseTo || exp.donor || 'Sócio'}
+                              </span>
+                            )}
+                          </div>
                         </td>
                         <td className="px-3 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm font-mono font-bold text-slate-200 text-right whitespace-nowrap">
                           {formatCurrency(exp.value)}

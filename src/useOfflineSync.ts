@@ -55,18 +55,52 @@ export function useOfflineSync(fetchAllData: () => Promise<void>) {
       for (const op of queue) {
         try {
           if (op.type === 'ADD_EXPENSE') {
+            if (op.payload?.original_id) {
+              try {
+                const existing = await pb.collection('expenses').getFirstListItem(`original_id="${op.payload.original_id}"`);
+                if (existing) {
+                  // Registro já foi criado anteriormente no banco, previne duplicação
+                  successCount++;
+                  continue;
+                }
+              } catch (err: any) {
+                if (err.status !== 404) throw err;
+              }
+            }
             await pb.collection('expenses').create(op.payload);
           } else if (op.type === 'EDIT_EXPENSE' && op.id) {
             await pb.collection('expenses').update(op.id, op.payload);
           } else if (op.type === 'DELETE_EXPENSE' && op.id) {
             await pb.collection('expenses').delete(op.id);
           } else if (op.type === 'ADD_INCOME') {
+            if (op.payload?.original_id) {
+              try {
+                const existing = await pb.collection('incomes').getFirstListItem(`original_id="${op.payload.original_id}"`);
+                if (existing) {
+                  successCount++;
+                  continue;
+                }
+              } catch (err: any) {
+                if (err.status !== 404) throw err;
+              }
+            }
             await pb.collection('incomes').create(op.payload);
           } else if (op.type === 'EDIT_INCOME' && op.id) {
             await pb.collection('incomes').update(op.id, op.payload);
           } else if (op.type === 'DELETE_INCOME' && op.id) {
             await pb.collection('incomes').delete(op.id);
           } else if (op.type === 'ADD_PAYMENT') {
+            if (op.payload?.original_id) {
+              try {
+                const existing = await pb.collection('payments').getFirstListItem(`original_id="${op.payload.original_id}"`);
+                if (existing) {
+                  successCount++;
+                  continue;
+                }
+              } catch (err: any) {
+                if (err.status !== 404) throw err;
+              }
+            }
             await pb.collection('payments').create(op.payload);
           } else if (op.type === 'DELETE_PAYMENT' && op.id) {
             await pb.collection('payments').delete(op.id);
@@ -139,6 +173,20 @@ export function useOfflineSync(fetchAllData: () => Promise<void>) {
     try {
       const queueJson = localStorage.getItem('offline_sync_queue');
       const queue: SyncOperation[] = queueJson ? JSON.parse(queueJson) : [];
+
+      // Proteção de Idempotência: Checa se a mesma operação já está pendente na fila
+      const isDuplicate = queue.some(op => {
+        if (op.type !== type) return false;
+        if (id && op.id === id) return true;
+        if (payload?.original_id && op.payload?.original_id === payload.original_id) return true;
+        return false;
+      });
+
+      if (isDuplicate) {
+        console.warn(`[OfflineSync] Operação ${type} já existente na fila offline. Ignorando duplicação.`);
+        return;
+      }
+
       queue.push({ type, payload, id, timestamp: Date.now() });
       localStorage.setItem('offline_sync_queue', JSON.stringify(queue));
     } catch (e) {

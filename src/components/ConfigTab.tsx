@@ -253,6 +253,9 @@ export function ConfigTab({ state }: ConfigTabProps) {
       'Forma de Pagamento': e.paymentMethod,
       Parcelas: e.installments || '',
       Doador: e.donor || '',
+      'A Devolver?': e.isReimbursement ? 'Sim' : 'Não',
+      'Devolver Para': e.reimburseTo || (e.isReimbursement ? e.donor : '') || '',
+      'Status Devolução': e.isReimbursement ? (e.refundStatus || 'Pendente') : '',
       Observação: e.observation || ''
     }));
     const wsExpenses = XLSX.utils.json_to_sheet(expensesData);

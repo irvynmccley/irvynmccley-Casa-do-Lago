@@ -7,12 +7,12 @@ import {
   Settings, 
   Info,
   LogOut,
-  Map
+  Map as MapIcon
 } from 'lucide-react';
 import { 
   format
 } from 'date-fns';
-import { AppState, Expense, Income, Payment, Category, Person } from './types';
+import { AppState, Expense, Income, Payment, Category, Person, RefundStatus } from './types';
 import { NavItem } from './components/ui/NavItem';
 import { Dashboard } from './components/Dashboard';
 import { ExpensesTab } from './components/ExpensesTab';
@@ -170,6 +170,8 @@ function App() {
     onConfirm: () => {},
   });
 
+  const recentExpenseSubmissionsRef = React.useRef<Map<string, number>>(new Map());
+
   const fetchAllData = useCallback(async () => {
     if (!ENABLE_POCKETBASE_SYNC) {
       setSyncStatus('local');
@@ -211,12 +213,27 @@ function App() {
 
       setSyncStatus(hasError ? 'error' : 'syncing');
 
-      const normalizedExpenses = (expensesData as any[]).map(e => ({
-        ...e,
-        id: e.id,
-        auditId: formatAuditId('EXP', e.id),
-        category: normalizeCategory(e.category) as Category
-      }));
+      const normalizedExpenses = (expensesData as any[]).map(e => {
+        const isReimb = Boolean(
+          e.isReimbursement || 
+          e.status === 'A_DEVOLVER' || 
+          e.status === 'DEVOLVIDO' || 
+          (e.observation && (e.observation.includes('[A Devolver') || e.observation.includes('[Devolver')))
+        );
+        const refStatus = (e.refundStatus || (e.status === 'DEVOLVIDO' ? 'Devolvido' : 'Pendente')) as RefundStatus;
+        const reimbTo = (e.reimburseTo || (e.paymentMethod !== 'doação' && e.donor ? e.donor : undefined)) as Person | undefined;
+
+        return {
+          ...e,
+          id: e.id,
+          auditId: formatAuditId('EXP', e.id),
+          category: normalizeCategory(e.category) as Category,
+          isReimbursement: isReimb,
+          reimburseTo: reimbTo,
+          refundStatus: isReimb ? refStatus : undefined,
+          status: e.status
+        };
+      });
 
       const normalizedIncomes = (incomesData as any[]).map(i => ({
         ...i,
@@ -257,10 +274,26 @@ function App() {
         await pb.collection('expenses').subscribe('*', async () => {
           if (!isMounted) return;
           const records = await pb.collection('expenses').getFullList({ sort: '-date', requestKey: null });
-          const normalizedExpenses = records.map(e => ({
-            ...e,
-            category: normalizeCategory(e.category) as Category
-          }));
+          const normalizedExpenses = records.map(e => {
+            const isReimb = Boolean(
+              e.isReimbursement || 
+              e.status === 'A_DEVOLVER' || 
+              e.status === 'DEVOLVIDO' || 
+              (e.observation && (e.observation.includes('[A Devolver') || e.observation.includes('[Devolver')))
+            );
+            const refStatus = (e.refundStatus || (e.status === 'DEVOLVIDO' ? 'Devolvido' : 'Pendente')) as RefundStatus;
+            const reimbTo = (e.reimburseTo || (e.paymentMethod !== 'doação' && e.donor ? e.donor : undefined)) as Person | undefined;
+
+            return {
+              ...e,
+              auditId: formatAuditId('EXP', e.id),
+              category: normalizeCategory(e.category) as Category,
+              isReimbursement: isReimb,
+              reimburseTo: reimbTo,
+              refundStatus: isReimb ? refStatus : undefined,
+              status: e.status
+            };
+          });
           setState(prev => ({ ...prev, expenses: normalizedExpenses as unknown as Expense[] }));
         });
 
@@ -448,36 +481,86 @@ function App() {
   };
 
   const addExpense = async (expense: Omit<Expense, 'id'>) => {
+    // 1. Camada de Idempotência em Memória: Previne múltiplos disparos em menos de 5 segundos
+    const now = Date.now();
+    const cleanLocal = (expense.local || '').trim().toLowerCase();
+    const fingerprint = `${expense.date}|${cleanLocal}|${Number(expense.value).toFixed(2)}|${expense.paymentMethod}|${expense.isReimbursement ? expense.reimburseTo : ''}`;
+    const lastSubmission = recentExpenseSubmissionsRef.current.get(fingerprint);
+    if (lastSubmission && (now - lastSubmission) < 5000) {
+      console.warn("[App] Lançamento idêntico ignorado para prevenir duplicação:", fingerprint);
+      toast.info("Lançamento já está sendo processado. Duplicação evitada.");
+      return;
+    }
+    recentExpenseSubmissionsRef.current.set(fingerprint, now);
+    for (const [k, time] of recentExpenseSubmissionsRef.current.entries()) {
+      if (now - time > 30000) recentExpenseSubmissionsRef.current.delete(k);
+    }
+
+    const originalId = expense.original_id || ('exp_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8));
+    const isReimb = Boolean(expense.isReimbursement);
+    const refundStatus: RefundStatus = expense.refundStatus || 'Pendente';
+    const pbStatus = isReimb ? (refundStatus === 'Devolvido' ? 'DEVOLVIDO' : 'A_DEVOLVER') : (expense.status || '');
+    const donorVal = isReimb ? (expense.reimburseTo || expense.donor) : (expense.paymentMethod === 'doação' ? expense.donor : undefined);
+
     if (!ENABLE_POCKETBASE_SYNC) {
       const newId = Date.now().toString();
-      setState(prev => ({ ...prev, expenses: [{ ...expense, id: newId, auditId: formatAuditId('EXP', newId) } as Expense, ...prev.expenses] }));
+      const newExpense: Expense = {
+        ...expense,
+        id: newId,
+        auditId: formatAuditId('EXP', newId),
+        original_id: originalId,
+        isReimbursement: isReimb,
+        reimburseTo: isReimb ? expense.reimburseTo : undefined,
+        refundStatus: isReimb ? refundStatus : undefined,
+        status: pbStatus
+      };
+      setState(prev => ({ ...prev, expenses: [newExpense, ...prev.expenses] }));
       auditLogger.log({
         action: 'CREATE',
-        actionLabel: 'Saída Criada',
+        actionLabel: isReimb ? 'Saída Criada (A Devolver)' : 'Saída Criada',
         entity: 'Saída',
         recordId: newId,
         auditId: formatAuditId('EXP', newId),
         user: getUserName(),
-        details: `${expense.local} - R$ ${expense.value.toFixed(2)} (${expense.paymentMethod})`
+        details: `${expense.local} - R$ ${expense.value.toFixed(2)} (${expense.paymentMethod})${isReimb ? ` [A Devolver p/ ${expense.reimburseTo}]` : ''}`
       });
       toast.success("Lançamento com Sucesso");
       return;
     }
-    const cleanExpense = Object.fromEntries(Object.entries(expense).filter(([_, v]) => v !== undefined));
-    const payload = { ...cleanExpense, createdBy: user?.id || null };
+
+    // Sanitiza payload para garantir 100% de compatibilidade com o schema do PocketBase
+    const { isReimbursement, reimburseTo, refundStatus: _rfStatus, ...cleanBase } = expense as any;
+    const cleanExpense = Object.fromEntries(Object.entries(cleanBase).filter(([_, v]) => v !== undefined));
+    const payload = { 
+      ...cleanExpense, 
+      original_id: originalId,
+      status: pbStatus,
+      donor: donorVal || '',
+      createdBy: user?.id || null 
+    };
     
     if (isOffline) {
        const tempId = 'temp-' + Date.now().toString();
        saveToOfflineQueue('ADD_EXPENSE', payload);
-       setState(prev => ({ ...prev, expenses: [{ ...payload, id: tempId, auditId: formatAuditId('EXP', tempId) } as unknown as Expense, ...prev.expenses] }));
+       const localExpense: Expense = {
+         ...expense,
+         id: tempId,
+         auditId: formatAuditId('EXP', tempId),
+         original_id: originalId,
+         isReimbursement: isReimb,
+         reimburseTo: isReimb ? expense.reimburseTo : undefined,
+         refundStatus: isReimb ? refundStatus : undefined,
+         status: pbStatus
+       };
+       setState(prev => ({ ...prev, expenses: [localExpense, ...prev.expenses] }));
        auditLogger.log({
          action: 'CREATE',
-         actionLabel: 'Saída Criada (Offline)',
+         actionLabel: isReimb ? 'Saída Criada (Offline - A Devolver)' : 'Saída Criada (Offline)',
          entity: 'Saída',
          recordId: tempId,
          auditId: formatAuditId('EXP', tempId),
          user: getUserName(),
-         details: `${expense.local} - R$ ${expense.value.toFixed(2)} (${expense.paymentMethod})`
+         details: `${expense.local} - R$ ${expense.value.toFixed(2)} (${expense.paymentMethod})${isReimb ? ` [A Devolver p/ ${expense.reimburseTo}]` : ''}`
        });
        toast.success("Salvo offline. Rastreando até reconectar.");
        return;
@@ -488,12 +571,12 @@ function App() {
       await fetchAllData();
       auditLogger.log({
         action: 'CREATE',
-        actionLabel: 'Saída Criada',
+        actionLabel: isReimb ? 'Saída Criada (A Devolver)' : 'Saída Criada',
         entity: 'Saída',
         recordId: record.id,
         auditId: formatAuditId('EXP', record.id),
         user: getUserName(),
-        details: `${expense.local} - R$ ${expense.value.toFixed(2)} (${expense.paymentMethod})`
+        details: `${expense.local} - R$ ${expense.value.toFixed(2)} (${expense.paymentMethod})${isReimb ? ` [A Devolver p/ ${expense.reimburseTo}]` : ''}`
       });
       toast.success("Lançamento com Sucesso");
     } catch (error: any) {
@@ -501,15 +584,25 @@ function App() {
       if (error.isAbort || !navigator.onLine || (error.message && (error.message.includes('FetchError') || error.message.includes('Failed to fetch') || error.message.includes('network')))) {
          const tempId = 'temp-' + Date.now().toString();
          saveToOfflineQueue('ADD_EXPENSE', payload);
-         setState(prev => ({ ...prev, expenses: [{ ...payload, id: tempId, auditId: formatAuditId('EXP', tempId) } as unknown as Expense, ...prev.expenses] }));
+         const localExpense: Expense = {
+           ...expense,
+           id: tempId,
+           auditId: formatAuditId('EXP', tempId),
+           original_id: originalId,
+           isReimbursement: isReimb,
+           reimburseTo: isReimb ? expense.reimburseTo : undefined,
+           refundStatus: isReimb ? refundStatus : undefined,
+           status: pbStatus
+         };
+         setState(prev => ({ ...prev, expenses: [localExpense, ...prev.expenses] }));
          auditLogger.log({
            action: 'CREATE',
-           actionLabel: 'Saída Criada (Offline)',
+           actionLabel: isReimb ? 'Saída Criada (Offline - A Devolver)' : 'Saída Criada (Offline)',
            entity: 'Saída',
            recordId: tempId,
            auditId: formatAuditId('EXP', tempId),
            user: getUserName(),
-           details: `${expense.local} - R$ ${expense.value.toFixed(2)} (${expense.paymentMethod})`
+           details: `${expense.local} - R$ ${expense.value.toFixed(2)} (${expense.paymentMethod})${isReimb ? ` [A Devolver p/ ${expense.reimburseTo}]` : ''}`
          });
          toast.success("Salvo offline (Erro de rede).");
       } else {
@@ -519,8 +612,20 @@ function App() {
   };
 
   const editExpense = async (id: string, expense: Partial<Omit<Expense, 'id'>>) => {
+    const isReimb = expense.isReimbursement !== undefined ? expense.isReimbursement : undefined;
+    const refStatus = expense.refundStatus;
+    const pbStatus = expense.status || (isReimb ? (refStatus === 'Devolvido' ? 'DEVOLVIDO' : 'A_DEVOLVER') : undefined);
+    const donorVal = isReimb ? (expense.reimburseTo || expense.donor) : (expense.paymentMethod === 'doação' ? expense.donor : undefined);
+
     if (!ENABLE_POCKETBASE_SYNC) {
-      setState(prev => ({ ...prev, expenses: prev.expenses.map(e => e.id === id ? { ...e, ...expense } as Expense : e) }));
+      setState(prev => ({ 
+        ...prev, 
+        expenses: prev.expenses.map(e => e.id === id ? { 
+          ...e, 
+          ...expense, 
+          status: pbStatus !== undefined ? pbStatus : e.status 
+        } as Expense : e) 
+      }));
       auditLogger.log({
         action: 'UPDATE',
         actionLabel: 'Saída Editada',
@@ -533,11 +638,22 @@ function App() {
       toast.success("Lançamento alterado com sucesso");
       return;
     }
-    const cleanExpense = Object.fromEntries(Object.entries(expense).filter(([_, v]) => v !== undefined));
+
+    const { isReimbursement, reimburseTo, refundStatus: _rfStatus, ...cleanBase } = expense as any;
+    const cleanExpense = Object.fromEntries(Object.entries(cleanBase).filter(([_, v]) => v !== undefined));
+    if (pbStatus !== undefined) cleanExpense.status = pbStatus;
+    if (donorVal !== undefined) cleanExpense.donor = donorVal;
 
     if (isOffline) {
        saveToOfflineQueue('EDIT_EXPENSE', cleanExpense, id);
-       setState(prev => ({ ...prev, expenses: prev.expenses.map(e => e.id === id ? { ...e, ...cleanExpense } as Expense : e) }));
+       setState(prev => ({ 
+         ...prev, 
+         expenses: prev.expenses.map(e => e.id === id ? { 
+           ...e, 
+           ...expense, 
+           status: pbStatus !== undefined ? pbStatus : e.status 
+         } as Expense : e) 
+       }));
        auditLogger.log({
          action: 'UPDATE',
          actionLabel: 'Saída Editada (Offline)',
@@ -568,12 +684,46 @@ function App() {
       console.error("Error editing expense: ", error);
       if (error.isAbort || !navigator.onLine || (error.message && (error.message.includes('FetchError') || error.message.includes('Failed to fetch') || error.message.includes('network')))) {
          saveToOfflineQueue('EDIT_EXPENSE', cleanExpense, id);
-         setState(prev => ({ ...prev, expenses: prev.expenses.map(e => e.id === id ? { ...e, ...cleanExpense } as Expense : e) }));
+         setState(prev => ({ 
+           ...prev, 
+           expenses: prev.expenses.map(e => e.id === id ? { 
+             ...e, 
+             ...expense, 
+             status: pbStatus !== undefined ? pbStatus : e.status 
+           } as Expense : e) 
+         }));
          toast.success("Editado offline (Erro de rede).");
       } else {
          toast.error(`Erro ao editar despesa: ${error.message || 'Verifique os dados.'}`);
       }
     }
+  };
+
+  const toggleExpenseRefundStatus = async (id: string) => {
+    const target = state.expenses.find(e => e.id === id);
+    if (!target) return;
+    const currentStatus = target.refundStatus || (target.status === 'DEVOLVIDO' ? 'Devolvido' : 'Pendente');
+    const nextStatus: RefundStatus = currentStatus === 'Devolvido' ? 'Pendente' : 'Devolvido';
+    const nextPBStatus = nextStatus === 'Devolvido' ? 'DEVOLVIDO' : 'A_DEVOLVER';
+
+    await editExpense(id, {
+      status: nextPBStatus,
+      refundStatus: nextStatus,
+      isReimbursement: true,
+      reimburseTo: target.reimburseTo || (target.donor as Person)
+    });
+
+    auditLogger.log({
+      action: 'UPDATE',
+      actionLabel: nextStatus === 'Devolvido' ? 'Devolução Concluída' : 'Devolução Reaberta',
+      entity: 'Saída',
+      recordId: id,
+      auditId: formatAuditId('EXP', id),
+      user: getUserName(),
+      details: `Status de devolução: ${nextStatus} (p/ ${target.reimburseTo || target.donor || 'Sócio'})`
+    });
+
+    toast.success(nextStatus === 'Devolvido' ? 'Despesa marcada como devolvida com sucesso!' : 'Despesa reaberta como pendente de devolução.');
   };
 
   const deleteExpense = async (id: string) => {
@@ -1098,7 +1248,7 @@ function App() {
 
         <NavItem icon={<LayoutDashboard size={20} />} label="Início" active={activeTab === 'inicio'} onClick={() => setActiveTab('inicio')} />
         <NavItem icon={<ArrowDownCircle size={20} />} label="Saídas" active={activeTab === 'saidas'} onClick={() => setActiveTab('saidas')} />
-        <NavItem icon={<Map size={20} />} label="Terreno" active={activeTab === 'terreno'} onClick={() => setActiveTab('terreno')} />
+        <NavItem icon={<MapIcon size={20} />} label="Terreno" active={activeTab === 'terreno'} onClick={() => setActiveTab('terreno')} />
         
         {!isSharedMode ? (
           <>
@@ -1162,6 +1312,7 @@ function App() {
             onAdd={addExpense} 
             onEdit={editExpense}
             onDelete={confirmDeleteExpense} 
+            onToggleRefund={toggleExpenseRefundStatus}
             formatCurrency={formatCurrency} 
             isSharedMode={isSharedMode}
           />
