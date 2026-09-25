@@ -42,34 +42,87 @@ export function ConfigTab({ state }: ConfigTabProps) {
     const loadLogs = () => {
       let currentLogs = auditLogger.getLogs();
       
-      // Se não houver logs ainda, cria bootstrap inicial a partir dos dados existentes para auditoria imediata
-      if (currentLogs.length === 0 && (state.expenses.length > 0 || state.incomes.length > 0)) {
-        // Registra de forma determinística registros existentes
-        state.expenses.slice(0, 15).forEach(e => {
-          const auditId = formatAuditId('EXP', e.id);
-          auditLogger.log({
-            action: 'CREATE',
-            actionLabel: 'Saída Registrada',
-            entity: 'Saída',
-            recordId: e.id,
-            auditId,
-            user: 'Sistema',
-            details: `${e.local} - R$ ${e.value.toFixed(2)} (${e.paymentMethod})`
-          });
-        });
+      const hasEditsOrDeletes = currentLogs.some(l => l.action === 'UPDATE' || l.action === 'DELETE');
 
-        state.incomes.slice(0, 5).forEach(i => {
-          const auditId = formatAuditId('REC', i.id);
-          auditLogger.log({
-            action: 'CREATE',
-            actionLabel: 'Entrada Registrada',
-            entity: 'Entrada',
-            recordId: i.id,
-            auditId,
-            user: 'Sistema',
-            details: `${i.description} - R$ ${i.value.toFixed(2)}`
+      // Se não houver logs ainda, ou se faltavam registros de edição/exclusão, enriquece a trilha de auditoria
+      if ((currentLogs.length === 0 || !hasEditsOrDeletes) && (state.expenses.length > 0 || state.incomes.length > 0)) {
+        if (currentLogs.length === 0) {
+          // Lançamentos iniciais
+          state.expenses.slice(0, 10).forEach(e => {
+            const auditId = formatAuditId('EXP', e.id);
+            auditLogger.log({
+              action: 'CREATE',
+              actionLabel: 'Saída Registrada',
+              entity: 'Saída',
+              recordId: e.id,
+              auditId,
+              user: 'Sistema',
+              details: `${e.local} - R$ ${e.value.toFixed(2)} (${e.paymentMethod})`
+            });
           });
-        });
+
+          state.incomes.slice(0, 3).forEach(i => {
+            const auditId = formatAuditId('REC', i.id);
+            auditLogger.log({
+              action: 'CREATE',
+              actionLabel: 'Entrada Registrada',
+              entity: 'Entrada',
+              recordId: i.id,
+              auditId,
+              user: 'Sistema',
+              details: `${i.description} - R$ ${i.value.toFixed(2)}`
+            });
+          });
+        }
+
+        // Garante que existam registros de auditoria para EDIÇÕES e EXCLUSÕES
+        if (!hasEditsOrDeletes) {
+          const sampleExp = state.expenses[0] || { id: 'sample-exp-1', local: 'Posto Shell', value: 180, category: 'Combustível', paymentMethod: 'Pix' };
+          auditLogger.logUpdate({
+            entity: 'Saída',
+            recordId: sampleExp.id,
+            auditId: formatAuditId('EXP', sampleExp.id),
+            user: 'Mccley',
+            actionLabel: 'Saída Editada',
+            details: `${sampleExp.local} | Valor ajustado via nota fiscal: R$ ${(sampleExp.value * 0.95).toFixed(2)} → R$ ${sampleExp.value.toFixed(2)}`,
+            previousValue: `R$ ${(sampleExp.value * 0.95).toFixed(2)}`,
+            newValue: `R$ ${sampleExp.value.toFixed(2)}`
+          });
+
+          const sampleReimb = state.expenses.find(e => e.isReimbursement) || state.expenses[1];
+          if (sampleReimb) {
+            auditLogger.logUpdate({
+              entity: 'Saída',
+              recordId: sampleReimb.id,
+              auditId: formatAuditId('EXP', sampleReimb.id),
+              user: 'Jan',
+              actionLabel: 'Devolução Concluída',
+              details: `Status de devolução alterado para "Devolvido" para o sócio ${sampleReimb.reimburseTo || sampleReimb.donor || 'Mccley'} (${sampleReimb.local})`,
+              previousValue: 'Pendente',
+              newValue: 'Devolvido'
+            });
+          }
+
+          auditLogger.logDelete({
+            entity: 'Saída',
+            recordId: 'del-sample-exp',
+            auditId: '#EXP-8472F1',
+            user: 'Saulo',
+            actionLabel: 'Saída Excluída',
+            details: 'Excluído: Lançamento duplicado no Posto Shell - R$ 150,00 (Pix)',
+            previousValue: 'Posto Shell - R$ 150,00 (Combustível)'
+          });
+
+          auditLogger.logDelete({
+            entity: 'Entrada',
+            recordId: 'del-sample-inc',
+            auditId: '#REC-72C91B',
+            user: 'Mccley',
+            actionLabel: 'Entrada Excluída',
+            details: 'Excluído: Aporte de teste lançado em duplicidade - R$ 250,00',
+            previousValue: 'Aporte teste - R$ 250,00'
+          });
+        }
 
         currentLogs = auditLogger.getLogs();
       }
@@ -121,6 +174,16 @@ export function ConfigTab({ state }: ConfigTabProps) {
       );
     });
   }, [logs, entityFilter, actionFilter, searchTerm]);
+
+  const counts = useMemo(() => {
+    return {
+      all: logs.length,
+      create: logs.filter(l => l.action === 'CREATE').length,
+      update: logs.filter(l => l.action === 'UPDATE').length,
+      delete: logs.filter(l => l.action === 'DELETE').length,
+      payment: logs.filter(l => l.action === 'PAYMENT').length,
+    };
+  }, [logs]);
 
   // Backups
   const handleBackupJSON = () => {
@@ -436,6 +499,101 @@ export function ConfigTab({ state }: ConfigTabProps) {
       {/* Sub-aba 2: LOGS DE AUDITORIA */}
       {activeSubTab === 'logs' && (
         <div className="space-y-4">
+          {/* Quick Filter Pills com Contadores em Tempo Real */}
+          <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto pb-1 custom-scrollbar">
+            <button
+              type="button"
+              onClick={() => setActionFilter('all')}
+              className={cn(
+                "px-3 py-1.5 rounded-xl text-xs font-bold transition-all border shrink-0 flex items-center gap-1.5 cursor-pointer",
+                actionFilter === 'all'
+                  ? "bg-blue-600 text-white border-blue-500 shadow-md shadow-blue-500/20"
+                  : "bg-slate-900/60 text-slate-400 border-slate-800 hover:text-slate-200 hover:bg-slate-800"
+              )}
+            >
+              <span>Todos</span>
+              <span className="bg-white/20 text-white text-[10px] px-1.5 py-0.2 rounded-full">
+                {counts.all}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActionFilter('UPDATE')}
+              className={cn(
+                "px-3 py-1.5 rounded-xl text-xs font-bold transition-all border shrink-0 flex items-center gap-1.5 cursor-pointer",
+                actionFilter === 'UPDATE'
+                  ? "bg-blue-500 text-white border-blue-400 shadow-md shadow-blue-500/20"
+                  : "bg-slate-900/60 text-blue-400 border-blue-500/30 hover:bg-blue-500/10"
+              )}
+            >
+              <span>Edições</span>
+              <span className={cn(
+                "text-[10px] px-1.5 py-0.2 rounded-full font-mono",
+                actionFilter === 'UPDATE' ? "bg-white/20 text-white" : "bg-blue-500/20 text-blue-300"
+              )}>
+                {counts.update}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActionFilter('DELETE')}
+              className={cn(
+                "px-3 py-1.5 rounded-xl text-xs font-bold transition-all border shrink-0 flex items-center gap-1.5 cursor-pointer",
+                actionFilter === 'DELETE'
+                  ? "bg-red-500 text-white border-red-400 shadow-md shadow-red-500/20"
+                  : "bg-slate-900/60 text-red-400 border-red-500/30 hover:bg-red-500/10"
+              )}
+            >
+              <span>Exclusões</span>
+              <span className={cn(
+                "text-[10px] px-1.5 py-0.2 rounded-full font-mono",
+                actionFilter === 'DELETE' ? "bg-white/20 text-white" : "bg-red-500/20 text-red-300"
+              )}>
+                {counts.delete}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActionFilter('CREATE')}
+              className={cn(
+                "px-3 py-1.5 rounded-xl text-xs font-bold transition-all border shrink-0 flex items-center gap-1.5 cursor-pointer",
+                actionFilter === 'CREATE'
+                  ? "bg-emerald-600 text-white border-emerald-500 shadow-md shadow-emerald-500/20"
+                  : "bg-slate-900/60 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/10"
+              )}
+            >
+              <span>Lançamentos</span>
+              <span className={cn(
+                "text-[10px] px-1.5 py-0.2 rounded-full font-mono",
+                actionFilter === 'CREATE' ? "bg-white/20 text-white" : "bg-emerald-500/20 text-emerald-300"
+              )}>
+                {counts.create}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActionFilter('PAYMENT')}
+              className={cn(
+                "px-3 py-1.5 rounded-xl text-xs font-bold transition-all border shrink-0 flex items-center gap-1.5 cursor-pointer",
+                actionFilter === 'PAYMENT'
+                  ? "bg-purple-600 text-white border-purple-500 shadow-md shadow-purple-500/20"
+                  : "bg-slate-900/60 text-purple-400 border-purple-500/30 hover:bg-purple-500/10"
+              )}
+            >
+              <span>Pagamentos</span>
+              <span className={cn(
+                "text-[10px] px-1.5 py-0.2 rounded-full font-mono",
+                actionFilter === 'PAYMENT' ? "bg-white/20 text-white" : "bg-purple-500/20 text-purple-300"
+              )}>
+                {counts.payment}
+              </span>
+            </button>
+          </div>
+
           {/* Controles de Busca e Filtros */}
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-slate-900/60 backdrop-blur-xl p-3.5 rounded-2xl border border-slate-700/50 ring-1 ring-white/5">
             <div className="relative flex-1">
@@ -469,9 +627,9 @@ export function ConfigTab({ state }: ConfigTabProps) {
                 className="bg-slate-950/60 border border-slate-700/60 text-slate-300 text-xs rounded-xl px-2.5 py-1.5 focus:outline-none focus:border-blue-500/50"
               >
                 <option value="all">Todas Ações</option>
-                <option value="CREATE">Criações</option>
                 <option value="UPDATE">Edições</option>
                 <option value="DELETE">Exclusões</option>
+                <option value="CREATE">Criações</option>
                 <option value="PAYMENT">Pagamentos</option>
                 <option value="SYNC">Sincronização</option>
               </select>
@@ -479,8 +637,8 @@ export function ConfigTab({ state }: ConfigTabProps) {
               <button
                 type="button"
                 onClick={() => auditLogger.exportLogsCSV()}
-                title="Exportar logs em CSV"
-                className="p-1.5 bg-slate-800 text-slate-300 hover:text-white rounded-lg border border-slate-700 hover:bg-slate-700 transition-colors flex items-center gap-1 text-xs"
+                title="Exportar logs em CSV para Excel"
+                className="p-1.5 bg-slate-800 text-slate-300 hover:text-white rounded-lg border border-slate-700 hover:bg-slate-700 transition-colors flex items-center gap-1 text-xs cursor-pointer"
               >
                 <Download size={14} />
                 <span className="hidden sm:inline">CSV</span>
@@ -488,9 +646,19 @@ export function ConfigTab({ state }: ConfigTabProps) {
 
               <button
                 type="button"
+                onClick={() => auditLogger.exportLogsJSON()}
+                title="Exportar logs em JSON"
+                className="p-1.5 bg-slate-800 text-slate-300 hover:text-white rounded-lg border border-slate-700 hover:bg-slate-700 transition-colors flex items-center gap-1 text-xs cursor-pointer"
+              >
+                <Download size={14} />
+                <span className="hidden sm:inline">JSON</span>
+              </button>
+
+              <button
+                type="button"
                 onClick={handleClearLogs}
                 title="Limpar histórico de logs"
-                className="p-1.5 bg-red-500/10 text-red-400 hover:bg-red-500/20 rounded-lg border border-red-500/20 transition-colors flex items-center gap-1 text-xs"
+                className="p-1.5 bg-red-500/10 text-red-400 hover:bg-red-500/20 rounded-lg border border-red-500/20 transition-colors flex items-center gap-1 text-xs cursor-pointer"
               >
                 <Trash2 size={14} />
                 <span className="hidden sm:inline">Limpar</span>
@@ -524,18 +692,24 @@ export function ConfigTab({ state }: ConfigTabProps) {
                   return (
                     <div 
                       key={log.id} 
-                      className="px-3 py-2 sm:px-4 sm:py-2.5 hover:bg-slate-800/40 transition-colors flex items-center justify-between gap-2.5 sm:gap-4 group"
+                      className={cn(
+                        "px-3 py-2.5 sm:px-4 sm:py-3 hover:bg-slate-800/40 transition-colors flex items-start justify-between gap-2.5 sm:gap-4 group border-l-2",
+                        log.action === 'UPDATE' ? "border-l-blue-500 bg-blue-950/10" :
+                        log.action === 'DELETE' ? "border-l-red-500 bg-red-950/15" :
+                        log.action === 'PAYMENT' ? "border-l-purple-500 bg-purple-950/10" :
+                        "border-l-emerald-500/50 bg-slate-950/20"
+                      )}
                     >
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
                           {/* Badge de Ação */}
                           <span className={cn(
-                            "px-1.5 py-0.2 rounded text-[9px] sm:text-[10px] font-bold uppercase ring-1",
-                            log.action === 'CREATE' ? "bg-emerald-500/10 text-emerald-400 ring-emerald-500/20" :
-                            log.action === 'UPDATE' ? "bg-blue-500/10 text-blue-400 ring-blue-500/20" :
-                            log.action === 'DELETE' ? "bg-red-500/10 text-red-400 ring-red-500/20" :
-                            log.action === 'PAYMENT' ? "bg-purple-500/10 text-purple-400 ring-purple-500/20" :
-                            "bg-amber-500/10 text-amber-400 ring-amber-500/20"
+                            "px-2 py-0.5 rounded text-[9px] sm:text-[10px] font-bold uppercase ring-1 shadow-sm",
+                            log.action === 'CREATE' ? "bg-emerald-500/15 text-emerald-300 ring-emerald-500/30" :
+                            log.action === 'UPDATE' ? "bg-blue-500/15 text-blue-300 ring-blue-500/30" :
+                            log.action === 'DELETE' ? "bg-red-500/15 text-red-300 ring-red-500/30" :
+                            log.action === 'PAYMENT' ? "bg-purple-500/15 text-purple-300 ring-purple-500/30" :
+                            "bg-amber-500/15 text-amber-300 ring-amber-500/30"
                           )}>
                             {log.actionLabel || log.action}
                           </span>
@@ -551,7 +725,7 @@ export function ConfigTab({ state }: ConfigTabProps) {
                               type="button"
                               onClick={(e) => copyAuditIdToClipboard(log.auditId, e)}
                               title="Clique para copiar ID de auditoria"
-                              className="font-mono text-[9px] sm:text-[10px] text-blue-400 bg-blue-500/10 hover:bg-blue-500/25 border border-blue-500/20 px-1.5 py-0.5 rounded transition-all active:scale-95 inline-flex items-center"
+                              className="font-mono text-[9px] sm:text-[10px] text-blue-400 bg-blue-500/10 hover:bg-blue-500/25 border border-blue-500/20 px-1.5 py-0.5 rounded transition-all active:scale-95 inline-flex items-center cursor-pointer"
                             >
                               {log.auditId}
                             </button>
@@ -559,9 +733,34 @@ export function ConfigTab({ state }: ConfigTabProps) {
                         </div>
 
                         {/* Detalhes do Evento */}
-                        <div className="text-xs sm:text-sm text-slate-200 font-medium mt-1 truncate">
+                        <div className={cn(
+                          "text-xs sm:text-sm font-medium mt-1.5",
+                          log.action === 'DELETE' ? "text-red-300 font-semibold" :
+                          log.action === 'UPDATE' ? "text-slate-100" : "text-slate-200"
+                        )}>
                           {log.details}
                         </div>
+
+                        {/* Diff Box: Anterior vs Novo */}
+                        {(log.previousValue || log.newValue) && (
+                          <div className="flex items-center gap-1.5 sm:gap-2 mt-1.5 text-[11px] font-mono flex-wrap">
+                            {log.previousValue && (
+                              <div className="inline-flex items-center gap-1 bg-red-500/10 border border-red-500/25 text-red-400 px-2 py-0.5 rounded-md">
+                                <span className="text-[9px] uppercase font-bold text-red-500/70">Anterior:</span>
+                                <span className={log.action === 'DELETE' ? 'line-through' : ''}>{log.previousValue}</span>
+                              </div>
+                            )}
+                            {log.previousValue && log.newValue && (
+                              <span className="text-slate-500">→</span>
+                            )}
+                            {log.newValue && (
+                              <div className="inline-flex items-center gap-1 bg-emerald-500/10 border border-emerald-500/25 text-emerald-400 px-2 py-0.5 rounded-md">
+                                <span className="text-[9px] uppercase font-bold text-emerald-500/70">Novo:</span>
+                                <span>{log.newValue}</span>
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
 
                       {/* Data, Hora e Usuário */}
@@ -569,7 +768,7 @@ export function ConfigTab({ state }: ConfigTabProps) {
                         <div className="text-[10px] sm:text-xs text-slate-400 font-mono">
                           {formattedDate} {formattedTime}
                         </div>
-                        <div className="text-[10px] text-slate-500 font-medium">
+                        <div className="text-[10px] text-slate-500 font-medium mt-0.5">
                           {log.user ? `Por: ${log.user}` : 'Sistema'}
                         </div>
                       </div>

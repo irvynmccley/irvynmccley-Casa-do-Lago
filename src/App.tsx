@@ -177,6 +177,7 @@ function App() {
   });
 
   const recentExpenseSubmissionsRef = React.useRef<Map<string, number>>(new Map());
+  const recentActionIdsRef = React.useRef<Set<string>>(new Set());
 
   const fetchAllData = useCallback(async () => {
     if (!ENABLE_POCKETBASE_SYNC) {
@@ -277,46 +278,116 @@ function App() {
 
     const subscribeRealtime = async () => {
       try {
-        await pb.collection('expenses').subscribe('*', async () => {
+        await pb.collection('expenses').subscribe('*', async (e: any) => {
           if (!isMounted) return;
+          const recId = e.record?.id;
+          if (recId && !recentActionIdsRef.current.has(recId)) {
+            if (e.action === 'update') {
+              auditLogger.logUpdate({
+                entity: 'Saída',
+                recordId: recId,
+                auditId: formatAuditId('EXP', recId),
+                user: 'Remoto',
+                actionLabel: 'Saída Editada (Remoto)',
+                details: `${e.record?.local || 'Lançamento'} atualizado em outro dispositivo (R$ ${Number(e.record?.value || 0).toFixed(2)})`
+              });
+            } else if (e.action === 'delete') {
+              auditLogger.logDelete({
+                entity: 'Saída',
+                recordId: recId,
+                auditId: formatAuditId('EXP', recId),
+                user: 'Remoto',
+                actionLabel: 'Saída Excluída (Remoto)',
+                details: `Saída excluída em outro dispositivo: ${e.record?.local || recId}`
+              });
+            }
+          }
           const records = await pb.collection('expenses').getFullList({ sort: '-date', requestKey: null });
-          const normalizedExpenses = records.map(e => {
+          const normalizedExpenses = records.map(item => {
             const isReimb = Boolean(
-              e.isReimbursement || 
-              e.status === 'A_DEVOLVER' || 
-              e.status === 'DEVOLVIDO' || 
-              (e.observation && (e.observation.includes('[A Devolver') || e.observation.includes('[Devolver')))
+              item.isReimbursement || 
+              item.status === 'A_DEVOLVER' || 
+              item.status === 'DEVOLVIDO' || 
+              (item.observation && (item.observation.includes('[A Devolver') || item.observation.includes('[Devolver')))
             );
-            const refStatus = (e.refundStatus || (e.status === 'DEVOLVIDO' ? 'Devolvido' : 'Pendente')) as RefundStatus;
-            const reimbTo = (e.reimburseTo || (e.paymentMethod !== 'doação' && e.donor ? e.donor : undefined)) as Person | undefined;
+            const refStatus = (item.refundStatus || (item.status === 'DEVOLVIDO' ? 'Devolvido' : 'Pendente')) as RefundStatus;
+            const reimbTo = (item.reimburseTo || (item.paymentMethod !== 'doação' && item.donor ? item.donor : undefined)) as Person | undefined;
 
             return {
-              ...e,
-              auditId: formatAuditId('EXP', e.id),
-              category: normalizeCategory(e.category) as Category,
+              ...item,
+              auditId: formatAuditId('EXP', item.id),
+              category: normalizeCategory(item.category) as Category,
               isReimbursement: isReimb,
               reimburseTo: reimbTo,
               refundStatus: isReimb ? refStatus : undefined,
-              status: e.status
+              status: item.status
             };
           });
           setState(prev => ({ ...prev, expenses: normalizedExpenses as unknown as Expense[] }));
         });
 
-        await pb.collection('incomes').subscribe('*', async () => {
+        await pb.collection('incomes').subscribe('*', async (e: any) => {
           if (!isMounted) return;
+          const recId = e.record?.id;
+          if (recId && !recentActionIdsRef.current.has(recId)) {
+            if (e.action === 'update') {
+              auditLogger.logUpdate({
+                entity: 'Entrada',
+                recordId: recId,
+                auditId: formatAuditId('REC', recId),
+                user: 'Remoto',
+                actionLabel: 'Entrada Editada (Remoto)',
+                details: `${e.record?.description || 'Entrada'} atualizada em outro dispositivo`
+              });
+            } else if (e.action === 'delete') {
+              auditLogger.logDelete({
+                entity: 'Entrada',
+                recordId: recId,
+                auditId: formatAuditId('REC', recId),
+                user: 'Remoto',
+                actionLabel: 'Entrada Excluída (Remoto)',
+                details: `Entrada excluída em outro dispositivo: ${e.record?.description || recId}`
+              });
+            }
+          }
           const records = await pb.collection('incomes').getFullList({ sort: '-date', requestKey: null });
           setState(prev => ({ ...prev, incomes: records as unknown as Income[] }));
         });
 
-        await pb.collection('payments').subscribe('*', async () => {
+        await pb.collection('payments').subscribe('*', async (e: any) => {
           if (!isMounted) return;
+          const recId = e.record?.id;
+          if (recId && !recentActionIdsRef.current.has(recId)) {
+            if (e.action === 'delete') {
+              auditLogger.logDelete({
+                entity: 'Pagamento',
+                recordId: recId,
+                auditId: formatAuditId('PAG', recId),
+                user: 'Remoto',
+                actionLabel: 'Pagamento Excluído (Remoto)',
+                details: `Pagamento de sócio excluído em outro dispositivo: ${recId}`
+              });
+            }
+          }
           const records = await pb.collection('payments').getFullList({ sort: '-date', requestKey: null });
           setState(prev => ({ ...prev, payments: records as unknown as Payment[] }));
         });
 
-        await pb.collection('terreno_installments').subscribe('*', async () => {
+        await pb.collection('terreno_installments').subscribe('*', async (e: any) => {
           if (!isMounted) return;
+          const recId = e.record?.month_id || e.record?.original_id || e.record?.id;
+          if (recId && !recentActionIdsRef.current.has(recId)) {
+            if (e.action === 'delete') {
+              auditLogger.logDelete({
+                entity: 'Terreno',
+                recordId: recId,
+                auditId: formatAuditId('TER', recId),
+                user: 'Remoto',
+                actionLabel: 'Parcela Terreno Desmarcada (Remoto)',
+                details: `Parcela ${recId} desmarcada em outro dispositivo`
+              });
+            }
+          }
           const records = await pb.collection('terreno_installments').getFullList({ requestKey: null });
           const ids = records.map((t: any) => t.month_id || t.original_id || t.id);
           setState(prev => ({ ...prev, terrenoPaidInstallments: ids }));
@@ -486,6 +557,93 @@ function App() {
     return user?.email?.split('@')[0] || user?.username || 'Mccley';
   };
 
+  const buildExpenseDiff = (previous?: Expense, next?: Partial<Omit<Expense, 'id'>>) => {
+    if (!previous || !next) {
+      const local = next?.local || previous?.local || 'Item';
+      const val = next?.value !== undefined ? next.value : previous?.value;
+      return {
+        details: `${local} - R$ ${val !== undefined ? Number(val).toFixed(2) : '0.00'}`,
+        previousValue: previous ? `${previous.local} - R$ ${previous.value.toFixed(2)} (${previous.category})` : undefined,
+        newValue: next ? `${next.local || previous?.local} - R$ ${(next.value ?? previous?.value ?? 0).toFixed(2)}` : undefined
+      };
+    }
+
+    const changes: string[] = [];
+    if (next.value !== undefined && Number(next.value) !== previous.value) {
+      changes.push(`Valor: R$ ${previous.value.toFixed(2)} → R$ ${Number(next.value).toFixed(2)}`);
+    }
+    if (next.local !== undefined && next.local !== previous.local) {
+      changes.push(`Local: "${previous.local}" → "${next.local}"`);
+    }
+    if (next.category !== undefined && next.category !== previous.category) {
+      changes.push(`Categoria: "${previous.category}" → "${next.category}"`);
+    }
+    if (next.paymentMethod !== undefined && next.paymentMethod !== previous.paymentMethod) {
+      changes.push(`Pagamento: "${previous.paymentMethod}" → "${next.paymentMethod}"`);
+    }
+    if (next.date !== undefined && next.date !== previous.date) {
+      changes.push(`Data: ${previous.date} → ${next.date}`);
+    }
+    if (next.refundStatus !== undefined && next.refundStatus !== previous.refundStatus) {
+      changes.push(`Devolução: ${previous.refundStatus || 'Pendente'} → ${next.refundStatus}`);
+    }
+    if (next.reimburseTo !== undefined && next.reimburseTo !== previous.reimburseTo) {
+      changes.push(`Devolver para: ${previous.reimburseTo || 'Nenhum'} → ${next.reimburseTo}`);
+    }
+    if (next.installments !== undefined && next.installments !== previous.installments) {
+      changes.push(`Parcelas: ${previous.installments || 1}x → ${next.installments}x`);
+    }
+    if (next.observation !== undefined && next.observation !== previous.observation) {
+      changes.push(`Obs: "${previous.observation || ''}" → "${next.observation || ''}"`);
+    }
+
+    const localName = next.local || previous.local;
+    const details = changes.length > 0 
+      ? `${localName} | ${changes.join(' | ')}`
+      : `${localName} | Dados atualizados`;
+
+    const previousValue = `${previous.local} - R$ ${previous.value.toFixed(2)} (${previous.paymentMethod})`;
+    const newValue = `${next.local || previous.local} - R$ ${(next.value ?? previous.value).toFixed(2)} (${next.paymentMethod || previous.paymentMethod})`;
+
+    return { details, previousValue, newValue };
+  };
+
+  const buildIncomeDiff = (previous?: Income, next?: Partial<Omit<Income, 'id'>>) => {
+    if (!previous || !next) {
+      const desc = next?.description || previous?.description || 'Entrada';
+      const val = next?.value !== undefined ? next.value : previous?.value;
+      return {
+        details: `${desc} - R$ ${val !== undefined ? Number(val).toFixed(2) : '0.00'}`,
+        previousValue: previous ? `${previous.description} - R$ ${previous.value.toFixed(2)}` : undefined,
+        newValue: next ? `${next.description || previous?.description} - R$ ${(next.value ?? previous?.value ?? 0).toFixed(2)}` : undefined
+      };
+    }
+
+    const changes: string[] = [];
+    if (next.value !== undefined && Number(next.value) !== previous.value) {
+      changes.push(`Valor: R$ ${previous.value.toFixed(2)} → R$ ${Number(next.value).toFixed(2)}`);
+    }
+    if (next.description !== undefined && next.description !== previous.description) {
+      changes.push(`Descrição: "${previous.description}" → "${next.description}"`);
+    }
+    if (next.date !== undefined && next.date !== previous.date) {
+      changes.push(`Data: ${previous.date} → ${next.date}`);
+    }
+    if (next.isCaixa !== undefined && Boolean(next.isCaixa) !== Boolean(previous.isCaixa)) {
+      changes.push(`Caixa: ${previous.isCaixa ? 'Sim' : 'Não'} → ${next.isCaixa ? 'Sim' : 'Não'}`);
+    }
+
+    const desc = next.description || previous.description;
+    const details = changes.length > 0 
+      ? `${desc} | ${changes.join(' | ')}`
+      : `${desc} | Entrada atualizada`;
+
+    const previousValue = `${previous.description} - R$ ${previous.value.toFixed(2)}${previous.isCaixa ? ' (Caixa)' : ''}`;
+    const newValue = `${next.description || previous.description} - R$ ${(next.value ?? previous.value).toFixed(2)}${next.isCaixa ?? previous.isCaixa ? ' (Caixa)' : ''}`;
+
+    return { details, previousValue, newValue };
+  };
+
   const addExpense = async (expense: Omit<Expense, 'id'>) => {
     // 1. Camada de Idempotência em Memória: Previne múltiplos disparos em menos de 5 segundos
     const now = Date.now();
@@ -618,6 +776,14 @@ function App() {
   };
 
   const editExpense = async (id: string, expense: Partial<Omit<Expense, 'id'>>) => {
+    recentActionIdsRef.current.add(id);
+    setTimeout(() => recentActionIdsRef.current.delete(id), 10000);
+
+    const previous = state.expenses.find(e => e.id === id);
+    const diff = buildExpenseDiff(previous, expense);
+    const auditId = formatAuditId('EXP', id);
+    const userName = getUserName();
+
     const isReimb = expense.isReimbursement !== undefined ? expense.isReimbursement : undefined;
     const refStatus = expense.refundStatus;
     const pbStatus = expense.status || (isReimb ? (refStatus === 'Devolvido' ? 'DEVOLVIDO' : 'A_DEVOLVER') : undefined);
@@ -632,14 +798,15 @@ function App() {
           status: pbStatus !== undefined ? pbStatus : e.status 
         } as Expense : e) 
       }));
-      auditLogger.log({
-        action: 'UPDATE',
-        actionLabel: 'Saída Editada',
+      auditLogger.logUpdate({
         entity: 'Saída',
         recordId: id,
-        auditId: formatAuditId('EXP', id),
-        user: getUserName(),
-        details: `${expense.local || 'Item'} - R$ ${expense.value !== undefined ? expense.value.toFixed(2) : 'alterado'}`
+        auditId,
+        user: userName,
+        actionLabel: 'Saída Editada',
+        details: diff.details,
+        previousValue: diff.previousValue,
+        newValue: diff.newValue
       });
       toast.success("Lançamento alterado com sucesso");
       return;
@@ -660,14 +827,15 @@ function App() {
            status: pbStatus !== undefined ? pbStatus : e.status 
          } as Expense : e) 
        }));
-       auditLogger.log({
-         action: 'UPDATE',
-         actionLabel: 'Saída Editada (Offline)',
+       auditLogger.logUpdate({
          entity: 'Saída',
          recordId: id,
-         auditId: formatAuditId('EXP', id),
-         user: getUserName(),
-         details: `${expense.local || 'Item'} - R$ ${expense.value !== undefined ? expense.value.toFixed(2) : 'alterado'}`
+         auditId,
+         user: userName,
+         actionLabel: 'Saída Editada (Offline)',
+         details: diff.details,
+         previousValue: diff.previousValue,
+         newValue: diff.newValue
        });
        toast.success("Editado offline. Será sincronizado na próxima conexão.");
        return;
@@ -676,14 +844,15 @@ function App() {
     try {
       await pb.collection('expenses').update(id, cleanExpense);
       await fetchAllData();
-      auditLogger.log({
-        action: 'UPDATE',
-        actionLabel: 'Saída Editada',
+      auditLogger.logUpdate({
         entity: 'Saída',
         recordId: id,
-        auditId: formatAuditId('EXP', id),
-        user: getUserName(),
-        details: `${expense.local || 'Item'} - R$ ${expense.value !== undefined ? expense.value.toFixed(2) : 'alterado'}`
+        auditId,
+        user: userName,
+        actionLabel: 'Saída Editada',
+        details: diff.details,
+        previousValue: diff.previousValue,
+        newValue: diff.newValue
       });
       toast.success("Lançamento alterado com sucesso");
     } catch (error: any) {
@@ -698,6 +867,16 @@ function App() {
              status: pbStatus !== undefined ? pbStatus : e.status 
            } as Expense : e) 
          }));
+         auditLogger.logUpdate({
+           entity: 'Saída',
+           recordId: id,
+           auditId,
+           user: userName,
+           actionLabel: 'Saída Editada (Offline)',
+           details: diff.details,
+           previousValue: diff.previousValue,
+           newValue: diff.newValue
+         });
          toast.success("Editado offline (Erro de rede).");
       } else {
          toast.error(`Erro ao editar despesa: ${error.message || 'Verifique os dados.'}`);
@@ -706,6 +885,9 @@ function App() {
   };
 
   const toggleExpenseRefundStatus = async (id: string) => {
+    recentActionIdsRef.current.add(id);
+    setTimeout(() => recentActionIdsRef.current.delete(id), 10000);
+
     const target = state.expenses.find(e => e.id === id);
     if (!target) return;
     const currentStatus = target.refundStatus || (target.status === 'DEVOLVIDO' ? 'Devolvido' : 'Pendente');
@@ -719,31 +901,42 @@ function App() {
       reimburseTo: target.reimburseTo || (target.donor as Person)
     });
 
-    auditLogger.log({
-      action: 'UPDATE',
-      actionLabel: nextStatus === 'Devolvido' ? 'Devolução Concluída' : 'Devolução Reaberta',
+    auditLogger.logUpdate({
       entity: 'Saída',
       recordId: id,
       auditId: formatAuditId('EXP', id),
       user: getUserName(),
-      details: `Status de devolução: ${nextStatus} (p/ ${target.reimburseTo || target.donor || 'Sócio'})`
+      actionLabel: nextStatus === 'Devolvido' ? 'Devolução Concluída' : 'Devolução Reaberta',
+      details: `Status de devolução alterado para "${nextStatus}" para o sócio ${target.reimburseTo || target.donor || 'Sócio'} (${target.local} - R$ ${target.value.toFixed(2)})`,
+      previousValue: currentStatus,
+      newValue: nextStatus
     });
 
     toast.success(nextStatus === 'Devolvido' ? 'Despesa marcada como devolvida com sucesso!' : 'Despesa reaberta como pendente de devolução.');
   };
 
   const deleteExpense = async (id: string) => {
+    recentActionIdsRef.current.add(id);
+    setTimeout(() => recentActionIdsRef.current.delete(id), 10000);
+
     const target = state.expenses.find(e => e.id === id);
+    const auditId = formatAuditId('EXP', id);
+    const userName = getUserName();
+    const detailsText = target 
+      ? `Excluído: ${target.local} - R$ ${target.value.toFixed(2)} (${target.category}, ${target.paymentMethod}${target.date ? `, ${target.date}` : ''})`
+      : `Item ID ${id} excluído`;
+    const previousVal = target ? `${target.local} - R$ ${target.value.toFixed(2)}` : undefined;
+
     if (!ENABLE_POCKETBASE_SYNC) {
       setState(prev => ({ ...prev, expenses: prev.expenses.filter(e => e.id !== id) }));
-      auditLogger.log({
-        action: 'DELETE',
-        actionLabel: 'Saída Excluída',
+      auditLogger.logDelete({
         entity: 'Saída',
         recordId: id,
-        auditId: formatAuditId('EXP', id),
-        user: getUserName(),
-        details: target ? `${target.local} - R$ ${target.value.toFixed(2)}` : `ID ${id}`
+        auditId,
+        user: userName,
+        actionLabel: 'Saída Excluída',
+        details: detailsText,
+        previousValue: previousVal
       });
       toast.success("Lançamento excluído com sucesso");
       return;
@@ -752,14 +945,14 @@ function App() {
     if (isOffline) {
        saveToOfflineQueue('DELETE_EXPENSE', null, id);
        setState(prev => ({ ...prev, expenses: prev.expenses.filter(e => e.id !== id) }));
-       auditLogger.log({
-         action: 'DELETE',
-         actionLabel: 'Saída Excluída (Offline)',
+       auditLogger.logDelete({
          entity: 'Saída',
          recordId: id,
-         auditId: formatAuditId('EXP', id),
-         user: getUserName(),
-         details: target ? `${target.local} - R$ ${target.value.toFixed(2)}` : `ID ${id}`
+         auditId,
+         user: userName,
+         actionLabel: 'Saída Excluída (Offline)',
+         details: detailsText,
+         previousValue: previousVal
        });
        toast.success("Excluído offline. Será sincronizado na próxima conexão.");
        return;
@@ -768,14 +961,14 @@ function App() {
     try {
       await pb.collection('expenses').delete(id);
       await fetchAllData();
-      auditLogger.log({
-        action: 'DELETE',
-        actionLabel: 'Saída Excluída',
+      auditLogger.logDelete({
         entity: 'Saída',
         recordId: id,
-        auditId: formatAuditId('EXP', id),
-        user: getUserName(),
-        details: target ? `${target.local} - R$ ${target.value.toFixed(2)}` : `ID ${id}`
+        auditId,
+        user: userName,
+        actionLabel: 'Saída Excluída',
+        details: detailsText,
+        previousValue: previousVal
       });
       toast.success("Lançamento excluído com sucesso");
     } catch (error: any) {
@@ -783,6 +976,15 @@ function App() {
       if (error.isAbort || !navigator.onLine || (error.message && (error.message.includes('FetchError') || error.message.includes('Failed to fetch') || error.message.includes('network')))) {
          saveToOfflineQueue('DELETE_EXPENSE', null, id);
          setState(prev => ({ ...prev, expenses: prev.expenses.filter(e => e.id !== id) }));
+         auditLogger.logDelete({
+           entity: 'Saída',
+           recordId: id,
+           auditId,
+           user: userName,
+           actionLabel: 'Saída Excluída (Offline)',
+           details: detailsText,
+           previousValue: previousVal
+         });
          toast.success("Excluído offline (Erro de rede).");
       } else {
          toast.error(`Erro ao deletar despesa: ${error.message || 'Verifique suas permissões.'}`);
@@ -931,33 +1133,43 @@ function App() {
   };
 
   const editIncome = async (id: string, income: Partial<Omit<Income, 'id'>>) => {
+    recentActionIdsRef.current.add(id);
+    setTimeout(() => recentActionIdsRef.current.delete(id), 10000);
+
+    const previous = state.incomes.find(i => i.id === id);
+    const cleanIncome = Object.fromEntries(Object.entries(income).filter(([_, v]) => v !== undefined));
+    const diff = buildIncomeDiff(previous, cleanIncome);
+    const auditId = formatAuditId('REC', id);
+    const userName = getUserName();
+
     if (!ENABLE_POCKETBASE_SYNC) {
-      setState(prev => ({ ...prev, incomes: prev.incomes.map(i => i.id === id ? { ...i, ...income } as Income : i) }));
-      auditLogger.log({
-        action: 'UPDATE',
-        actionLabel: 'Entrada Editada',
+      setState(prev => ({ ...prev, incomes: prev.incomes.map(i => i.id === id ? { ...i, ...cleanIncome } as Income : i) }));
+      auditLogger.logUpdate({
         entity: 'Entrada',
         recordId: id,
-        auditId: formatAuditId('REC', id),
-        user: getUserName(),
-        details: `${income.description || 'Entrada'} - R$ ${income.value !== undefined ? income.value.toFixed(2) : 'alterado'}`
+        auditId,
+        user: userName,
+        actionLabel: 'Entrada Editada',
+        details: diff.details,
+        previousValue: diff.previousValue,
+        newValue: diff.newValue
       });
       toast.success("Lançamento alterado com sucesso");
       return;
     }
-    const cleanIncome = Object.fromEntries(Object.entries(income).filter(([_, v]) => v !== undefined));
 
     if (isOffline) {
        saveToOfflineQueue('EDIT_INCOME', cleanIncome, id);
        setState(prev => ({ ...prev, incomes: prev.incomes.map(i => i.id === id ? { ...i, ...cleanIncome } as Income : i) }));
-       auditLogger.log({
-         action: 'UPDATE',
-         actionLabel: 'Entrada Editada (Offline)',
+       auditLogger.logUpdate({
          entity: 'Entrada',
          recordId: id,
-         auditId: formatAuditId('REC', id),
-         user: getUserName(),
-         details: `${income.description || 'Entrada'} - R$ ${income.value !== undefined ? income.value.toFixed(2) : 'alterado'}`
+         auditId,
+         user: userName,
+         actionLabel: 'Entrada Editada (Offline)',
+         details: diff.details,
+         previousValue: diff.previousValue,
+         newValue: diff.newValue
        });
        toast.success("Editado offline. Será sincronizado na próxima conexão.");
        return;
@@ -966,14 +1178,15 @@ function App() {
     try {
       await pb.collection('incomes').update(id, cleanIncome);
       await fetchAllData();
-      auditLogger.log({
-        action: 'UPDATE',
-        actionLabel: 'Entrada Editada',
+      auditLogger.logUpdate({
         entity: 'Entrada',
         recordId: id,
-        auditId: formatAuditId('REC', id),
-        user: getUserName(),
-        details: `${cleanIncome.description || 'Entrada'} - R$ ${cleanIncome.value !== undefined ? Number(cleanIncome.value).toFixed(2) : 'alterado'}`
+        auditId,
+        user: userName,
+        actionLabel: 'Entrada Editada',
+        details: diff.details,
+        previousValue: diff.previousValue,
+        newValue: diff.newValue
       });
       toast.success("Lançamento alterado com sucesso");
     } catch (error: any) {
@@ -981,6 +1194,16 @@ function App() {
       if (error.isAbort || !navigator.onLine || (error.message && (error.message.includes('FetchError') || error.message.includes('Failed to fetch') || error.message.includes('network')))) {
          saveToOfflineQueue('EDIT_INCOME', cleanIncome, id);
          setState(prev => ({ ...prev, incomes: prev.incomes.map(i => i.id === id ? { ...i, ...cleanIncome } as Income : i) }));
+         auditLogger.logUpdate({
+           entity: 'Entrada',
+           recordId: id,
+           auditId,
+           user: userName,
+           actionLabel: 'Entrada Editada (Offline)',
+           details: diff.details,
+           previousValue: diff.previousValue,
+           newValue: diff.newValue
+         });
          toast.success("Editado offline (Erro de rede).");
       } else {
          toast.error("Erro ao editar entrada. Verifique suas permissões.");
@@ -989,17 +1212,27 @@ function App() {
   };
 
   const deleteIncome = async (id: string) => {
+    recentActionIdsRef.current.add(id);
+    setTimeout(() => recentActionIdsRef.current.delete(id), 10000);
+
     const target = state.incomes.find(i => i.id === id);
+    const auditId = formatAuditId('REC', id);
+    const userName = getUserName();
+    const detailsText = target 
+      ? `Excluído: ${target.description} - R$ ${target.value.toFixed(2)}${target.isCaixa ? ' (Caixa)' : ''}${target.date ? ` em ${target.date}` : ''}`
+      : `Item ID ${id} excluído`;
+    const previousVal = target ? `${target.description} - R$ ${target.value.toFixed(2)}` : undefined;
+
     if (!ENABLE_POCKETBASE_SYNC) {
       setState(prev => ({ ...prev, incomes: prev.incomes.filter(i => i.id !== id) }));
-      auditLogger.log({
-        action: 'DELETE',
-        actionLabel: 'Entrada Excluída',
+      auditLogger.logDelete({
         entity: 'Entrada',
         recordId: id,
-        auditId: formatAuditId('REC', id),
-        user: getUserName(),
-        details: target ? `${target.description} - R$ ${target.value.toFixed(2)}` : `ID ${id}`
+        auditId,
+        user: userName,
+        actionLabel: 'Entrada Excluída',
+        details: detailsText,
+        previousValue: previousVal
       });
       toast.success("Lançamento excluído com sucesso");
       return;
@@ -1008,14 +1241,14 @@ function App() {
     if (isOffline) {
        saveToOfflineQueue('DELETE_INCOME', null, id);
        setState(prev => ({ ...prev, incomes: prev.incomes.filter(i => i.id !== id) }));
-       auditLogger.log({
-         action: 'DELETE',
-         actionLabel: 'Entrada Excluída (Offline)',
+       auditLogger.logDelete({
          entity: 'Entrada',
          recordId: id,
-         auditId: formatAuditId('REC', id),
-         user: getUserName(),
-         details: target ? `${target.description} - R$ ${target.value.toFixed(2)}` : `ID ${id}`
+         auditId,
+         user: userName,
+         actionLabel: 'Entrada Excluída (Offline)',
+         details: detailsText,
+         previousValue: previousVal
        });
        toast.success("Excluído offline. Será sincronizado na próxima conexão.");
        return;
@@ -1024,14 +1257,14 @@ function App() {
     try {
       await pb.collection('incomes').delete(id);
       await fetchAllData();
-      auditLogger.log({
-        action: 'DELETE',
-        actionLabel: 'Entrada Excluída',
+      auditLogger.logDelete({
         entity: 'Entrada',
         recordId: id,
-        auditId: formatAuditId('REC', id),
-        user: getUserName(),
-        details: target ? `${target.description} - R$ ${target.value.toFixed(2)}` : `ID ${id}`
+        auditId,
+        user: userName,
+        actionLabel: 'Entrada Excluída',
+        details: detailsText,
+        previousValue: previousVal
       });
       toast.success("Lançamento excluído com sucesso");
     } catch (error: any) {
@@ -1039,6 +1272,15 @@ function App() {
       if (error.isAbort || !navigator.onLine || (error.message && (error.message.includes('FetchError') || error.message.includes('Failed to fetch') || error.message.includes('network')))) {
          saveToOfflineQueue('DELETE_INCOME', null, id);
          setState(prev => ({ ...prev, incomes: prev.incomes.filter(i => i.id !== id) }));
+         auditLogger.logDelete({
+           entity: 'Entrada',
+           recordId: id,
+           auditId,
+           user: userName,
+           actionLabel: 'Entrada Excluída (Offline)',
+           details: detailsText,
+           previousValue: previousVal
+         });
          toast.success("Excluído offline (Erro de rede).");
       } else {
          toast.error(`Erro ao deletar entrada: ${error.message || 'Verifique suas permissões.'}`);
@@ -1047,17 +1289,27 @@ function App() {
   };
 
   const deletePayment = async (id: string) => {
+    recentActionIdsRef.current.add(id);
+    setTimeout(() => recentActionIdsRef.current.delete(id), 10000);
+
     const target = state.payments.find(p => p.id === id);
+    const auditId = formatAuditId('PAG', id);
+    const userName = getUserName();
+    const detailsText = target 
+      ? `Excluído: Pagamento de ${target.person} - R$ ${target.value.toFixed(2)}${target.date ? ` em ${target.date}` : ''}`
+      : `Item ID ${id} excluído`;
+    const previousVal = target ? `${target.person} - R$ ${target.value.toFixed(2)}` : undefined;
+
     if (!ENABLE_POCKETBASE_SYNC) {
       setState(prev => ({ ...prev, payments: prev.payments.filter(p => p.id !== id) }));
-      auditLogger.log({
-        action: 'DELETE',
-        actionLabel: 'Pagamento Excluído',
+      auditLogger.logDelete({
         entity: 'Pagamento',
         recordId: id,
-        auditId: formatAuditId('PAG', id),
-        user: getUserName(),
-        details: target ? `${target.person} - R$ ${target.value.toFixed(2)}` : `ID ${id}`
+        auditId,
+        user: userName,
+        actionLabel: 'Pagamento Excluído',
+        details: detailsText,
+        previousValue: previousVal
       });
       toast.success("Lançamento excluído com sucesso");
       return;
@@ -1066,14 +1318,14 @@ function App() {
     if (isOffline) {
        saveToOfflineQueue('DELETE_PAYMENT', null, id);
        setState(prev => ({ ...prev, payments: prev.payments.filter(p => p.id !== id) }));
-       auditLogger.log({
-         action: 'DELETE',
-         actionLabel: 'Pagamento Excluído (Offline)',
+       auditLogger.logDelete({
          entity: 'Pagamento',
          recordId: id,
-         auditId: formatAuditId('PAG', id),
-         user: getUserName(),
-         details: target ? `${target.person} - R$ ${target.value.toFixed(2)}` : `ID ${id}`
+         auditId,
+         user: userName,
+         actionLabel: 'Pagamento Excluído (Offline)',
+         details: detailsText,
+         previousValue: previousVal
        });
        toast.success("Excluído offline. Será sincronizado na próxima conexão.");
        return;
@@ -1082,14 +1334,14 @@ function App() {
     try {
       await pb.collection('payments').delete(id);
       await fetchAllData();
-      auditLogger.log({
-        action: 'DELETE',
-        actionLabel: 'Pagamento Excluído',
+      auditLogger.logDelete({
         entity: 'Pagamento',
         recordId: id,
-        auditId: formatAuditId('PAG', id),
-        user: getUserName(),
-        details: target ? `${target.person} - R$ ${target.value.toFixed(2)}` : `ID ${id}`
+        auditId,
+        user: userName,
+        actionLabel: 'Pagamento Excluído',
+        details: detailsText,
+        previousValue: previousVal
       });
       toast.success("Lançamento excluído com sucesso");
     } catch (error: any) {
@@ -1097,6 +1349,15 @@ function App() {
       if (error.isAbort || !navigator.onLine || (error.message && (error.message.includes('FetchError') || error.message.includes('Failed to fetch') || error.message.includes('network')))) {
          saveToOfflineQueue('DELETE_PAYMENT', null, id);
          setState(prev => ({ ...prev, payments: prev.payments.filter(p => p.id !== id) }));
+         auditLogger.logDelete({
+           entity: 'Pagamento',
+           recordId: id,
+           auditId,
+           user: userName,
+           actionLabel: 'Pagamento Excluído (Offline)',
+           details: detailsText,
+           previousValue: previousVal
+         });
          toast.success("Excluído offline (Erro de rede).");
       } else {
          toast.error(`Erro ao deletar pagamento: ${error.message || 'Verifique suas permissões.'}`);
@@ -1142,6 +1403,9 @@ function App() {
   };
 
   const handleToggleTerrenoPayment = async (id: string) => {
+    recentActionIdsRef.current.add(id);
+    setTimeout(() => recentActionIdsRef.current.delete(id), 10000);
+
     const currentPaid = state.terrenoPaidInstallments || [];
     const isPaid = currentPaid.includes(id);
     const newPaid = isPaid 
@@ -1150,15 +1414,28 @@ function App() {
     
     setState(prev => ({ ...prev, terrenoPaidInstallments: newPaid }));
 
-    auditLogger.log({
-      action: isPaid ? 'DELETE' : 'PAYMENT',
-      actionLabel: isPaid ? 'Parcela Terreno Desmarcada' : 'Parcela Terreno Paga',
-      entity: 'Terreno',
-      recordId: id,
-      auditId: formatAuditId('TER', id),
-      user: getUserName(),
-      details: `Parcela ${id} - R$ 700,00`
-    });
+    if (isPaid) {
+      auditLogger.logDelete({
+        entity: 'Terreno',
+        recordId: id,
+        auditId: formatAuditId('TER', id),
+        user: getUserName(),
+        actionLabel: 'Parcela Terreno Desmarcada',
+        details: `Estorno/Desmarcada: Parcela ${id} de R$ 700,00 foi desmarcada`,
+        previousValue: 'Paga'
+      });
+    } else {
+      auditLogger.log({
+        action: 'PAYMENT',
+        actionLabel: 'Parcela Terreno Paga',
+        entity: 'Terreno',
+        recordId: id,
+        auditId: formatAuditId('TER', id),
+        user: getUserName(),
+        details: `Pagamento de Parcela: Parcela ${id} de R$ 700,00 confirmada`,
+        newValue: 'Paga'
+      });
+    }
 
     if (ENABLE_POCKETBASE_SYNC) {
       if (isOffline) {

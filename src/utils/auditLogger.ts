@@ -56,6 +56,55 @@ export const auditLogger = {
     }
   },
 
+  logUpdate(entry: {
+    entity: 'Saída' | 'Entrada' | 'Pagamento' | 'Terreno' | 'Sistema';
+    recordId: string;
+    auditId: string;
+    user: string;
+    details: string;
+    actionLabel?: string;
+    previousValue?: string;
+    newValue?: string;
+  }): AuditLogEntry {
+    return this.log({
+      action: 'UPDATE',
+      actionLabel: entry.actionLabel || `${entry.entity} Editada`,
+      entity: entry.entity,
+      recordId: entry.recordId,
+      auditId: entry.auditId,
+      user: entry.user,
+      details: entry.details,
+      previousValue: entry.previousValue,
+      newValue: entry.newValue,
+    });
+  },
+
+  logDelete(entry: {
+    entity: 'Saída' | 'Entrada' | 'Pagamento' | 'Terreno' | 'Sistema';
+    recordId: string;
+    auditId: string;
+    user: string;
+    details: string;
+    actionLabel?: string;
+    previousValue?: string;
+  }): AuditLogEntry {
+    return this.log({
+      action: 'DELETE',
+      actionLabel: entry.actionLabel || `${entry.entity} Excluída`,
+      entity: entry.entity,
+      recordId: entry.recordId,
+      auditId: entry.auditId,
+      user: entry.user,
+      details: entry.details,
+      previousValue: entry.previousValue,
+    });
+  },
+
+  hasEditsOrDeletions(): boolean {
+    const logs = this.getLogs();
+    return logs.some(l => l.action === 'UPDATE' || l.action === 'DELETE');
+  },
+
   clearLogs(): void {
     try {
       localStorage.removeItem(STORAGE_KEY);
@@ -83,7 +132,7 @@ export const auditLogger = {
   exportLogsCSV(): void {
     const logs = this.getLogs();
     let csv = '\uFEFF'; // UTF-8 BOM para abrir com acentuação correta no Excel
-    csv += 'ID do Log,Data/Hora,Ação,Entidade,Código Auditoria,ID Original,Usuário,Detalhes\n';
+    csv += 'ID do Log,Data/Hora,Ação,Entidade,Código Auditoria,ID Original,Usuário,Detalhes,Valor Anterior,Novo Valor\n';
 
     logs.forEach(l => {
       const dateFormatted = new Date(l.timestamp).toLocaleString('pt-BR');
@@ -96,6 +145,8 @@ export const auditLogger = {
         `"${l.recordId}"`,
         `"${l.user || 'Sistema'}"`,
         `"${(l.details || '').replace(/"/g, '""')}"`,
+        `"${(l.previousValue || '').replace(/"/g, '""')}"`,
+        `"${(l.newValue || '').replace(/"/g, '""')}"`,
       ].join(',');
       csv += row + '\n';
     });
