@@ -33,6 +33,11 @@ import {
   mergeCategoriesWithExpenses, 
   sanitizeCategoryName 
 } from './utils/categories';
+import { 
+  FinancialSettings, 
+  getStoredFinancialSettings, 
+  saveStoredFinancialSettings 
+} from './utils/financialSettings';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
@@ -168,7 +173,20 @@ function App() {
 
   const [state, setState] = useState<AppState>({ expenses: [], incomes: [], payments: [], terrenoPaidInstallments: INITIAL_PAID_TERRENO });
   const [categories, setCategories] = useState<string[]>(() => getStoredCategories());
+  const [financialSettings, setFinancialSettings] = useState<FinancialSettings>(() => getStoredFinancialSettings());
   const [syncStatus, setSyncStatus] = useState<'syncing' | 'local' | 'error'>(ENABLE_POCKETBASE_SYNC ? 'syncing' : 'local');
+
+  useEffect(() => {
+    const handleSettingsSync = (e: any) => {
+      if (e.detail) {
+        setFinancialSettings(e.detail);
+      } else {
+        setFinancialSettings(getStoredFinancialSettings());
+      }
+    };
+    window.addEventListener('financialSettingsUpdated', handleSettingsSync);
+    return () => window.removeEventListener('financialSettingsUpdated', handleSettingsSync);
+  }, []);
 
   // Sincronização e descoberta automática de categorias presentes nas despesas
   useEffect(() => {
@@ -1654,6 +1672,13 @@ function App() {
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
   };
 
+  const handleUpdateCondominio = useCallback(async (newCost: number) => {
+    const userName = user?.email ? String(user.email).split('@')[0] : 'Administrador';
+    const updated = saveStoredFinancialSettings({ condominioCost: newCost }, userName);
+    setFinancialSettings(updated);
+    toast.success(`Valor do condomínio reajustado para ${formatCurrency(newCost)}! Todos os totais foram atualizados.`);
+  }, [user]);
+
   if (!isAuthReady) {
     return <div className="min-h-screen flex items-center justify-center bg-[#020817] text-slate-200 font-sans"><div className="w-8 h-8 border-4 border-blue-500/30 border-t-blue-500 rounded-full animate-spin"></div></div>;
   }
@@ -1818,6 +1843,8 @@ function App() {
             expenses={state.expenses}
             onToggleRefund={toggleExpenseRefundStatus}
             isSharedMode={isSharedMode}
+            financialSettings={financialSettings}
+            onUpdateCondominio={handleUpdateCondominio}
           />
         )}
         {activeTab === 'saidas' && (
@@ -1854,6 +1881,7 @@ function App() {
             categories={categories}
             allCardInstallments={allCardInstallmentsByMonth}
             formatCurrency={formatCurrency} 
+            financialSettings={financialSettings}
           />
         )}
         {activeTab === 'terreno' && (
@@ -1871,6 +1899,8 @@ function App() {
             onRenameCategory={handleRenameCategory}
             onDeleteCategory={handleDeleteCategory}
             formatCurrency={formatCurrency}
+            financialSettings={financialSettings}
+            onUpdateCondominio={handleUpdateCondominio}
           />
         )}
         {activeTab === 'sobre' && <PlaceholderTab title="Sobre o Sistema" />}

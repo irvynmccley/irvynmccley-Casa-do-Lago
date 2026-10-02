@@ -5,7 +5,7 @@ export interface AuditLogEntry {
   timestamp: string; // ISO date string
   action: AuditActionType;
   actionLabel: string; // 'Lançamento Criado', 'Lançamento Editado', 'Exclusão', etc.
-  entity: 'Saída' | 'Entrada' | 'Pagamento' | 'Terreno' | 'Sistema' | 'Categoria';
+  entity: 'Saída' | 'Entrada' | 'Pagamento' | 'Terreno' | 'Sistema' | 'Categoria' | 'Configuração';
   recordId: string;
   auditId: string; // e.g. #EXP-9B214A
   user: string;

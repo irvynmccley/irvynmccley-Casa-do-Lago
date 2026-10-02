@@ -20,7 +20,9 @@ import {
   X,
   Check,
   AlertTriangle,
-  FolderPlus
+  FolderPlus,
+  Building2,
+  Calculator
 } from 'lucide-react';
 import { AppState } from '../types';
 import * as XLSX from 'xlsx';
@@ -29,6 +31,8 @@ import { formatAuditId, copyAuditIdToClipboard } from '../utils/audit';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { toast } from 'sonner';
+import { FinancialSettings, getStoredFinancialSettings, saveStoredFinancialSettings } from '../utils/financialSettings';
+import { EditCondominioModal } from './EditCondominioModal';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -41,6 +45,8 @@ interface ConfigTabProps {
   onRenameCategory?: (oldName: string, newName: string) => Promise<void>;
   onDeleteCategory?: (name: string) => Promise<boolean>;
   formatCurrency?: (v: number) => string;
+  financialSettings?: FinancialSettings;
+  onUpdateCondominio?: (newVal: number) => Promise<void> | void;
 }
 
 export function ConfigTab({ 
@@ -49,10 +55,32 @@ export function ConfigTab({
   onAddCategory = () => false,
   onRenameCategory = async () => {},
   onDeleteCategory = async () => false,
-  formatCurrency
+  formatCurrency,
+  financialSettings,
+  onUpdateCondominio
 }: ConfigTabProps) {
-  const [activeSubTab, setActiveSubTab] = useState<'backup' | 'logs' | 'categories'>('backup');
+  const [activeSubTab, setActiveSubTab] = useState<'backup' | 'logs' | 'categories' | 'custos_fixos'>('backup');
   const [logs, setLogs] = useState<AuditLogEntry[]>([]);
+  const [isEditCondoModalOpen, setIsEditCondoModalOpen] = useState(false);
+  const [localFinancialSettings, setLocalFinancialSettings] = useState<FinancialSettings>(() => financialSettings ?? getStoredFinancialSettings());
+
+  useEffect(() => {
+    if (financialSettings) {
+      setLocalFinancialSettings(financialSettings);
+    }
+  }, [financialSettings]);
+
+  useEffect(() => {
+    const handleSync = (e: any) => {
+      if (e.detail) {
+        setLocalFinancialSettings(e.detail);
+      } else {
+        setLocalFinancialSettings(getStoredFinancialSettings());
+      }
+    };
+    window.addEventListener('financialSettingsUpdated', handleSync);
+    return () => window.removeEventListener('financialSettingsUpdated', handleSync);
+  }, []);
   const [searchTerm, setSearchTerm] = useState('');
   const [entityFilter, setEntityFilter] = useState<string>('all');
   const [actionFilter, setActionFilter] = useState<string>('all');
@@ -546,6 +574,20 @@ export function ConfigTab({
             )}>
               {categoryStats.length}
             </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveSubTab('custos_fixos')}
+            className={cn(
+              "px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition-all flex items-center gap-2 cursor-pointer",
+              activeSubTab === 'custos_fixos' 
+                ? "bg-purple-600/80 text-white shadow-md ring-1 ring-purple-500/50" 
+                : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/50"
+            )}
+          >
+            <Building2 size={15} />
+            <span>Custos Fixos</span>
           </button>
         </div>
       </header>
@@ -1251,6 +1293,139 @@ export function ConfigTab({
           </div>
         </div>
       )}
+
+      {/* Sub-aba 4: CUSTOS FIXOS & CONDOMÍNIO */}
+      {activeSubTab === 'custos_fixos' && (
+        <div className="space-y-6">
+          <div className="bg-slate-900/60 backdrop-blur-xl rounded-2xl border border-slate-700/50 shadow-xl p-5 sm:p-6 ring-1 ring-white/5 space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-800">
+              <div className="flex items-center gap-3">
+                <div className="p-3 bg-purple-500/10 text-purple-400 rounded-xl ring-1 ring-purple-500/20 shadow-[0_0_15px_rgba(168,85,247,0.1)]">
+                  <Building2 size={24} />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-white">Parâmetros de Custos Fixos & Condomínio</h3>
+                  <p className="text-xs sm:text-sm text-slate-400">
+                    Definição dos valores base mensais rateados igualmente entre os 4 sócios
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsEditCondoModalOpen(true)}
+                className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-xl text-xs sm:text-sm font-bold shadow-lg shadow-blue-500/25 transition-all cursor-pointer active:scale-95 self-start sm:self-auto"
+              >
+                <Pencil size={15} />
+                <span>Reajustar Condomínio</span>
+              </button>
+            </div>
+
+            {/* Grid dos Cards de Valores */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              {/* Terreno */}
+              <div className="bg-slate-950/60 p-4 rounded-xl border border-emerald-500/20 ring-1 ring-white/5">
+                <span className="text-xs font-bold uppercase tracking-wider text-emerald-400 block mb-1">
+                  Terreno (Mensal)
+                </span>
+                <div className="text-2xl font-mono font-extrabold text-white">
+                  {fmt(localFinancialSettings.terrenoCost)}
+                </div>
+                <p className="text-[11px] text-slate-400 mt-1">
+                  Parcela fixa (vencimento dia 25)
+                </p>
+              </div>
+
+              {/* Condomínio */}
+              <div className="bg-slate-950/60 p-4 rounded-xl border border-blue-500/20 ring-1 ring-white/5 relative group">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold uppercase tracking-wider text-blue-400 block mb-1">
+                    Condomínio / Monit.
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setIsEditCondoModalOpen(true)}
+                    className="text-xs text-blue-400 hover:text-blue-300 transition-colors p-1"
+                    title="Editar valor"
+                  >
+                    <Pencil size={13} />
+                  </button>
+                </div>
+                <div className="text-2xl font-mono font-extrabold text-blue-200">
+                  {fmt(localFinancialSettings.condominioCost)}
+                </div>
+                <p className="text-[11px] text-slate-400 mt-1 flex items-center justify-between">
+                  <span>Taxa mensal reajustável</span>
+                  <span className="text-emerald-400 font-medium">Editável</span>
+                </p>
+              </div>
+
+              {/* Total Fixo Mensal */}
+              <div className="bg-slate-950/60 p-4 rounded-xl border border-purple-500/20 ring-1 ring-white/5">
+                <span className="text-xs font-bold uppercase tracking-wider text-purple-400 block mb-1">
+                  Total Fixo Mensal
+                </span>
+                <div className="text-2xl font-mono font-extrabold text-purple-200">
+                  {fmt(localFinancialSettings.terrenoCost + localFinancialSettings.condominioCost)}
+                </div>
+                <p className="text-[11px] text-slate-400 mt-1">
+                  Terreno + Condomínio
+                </p>
+              </div>
+
+              {/* Rateio Fixo por Pessoa */}
+              <div className="bg-slate-950/60 p-4 rounded-xl border border-amber-500/20 ring-1 ring-white/5">
+                <span className="text-xs font-bold uppercase tracking-wider text-amber-400 block mb-1">
+                  Rateio por Sócio
+                </span>
+                <div className="text-2xl font-mono font-extrabold text-amber-200">
+                  {fmt((localFinancialSettings.terrenoCost + localFinancialSettings.condominioCost) / (localFinancialSettings.peopleCount || 4))}
+                </div>
+                <p className="text-[11px] text-slate-400 mt-1">
+                  Dividido por 4 sócios
+                </p>
+              </div>
+            </div>
+
+            {/* Regras e Informações de Negócio */}
+            <div className="bg-slate-950/40 p-4 rounded-xl border border-slate-800 space-y-2 text-xs text-slate-300">
+              <h4 className="font-bold text-white uppercase tracking-wider text-[11px] flex items-center gap-1.5">
+                <Calculator size={14} className="text-blue-400" />
+                Como funciona o cálculo automático:
+              </h4>
+              <ul className="list-disc pl-5 space-y-1 text-slate-400 leading-relaxed">
+                <li>
+                  <strong className="text-slate-200">Fórmula de Fechamento:</strong> Todo mês, cada sócio é responsável pela sua cota do cartão de crédito (fatura com fechamento no dia 28) somada à cota de custos fixos: <code className="text-purple-300 font-mono">({fmt(localFinancialSettings.terrenoCost)} + {fmt(localFinancialSettings.condominioCost)}) ÷ 4 = {fmt((localFinancialSettings.terrenoCost + localFinancialSettings.condominioCost) / (localFinancialSettings.peopleCount || 4))}</code>.
+                </li>
+                <li>
+                  <strong className="text-slate-200">Reajuste Instantâneo:</strong> Ao alterar o valor do condomínio aqui ou direto pelo Início (Dashboard), todos os relatórios, faturas projetadas e resumos são recalculados imediatamente.
+                </li>
+                <li>
+                  <strong className="text-slate-200">Trilha de Auditoria:</strong> Toda alteração de taxa gera um registro automático com o usuário, valor anterior, novo valor e código <code className="text-blue-300 font-mono">#CFG-CONDO</code> na aba de Logs.
+                </li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Reajuste do Condomínio */}
+      <EditCondominioModal
+        isOpen={isEditCondoModalOpen}
+        onClose={() => setIsEditCondoModalOpen(false)}
+        currentValue={localFinancialSettings.condominioCost}
+        terrenoValue={localFinancialSettings.terrenoCost}
+        peopleCount={localFinancialSettings.peopleCount || 4}
+        onSave={async (newValue) => {
+          if (onUpdateCondominio) {
+            await onUpdateCondominio(newValue);
+          } else {
+            const updated = saveStoredFinancialSettings({ condominioCost: newValue });
+            setLocalFinancialSettings(updated);
+            toast.success(`Condomínio reajustado para ${fmt(newValue)}! Totais recalculados.`);
+          }
+        }}
+        formatCurrency={fmt}
+      />
     </div>
   );
 }

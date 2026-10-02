@@ -13,13 +13,16 @@ import {
   LabelList,
   Legend
 } from 'recharts';
-import { Banknote, TrendingUp, CreditCard, BarChart as BarChartIcon, User, RefreshCw, Wallet, ChevronDown, ChevronUp, Download, RotateCcw, CheckCircle2, Clock, ShieldCheck, Check } from 'lucide-react';
+import { Banknote, TrendingUp, CreditCard, BarChart as BarChartIcon, User, RefreshCw, Wallet, ChevronDown, ChevronUp, Download, RotateCcw, CheckCircle2, Clock, ShieldCheck, Check, Pencil, Building2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { Card } from './ui/Card';
 import { toPng } from 'html-to-image';
 import { formatAuditId, copyAuditIdToClipboard } from '../utils/audit';
 import { Expense, Person } from '../types';
+import { EditCondominioModal } from './EditCondominioModal';
+import { FinancialSettings, getStoredFinancialSettings, saveStoredFinancialSettings } from '../utils/financialSettings';
+import { toast } from 'sonner';
 
 const COLORS = [
   '#10b981', '#3b82f6', '#f59e0b', '#ec4899', '#8b5cf6', 
@@ -52,6 +55,8 @@ interface DashboardProps {
   expenses?: Expense[];
   onToggleRefund?: (id: string) => Promise<void>;
   isSharedMode?: boolean;
+  financialSettings?: FinancialSettings;
+  onUpdateCondominio?: (newVal: number) => Promise<void> | void;
 }
 
 const TriangleBar = (props: any) => {
@@ -83,10 +88,32 @@ export function Dashboard({
   syncStatus,
   expenses = [],
   onToggleRefund,
-  isSharedMode = false
+  isSharedMode = false,
+  financialSettings,
+  onUpdateCondominio
 }: DashboardProps) {
   const [isRefreshing, setIsRefreshing] = React.useState(false);
   const [expandedInvoice, setExpandedInvoice] = React.useState<string | null>(null);
+  const [isEditCondoOpen, setIsEditCondoOpen] = React.useState(false);
+  const [localSettings, setLocalSettings] = React.useState<FinancialSettings>(() => financialSettings ?? getStoredFinancialSettings());
+
+  React.useEffect(() => {
+    if (financialSettings) {
+      setLocalSettings(financialSettings);
+    }
+  }, [financialSettings]);
+
+  React.useEffect(() => {
+    const handleSync = (e: any) => {
+      if (e.detail) {
+        setLocalSettings(e.detail);
+      } else {
+        setLocalSettings(getStoredFinancialSettings());
+      }
+    };
+    window.addEventListener('financialSettingsUpdated', handleSync);
+    return () => window.removeEventListener('financialSettingsUpdated', handleSync);
+  }, []);
 
   // Estados do Painel de Gestão de Devoluções aos Sócios
   const [refundStatusFilter, setRefundStatusFilter] = React.useState<'pendente' | 'devolvido' | 'todos'>('pendente');
@@ -191,8 +218,10 @@ export function Dashboard({
     }
   };
 
-  const FIXED_COSTS = 750;
-  const PEOPLE_COUNT = 4;
+  const activeCondominioCost = financialSettings?.condominioCost ?? localSettings.condominioCost;
+  const activeTerrenoCost = financialSettings?.terrenoCost ?? localSettings.terrenoCost;
+  const PEOPLE_COUNT = financialSettings?.peopleCount ?? localSettings.peopleCount ?? 4;
+  const FIXED_COSTS = activeTerrenoCost + activeCondominioCost;
   const FIXED_PER_PERSON = FIXED_COSTS / PEOPLE_COUNT;
 
   const previousMonthInfo = React.useMemo(() => {
@@ -374,15 +403,36 @@ export function Dashboard({
           <div className="mt-8 pt-6 border-t border-slate-700/50 flex flex-wrap gap-x-8 gap-y-3">
             <div className="flex items-center gap-2 bg-emerald-500/10 px-3 py-1.5 rounded-lg border border-emerald-500/20">
               <div className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)]"></div>
-              <span className="text-xs text-emerald-300 font-medium">Terreno: <span className="font-bold text-emerald-200">R$ 700,00</span></span>
+              <span className="text-xs text-emerald-300 font-medium">Terreno: <span className="font-bold text-emerald-200">{formatCurrency(activeTerrenoCost)}</span></span>
             </div>
-            <div className="flex items-center gap-2 bg-blue-500/10 px-3 py-1.5 rounded-lg border border-blue-500/20">
-              <div className="w-2 h-2 rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.8)]"></div>
-              <span className="text-xs text-blue-300 font-medium">Condomínio: <span className="font-bold text-blue-200">R$ 50,00</span></span>
-            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                if (!isSharedMode) {
+                  setIsEditCondoOpen(true);
+                }
+              }}
+              disabled={isSharedMode}
+              className={`flex items-center gap-2 bg-blue-500/10 px-3 py-1.5 rounded-lg border border-blue-500/20 transition-all ${
+                !isSharedMode 
+                  ? "hover:bg-blue-500/20 hover:border-blue-500/50 cursor-pointer active:scale-95 group shadow-sm hover:shadow-blue-500/10" 
+                  : "opacity-90 cursor-default"
+              }`}
+              title={isSharedMode ? "Taxa mensal de condomínio" : "Clique para reajustar o valor do condomínio"}
+            >
+              <div className="w-2 h-2 rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.8)] group-hover:scale-125 transition-transform"></div>
+              <span className="text-xs text-blue-300 font-medium flex items-center gap-1.5">
+                Condomínio: <span className="font-bold text-blue-200">{formatCurrency(activeCondominioCost)}</span>
+                {!isSharedMode && (
+                  <Pencil size={11} className="text-blue-400 opacity-70 group-hover:opacity-100 group-hover:text-blue-300 transition-opacity ml-0.5" />
+                )}
+              </span>
+            </button>
+
             <div className="flex items-center gap-2 bg-purple-500/10 px-3 py-1.5 rounded-lg border border-purple-500/20">
               <div className="w-2 h-2 rounded-full bg-purple-500 shadow-[0_0_8px_rgba(168,85,247,0.8)]"></div>
-              <span className="text-xs text-purple-300 font-medium">Total Fixo: <span className="font-bold text-purple-200">R$ 750,00</span></span>
+              <span className="text-xs text-purple-300 font-medium">Total Fixo: <span className="font-bold text-purple-200">{formatCurrency(FIXED_COSTS)}</span></span>
             </div>
           </div>
         </Card>
@@ -837,6 +887,25 @@ export function Dashboard({
           </div>
         </Card>
       </div>
+
+      {/* Modal de Reajuste do Condomínio */}
+      <EditCondominioModal
+        isOpen={isEditCondoOpen}
+        onClose={() => setIsEditCondoOpen(false)}
+        currentValue={activeCondominioCost}
+        terrenoValue={activeTerrenoCost}
+        peopleCount={PEOPLE_COUNT}
+        onSave={async (newValue) => {
+          if (onUpdateCondominio) {
+            await onUpdateCondominio(newValue);
+          } else {
+            const updated = saveStoredFinancialSettings({ condominioCost: newValue });
+            setLocalSettings(updated);
+            toast.success(`Condomínio reajustado para ${formatCurrency(newValue)}! Totais recalculados.`);
+          }
+        }}
+        formatCurrency={formatCurrency}
+      />
     </div>
   );
 }

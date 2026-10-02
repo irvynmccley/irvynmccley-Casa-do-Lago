@@ -15,6 +15,7 @@ import { formatAuditId, copyAuditIdToClipboard } from '../utils/audit';
 import { toPng } from 'html-to-image';
 import * as XLSX from 'xlsx';
 import { toast } from 'sonner';
+import { FinancialSettings, getStoredFinancialSettings } from '../utils/financialSettings';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -39,9 +40,16 @@ interface ReportsTabProps {
   }[];
   formatCurrency: (v: number) => string;
   categories?: string[];
+  financialSettings?: FinancialSettings;
 }
 
-export function ReportsTab({ expenses, categories = [], allCardInstallments = [], formatCurrency }: ReportsTabProps) {
+export function ReportsTab({ 
+  expenses, 
+  categories = [], 
+  allCardInstallments = [], 
+  formatCurrency,
+  financialSettings
+}: ReportsTabProps) {
   const [activeReportTab, setActiveReportTab] = useState<'geral' | 'extrato' | 'apagar' | 'faturas'>('geral');
   
   const availableCategories = useMemo(() => {
@@ -381,8 +389,11 @@ export function ReportsTab({ expenses, categories = [], allCardInstallments = []
     setExpandedInvoice(expandedInvoice === month ? null : month);
   };
 
-  const FIXED_COSTS = 750; // 700 (terreno) + 50 (condominio)
-  const PEOPLE_COUNT = 4; // Jorge, Mccley, Jan, Saulo
+  const currentSettings = financialSettings ?? getStoredFinancialSettings();
+  const activeCondominioCost = currentSettings.condominioCost;
+  const activeTerrenoCost = currentSettings.terrenoCost;
+  const FIXED_COSTS = activeTerrenoCost + activeCondominioCost;
+  const PEOPLE_COUNT = currentSettings.peopleCount || 4; // Jorge, Mccley, Jan, Saulo
   const FIXED_PER_PERSON = FIXED_COSTS / PEOPLE_COUNT;
 
   return (
@@ -522,7 +533,7 @@ export function ReportsTab({ expenses, categories = [], allCardInstallments = []
             {formatCurrency(FIXED_PER_PERSON)}
           </div>
           <div className="text-[10px] text-slate-500 mt-0.5">
-            Por sócio (R$ 750 ÷ 4)
+            Por sócio ({formatCurrency(FIXED_COSTS)} ÷ {PEOPLE_COUNT})
           </div>
         </div>
       </div>
@@ -1127,7 +1138,7 @@ export function ReportsTab({ expenses, categories = [], allCardInstallments = []
             <div>
               <h3 className="text-lg font-bold text-white">Rateio Mensal por Pessoa</h3>
               <p className="text-xs text-slate-400 mt-0.5">
-                Parcela fixa de R$ 187,50 (R$ 750 / 4) somada à fatura proporcional do cartão de crédito
+                Parcela fixa de {formatCurrency(FIXED_PER_PERSON)} ({formatCurrency(FIXED_COSTS)} / {PEOPLE_COUNT}) somada à fatura proporcional do cartão de crédito
               </p>
             </div>
             <div className="text-xs text-slate-400 font-mono bg-slate-950/60 px-3 py-1.5 rounded-xl border border-slate-800">
