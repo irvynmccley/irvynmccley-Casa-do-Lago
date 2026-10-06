@@ -10,7 +10,6 @@ import {
   Paperclip, 
   Upload, 
   Eye,
-  ShieldCheck,
   Building2
 } from 'lucide-react';
 import { Card } from './ui/Card';
@@ -278,14 +277,9 @@ export function TerrenoTab({
         <div>
           <div className="flex items-center gap-2.5 flex-wrap">
             <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-white drop-shadow-sm">
-              {isVendorMode ? 'Financiamento do Terreno' : 'Terreno'}
+              {isVendorMode ? 'Extrato de pagamento Terreno' : 'Terreno'}
             </h2>
-            {isVendorMode ? (
-              <span className="text-xs font-semibold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-1 rounded-full flex items-center gap-1.5">
-                <ShieldCheck size={13} />
-                Portal do Vendedor (Somente Leitura)
-              </span>
-            ) : (
+            {!isVendorMode && (
               <span className="text-xs font-mono font-medium text-slate-400 bg-slate-800/60 border border-slate-700/60 px-2 py-0.5 rounded-lg">
                 58 parcelas • R$ 700/mês
               </span>
