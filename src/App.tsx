@@ -12,7 +12,13 @@ import {
 import { 
   format
 } from 'date-fns';
-import { AppState, Expense, Income, Payment, Category, Person, RefundStatus } from './types';
+import { AppState, Expense, Income, Payment, Category, Person, RefundStatus, TerrenoInstallmentRecord } from './types';
+import { 
+  getStoredTerrenoReceipts, 
+  saveStoredTerrenoReceipt, 
+  deleteStoredTerrenoReceipt, 
+  ensureTerrenoInstallmentsSchema 
+} from './utils/terrenoStorage';
 import { NavItem } from './components/ui/NavItem';
 import { Dashboard } from './components/Dashboard';
 import { ExpensesTab } from './components/ExpensesTab';
@@ -129,21 +135,33 @@ const INITIAL_PAID_TERRENO = [
 function App() {
   const [activeTab, setActiveTab] = useState('inicio');
   const [isSharedMode, setIsSharedMode] = useState(false);
+  const [isVendorMode, setIsVendorMode] = useState(false);
   const [user, setUser] = useState<any>(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
 
-  // Tab restriction logic for shared mode
+  // Tab restriction logic for shared mode and vendor mode
   useEffect(() => {
-    if (isSharedMode && !['inicio', 'saidas', 'terreno'].includes(activeTab)) {
+    if (isVendorMode && activeTab !== 'terreno') {
+      setActiveTab('terreno');
+    } else if (isSharedMode && !['inicio', 'saidas', 'terreno'].includes(activeTab)) {
       setActiveTab('inicio');
     }
-  }, [activeTab, isSharedMode]);
+  }, [activeTab, isSharedMode, isVendorMode]);
 
   // Auth logic with PocketBase
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const shared = params.get('shared') === 'true';
+    const vendor = params.get('vendedor') === 'true' || params.get('vendedor') === '1' || params.get('seller') === 'true';
     setIsSharedMode(shared);
+    setIsVendorMode(vendor);
+
+    if (vendor) {
+      setUser({ id: 'vendor-guest', email: 'vendedor@casadolago.com' });
+      setActiveTab('terreno');
+      setIsAuthReady(true);
+      return;
+    }
 
     if (shared) {
       setUser({ id: 'shared-user', email: 'mestre@casadolago.com' });
@@ -154,6 +172,8 @@ function App() {
     // Check if PocketBase has a valid logged in session (user or superuser)
     if (pb.authStore.isValid && pb.authStore.record) {
       setUser(pb.authStore.record);
+      // Garante esquema defensivamente em segundo plano se for superuser
+      ensureTerrenoInstallmentsSchema().catch(() => {});
     } else {
       setUser(null);
     }
@@ -161,7 +181,10 @@ function App() {
 
     const unsubscribe = pb.authStore.onChange((_token, model) => {
       setUser(model);
-      if (!model && !shared) {
+      if (model && pb.authStore.isValid) {
+        ensureTerrenoInstallmentsSchema().catch(() => {});
+      }
+      if (!model && !shared && !vendor) {
         setUser(null);
       }
     });
@@ -171,7 +194,13 @@ function App() {
     };
   }, []);
 
-  const [state, setState] = useState<AppState>({ expenses: [], incomes: [], payments: [], terrenoPaidInstallments: INITIAL_PAID_TERRENO });
+  const [state, setState] = useState<AppState>({ 
+    expenses: [], 
+    incomes: [], 
+    payments: [], 
+    terrenoPaidInstallments: INITIAL_PAID_TERRENO,
+    terrenoInstallmentsData: {}
+  });
   const [categories, setCategories] = useState<string[]>(() => getStoredCategories());
   const [financialSettings, setFinancialSettings] = useState<FinancialSettings>(() => getStoredFinancialSettings());
   const [syncStatus, setSyncStatus] = useState<'syncing' | 'local' | 'error'>(ENABLE_POCKETBASE_SYNC ? 'syncing' : 'local');
@@ -291,14 +320,48 @@ function App() {
         auditId: formatAuditId('PAG', p.id)
       }));
 
-      const terrenoIds = terrenoData.map((t: any) => t.month_id || t.original_id || t.id);
+      const localReceipts = getStoredTerrenoReceipts();
+      const terrenoDetailsMap: Record<string, TerrenoInstallmentRecord> = {};
+
+      // Inserir comprovantes locais
+      Object.entries(localReceipts).forEach(([mId, data]) => {
+        terrenoDetailsMap[mId] = {
+          id: data.id || mId,
+          month_id: mId,
+          receipt_url: data.receipt_url,
+          receipt_name: data.receipt_name,
+          notes: data.notes,
+          paid_at: data.paid_at
+        };
+      });
+
+      // Mesclar registros do PocketBase
+      const terrenoIds: string[] = [];
+      (terrenoData as any[]).forEach(t => {
+        const mId = t.month_id || t.original_id || t.id;
+        if (mId) {
+          terrenoIds.push(mId);
+          terrenoDetailsMap[mId] = {
+            id: t.id,
+            month_id: mId,
+            original_id: t.original_id,
+            receipt_url: t.receipt_url || terrenoDetailsMap[mId]?.receipt_url,
+            receipt_name: t.receipt_name || terrenoDetailsMap[mId]?.receipt_name,
+            notes: t.notes || terrenoDetailsMap[mId]?.notes,
+            paid_at: t.paid_at || t.created || terrenoDetailsMap[mId]?.paid_at
+          };
+        }
+      });
+
+      const finalPaidIds = Array.from(new Set([...(terrenoIds.length > 0 ? terrenoIds : INITIAL_PAID_TERRENO)]));
 
       setState(prev => ({
         ...prev,
         expenses: normalizedExpenses as unknown as Expense[],
         incomes: normalizedIncomes as unknown as Income[],
         payments: normalizedPayments as unknown as Payment[],
-        terrenoPaidInstallments: terrenoIds.length > 0 ? terrenoIds : INITIAL_PAID_TERRENO
+        terrenoPaidInstallments: finalPaidIds,
+        terrenoInstallmentsData: terrenoDetailsMap
       }));
     } catch (e) {
       console.error("General error in fetchAllData:", e);
@@ -428,8 +491,41 @@ function App() {
             }
           }
           const records = await pb.collection('terreno_installments').getFullList({ requestKey: null });
-          const ids = records.map((t: any) => t.month_id || t.original_id || t.id);
-          setState(prev => ({ ...prev, terrenoPaidInstallments: ids }));
+          const localReceipts = getStoredTerrenoReceipts();
+          const terrenoDetailsMap: Record<string, TerrenoInstallmentRecord> = {};
+
+          Object.entries(localReceipts).forEach(([mId, data]) => {
+            terrenoDetailsMap[mId] = {
+              id: data.id || mId,
+              month_id: mId,
+              receipt_url: data.receipt_url,
+              receipt_name: data.receipt_name,
+              notes: data.notes,
+              paid_at: data.paid_at
+            };
+          });
+
+          const ids = records.map((t: any) => {
+            const mId = t.month_id || t.original_id || t.id;
+            if (mId) {
+              terrenoDetailsMap[mId] = {
+                id: t.id,
+                month_id: mId,
+                original_id: t.original_id,
+                receipt_url: t.receipt_url || terrenoDetailsMap[mId]?.receipt_url,
+                receipt_name: t.receipt_name || terrenoDetailsMap[mId]?.receipt_name,
+                notes: t.notes || terrenoDetailsMap[mId]?.notes,
+                paid_at: t.paid_at || t.created || terrenoDetailsMap[mId]?.paid_at
+              };
+            }
+            return mId;
+          }).filter(Boolean);
+
+          setState(prev => ({ 
+            ...prev, 
+            terrenoPaidInstallments: ids,
+            terrenoInstallmentsData: terrenoDetailsMap
+          }));
         });
       } catch (err) {
         console.warn("PocketBase realtime subscription notice:", err);
@@ -1592,19 +1688,57 @@ function App() {
     }
   };
 
-  const handleToggleTerrenoPayment = async (id: string) => {
+  const handleToggleTerrenoPayment = async (
+    id: string, 
+    paymentData?: { receipt_url?: string; receipt_name?: string; notes?: string }
+  ) => {
     recentActionIdsRef.current.add(id);
     setTimeout(() => recentActionIdsRef.current.delete(id), 10000);
 
     const currentPaid = state.terrenoPaidInstallments || [];
     const isPaid = currentPaid.includes(id);
-    const newPaid = isPaid 
-      ? currentPaid.filter(i => i !== id)
-      : [...currentPaid, id];
     
-    setState(prev => ({ ...prev, terrenoPaidInstallments: newPaid }));
+    // Se a parcela já estiver paga e nenhum dado novo de comprovante foi enviado, desmarca (estorno)
+    const willBePaid = !isPaid;
+    const newPaid = willBePaid 
+      ? [...currentPaid, id]
+      : currentPaid.filter(i => i !== id);
 
-    if (isPaid) {
+    // Salva ou remove no cache local imediatamente (Optimistic UI)
+    if (willBePaid) {
+      saveStoredTerrenoReceipt(id, {
+        month_id: id,
+        receipt_url: paymentData?.receipt_url,
+        receipt_name: paymentData?.receipt_name,
+        notes: paymentData?.notes,
+        paid_at: new Date().toISOString()
+      });
+    } else {
+      deleteStoredTerrenoReceipt(id);
+    }
+
+    setState(prev => {
+      const updatedDetails = { ...(prev.terrenoInstallmentsData || {}) };
+      if (willBePaid) {
+        updatedDetails[id] = {
+          id,
+          month_id: id,
+          receipt_url: paymentData?.receipt_url,
+          receipt_name: paymentData?.receipt_name,
+          notes: paymentData?.notes,
+          paid_at: new Date().toISOString()
+        };
+      } else {
+        delete updatedDetails[id];
+      }
+      return {
+        ...prev,
+        terrenoPaidInstallments: newPaid,
+        terrenoInstallmentsData: updatedDetails
+      };
+    });
+
+    if (!willBePaid) {
       auditLogger.logDelete({
         entity: 'Terreno',
         recordId: id,
@@ -1614,7 +1748,10 @@ function App() {
         details: `Estorno/Desmarcada: Parcela ${id} de R$ 700,00 foi desmarcada`,
         previousValue: 'Paga'
       });
+      toast.success(`Parcela ${id} desmarcada com sucesso.`);
     } else {
+      const obsInfo = paymentData?.notes ? ` (${paymentData.notes})` : '';
+      const receiptInfo = paymentData?.receipt_url ? ' [Com comprovante anexado]' : '';
       auditLogger.log({
         action: 'PAYMENT',
         actionLabel: 'Parcela Terreno Paga',
@@ -1622,19 +1759,25 @@ function App() {
         recordId: id,
         auditId: formatAuditId('TER', id),
         user: getUserName(),
-        details: `Pagamento de Parcela: Parcela ${id} de R$ 700,00 confirmada`,
+        details: `Pagamento de Parcela: Parcela ${id} de R$ 700,00 confirmada${obsInfo}${receiptInfo}`,
         newValue: 'Paga'
       });
+      toast.success(`Parcela ${id} marcada como paga!`);
     }
 
     if (ENABLE_POCKETBASE_SYNC) {
       if (isOffline) {
-        saveToOfflineQueue('TOGGLE_TERRENO', { action: isPaid ? 'delete' : 'insert' }, id);
+        saveToOfflineQueue('TOGGLE_TERRENO', { 
+          action: willBePaid ? 'insert' : 'delete',
+          receipt_url: paymentData?.receipt_url,
+          receipt_name: paymentData?.receipt_name,
+          notes: paymentData?.notes
+        }, id);
         toast.success("Ação salva offline. Será sincronizada na próxima conexão.");
         return;
       }
       try {
-        if (isPaid) {
+        if (!willBePaid) {
           try {
             const existing = await pb.collection('terreno_installments').getFirstListItem(`month_id="${id}" || original_id="${id}" || id="${id}"`);
             if (existing) {
@@ -1645,25 +1788,108 @@ function App() {
           }
         } else {
           try {
-            await pb.collection('terreno_installments').getFirstListItem(`month_id="${id}" || original_id="${id}"`);
-          } catch (e: any) {
-            if (e.status === 404) {
-              await pb.collection('terreno_installments').create({
-                month_id: id,
-                original_id: id
-              });
+            const existing = await pb.collection('terreno_installments').getFirstListItem(`month_id="${id}" || original_id="${id}"`).catch(() => null);
+            const payload: any = {
+              month_id: id,
+              original_id: id
+            };
+            if (paymentData?.receipt_url) payload.receipt_url = paymentData.receipt_url;
+            if (paymentData?.receipt_name) payload.receipt_name = paymentData.receipt_name;
+            if (paymentData?.notes) payload.notes = paymentData.notes;
+
+            if (existing) {
+              try {
+                await pb.collection('terreno_installments').update(existing.id, payload);
+              } catch {
+                await pb.collection('terreno_installments').update(existing.id, { month_id: id });
+              }
+            } else {
+              try {
+                await pb.collection('terreno_installments').create(payload);
+              } catch {
+                await pb.collection('terreno_installments').create({
+                  month_id: id,
+                  original_id: id
+                });
+              }
             }
+          } catch (e: any) {
+            console.error("Erro ao sincronizar parcela no PocketBase:", e);
           }
         }
       } catch (error: any) {
         console.error("Error syncing terreno payment: ", error);
         if (error.isAbort || !navigator.onLine || (error.message && (error.message.includes('FetchError') || error.message.includes('Failed to fetch') || error.message.includes('network')))) {
-           saveToOfflineQueue('TOGGLE_TERRENO', { action: isPaid ? 'delete' : 'insert' }, id);
+           saveToOfflineQueue('TOGGLE_TERRENO', { 
+             action: willBePaid ? 'insert' : 'delete',
+             receipt_url: paymentData?.receipt_url,
+             receipt_name: paymentData?.receipt_name,
+             notes: paymentData?.notes
+           }, id);
            toast.success("Ação salva offline (Erro de rede).");
         } else {
            setState(prev => ({ ...prev, terrenoPaidInstallments: currentPaid }));
            toast.error(`Erro ao sincronizar pagamento: ${error.message || "Tabela 'terreno_installments' não encontrada."}`);
         }
+      }
+    }
+  };
+
+  const handleRemoveTerrenoPayment = async (id: string) => {
+    return handleToggleTerrenoPayment(id);
+  };
+
+  const handleUpdateTerrenoReceipt = async (
+    id: string, 
+    receiptData: { receipt_url?: string; receipt_name?: string; notes?: string }
+  ) => {
+    saveStoredTerrenoReceipt(id, {
+      month_id: id,
+      receipt_url: receiptData.receipt_url,
+      receipt_name: receiptData.receipt_name,
+      notes: receiptData.notes
+    });
+
+    setState(prev => {
+      const updatedDetails = { ...(prev.terrenoInstallmentsData || {}) };
+      updatedDetails[id] = {
+        ...(updatedDetails[id] || { id, month_id: id }),
+        receipt_url: receiptData.receipt_url,
+        receipt_name: receiptData.receipt_name,
+        notes: receiptData.notes
+      };
+      return {
+        ...prev,
+        terrenoInstallmentsData: updatedDetails
+      };
+    });
+
+    auditLogger.log({
+      action: 'UPDATE',
+      actionLabel: 'Comprovante Terreno Atualizado',
+      entity: 'Terreno',
+      recordId: id,
+      auditId: formatAuditId('TER', id),
+      user: getUserName(),
+      details: `Comprovante da parcela ${id} atualizado${receiptData.receipt_url ? ' com novo anexo' : ' (anexo removido)'}`
+    });
+
+    if (ENABLE_POCKETBASE_SYNC && !isOffline) {
+      try {
+        const existing = await pb.collection('terreno_installments').getFirstListItem(`month_id="${id}" || original_id="${id}"`).catch(() => null);
+        if (existing) {
+          try {
+            await pb.collection('terreno_installments').update(existing.id, {
+              receipt_url: receiptData.receipt_url || '',
+              receipt_name: receiptData.receipt_name || '',
+              notes: receiptData.notes || ''
+            });
+          } catch {
+            // Ignora se coluna não existir no PB
+          }
+        }
+      } catch (err) {
+        console.warn("Aviso ao sincronizar comprovante:", err);
       }
     }
   };
@@ -1683,7 +1909,7 @@ function App() {
     return <div className="min-h-screen flex items-center justify-center bg-[#020817] text-slate-200 font-sans"><div className="w-8 h-8 border-4 border-blue-500/30 border-t-blue-500 rounded-full animate-spin"></div></div>;
   }
 
-  if (!user && !isSharedMode) {
+  if (!user && !isSharedMode && !isVendorMode) {
     return <Login />;
   }
 
@@ -1701,7 +1927,9 @@ function App() {
           </div>
           <div className="text-center">
             <h1 className="font-bold text-white tracking-wide text-lg">Casa do Lago</h1>
-            <p className="text-xs text-slate-400 font-medium">Gestão Financeira</p>
+            <p className="text-xs text-slate-400 font-medium">
+              {isVendorMode ? 'Portal do Vendedor' : 'Gestão Financeira'}
+            </p>
           </div>
           
           <div className="flex items-center gap-2 mt-2 px-3 py-1 bg-slate-800/40 rounded-full border border-slate-700/50 text-[11px] font-medium text-slate-300">
@@ -1726,62 +1954,99 @@ function App() {
           </div>
         </div>
 
-        <NavItem icon={<LayoutDashboard size={20} />} label="Início" active={activeTab === 'inicio'} onClick={() => setActiveTab('inicio')} />
-        <NavItem icon={<ArrowDownCircle size={20} />} label="Saídas" active={activeTab === 'saidas'} onClick={() => setActiveTab('saidas')} />
-        <NavItem icon={<MapIcon size={20} />} label="Terreno" active={activeTab === 'terreno'} onClick={() => setActiveTab('terreno')} />
-        
-        {!isSharedMode ? (
+        {isVendorMode ? (
           <>
-            <NavItem icon={<ArrowUpCircle size={20} />} label="Entradas" active={activeTab === 'entradas'} onClick={() => setActiveTab('entradas')} />
-            <NavItem icon={<FileText size={20} />} label="Relatórios" active={activeTab === 'relatorios'} onClick={() => setActiveTab('relatorios')} />
-            <NavItem icon={<Settings size={20} />} label="Config" active={activeTab === 'config'} onClick={() => setActiveTab('config')} />
-            <div className="hidden md:block w-full">
-              <NavItem icon={<Info size={20} />} label="Sobre" active={activeTab === 'sobre'} onClick={() => setActiveTab('sobre')} />
-            </div>
+            <NavItem 
+              icon={<MapIcon size={20} />} 
+              label="Terreno" 
+              active={true} 
+              onClick={() => setActiveTab('terreno')} 
+            />
             
-            {/* Botão Sair no Smartphone (Mobile Bottom Bar) */}
+            {/* Botão Sair no Smartphone para o vendedor */}
             <div className="md:hidden">
               <button 
                 type="button"
-                onClick={handleLogout}
-                className="flex flex-col items-center gap-1 px-2.5 py-1.5 rounded-xl transition-all duration-200 text-red-400 hover:text-red-300 hover:bg-red-500/10 cursor-pointer shrink-0"
-                title="Sair do painel administrativo"
+                onClick={() => window.location.href = '/'}
+                className="flex flex-col items-center gap-1 px-2.5 py-1.5 rounded-xl transition-all duration-200 text-slate-400 hover:text-white cursor-pointer shrink-0"
+                title="Sair do portal do vendedor"
               >
-                <LogOut size={20} className="text-red-400" />
-                <span className="text-[10px] font-bold text-red-400">Sair</span>
+                <LogOut size={20} className="text-slate-400" />
+                <span className="text-[10px] font-bold text-slate-400">Sair</span>
               </button>
             </div>
 
-            {/* Botão Sair no Desktop (Sidebar) */}
+            {/* Botão Sair no Desktop para o vendedor */}
             <div className="mt-auto hidden md:block w-full px-4 pb-4">
               <button 
-                onClick={handleLogout}
-                className="flex items-center gap-3 w-full px-4 py-3 text-sm font-medium text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-xl transition-all cursor-pointer"
+                onClick={() => window.location.href = '/'}
+                className="flex items-center gap-3 w-full px-4 py-3 text-sm font-medium text-slate-400 hover:text-white hover:bg-slate-800/60 rounded-xl transition-all cursor-pointer"
               >
                 <LogOut size={20} />
-                Sair
+                Sair do Portal
               </button>
             </div>
           </>
         ) : (
           <>
-            <div className="md:hidden">
-              <NavItem 
-                icon={<LogOut size={20} className="text-red-400" />} 
-                label="Sair" 
-                active={false} 
-                onClick={() => window.location.href = '/'} 
-              />
-            </div>
-            <div className="mt-auto hidden md:block w-full px-4 pb-4">
-              <button 
-                onClick={() => window.location.href = '/'}
-                className="flex items-center gap-3 w-full px-4 py-3 text-sm font-medium text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-xl transition-all cursor-pointer"
-              >
-                <LogOut size={20} />
-                Voltar para Login
-              </button>
-            </div>
+            <NavItem icon={<LayoutDashboard size={20} />} label="Início" active={activeTab === 'inicio'} onClick={() => setActiveTab('inicio')} />
+            <NavItem icon={<ArrowDownCircle size={20} />} label="Saídas" active={activeTab === 'saidas'} onClick={() => setActiveTab('saidas')} />
+            <NavItem icon={<MapIcon size={20} />} label="Terreno" active={activeTab === 'terreno'} onClick={() => setActiveTab('terreno')} />
+            
+            {!isSharedMode ? (
+              <>
+                <NavItem icon={<ArrowUpCircle size={20} />} label="Entradas" active={activeTab === 'entradas'} onClick={() => setActiveTab('entradas')} />
+                <NavItem icon={<FileText size={20} />} label="Relatórios" active={activeTab === 'relatorios'} onClick={() => setActiveTab('relatorios')} />
+                <NavItem icon={<Settings size={20} />} label="Config" active={activeTab === 'config'} onClick={() => setActiveTab('config')} />
+                <div className="hidden md:block w-full">
+                  <NavItem icon={<Info size={20} />} label="Sobre" active={activeTab === 'sobre'} onClick={() => setActiveTab('sobre')} />
+                </div>
+                
+                {/* Botão Sair no Smartphone (Mobile Bottom Bar) */}
+                <div className="md:hidden">
+                  <button 
+                    type="button"
+                    onClick={handleLogout}
+                    className="flex flex-col items-center gap-1 px-2.5 py-1.5 rounded-xl transition-all duration-200 text-red-400 hover:text-red-300 hover:bg-red-500/10 cursor-pointer shrink-0"
+                    title="Sair do painel administrativo"
+                  >
+                    <LogOut size={20} className="text-red-400" />
+                    <span className="text-[10px] font-bold text-red-400">Sair</span>
+                  </button>
+                </div>
+
+                {/* Botão Sair no Desktop (Sidebar) */}
+                <div className="mt-auto hidden md:block w-full px-4 pb-4">
+                  <button 
+                    onClick={handleLogout}
+                    className="flex items-center gap-3 w-full px-4 py-3 text-sm font-medium text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-xl transition-all cursor-pointer"
+                  >
+                    <LogOut size={20} />
+                    Sair
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="md:hidden">
+                  <NavItem 
+                    icon={<LogOut size={20} className="text-red-400" />} 
+                    label="Sair" 
+                    active={false} 
+                    onClick={() => window.location.href = '/'} 
+                  />
+                </div>
+                <div className="mt-auto hidden md:block w-full px-4 pb-4">
+                  <button 
+                    onClick={() => window.location.href = '/'}
+                    className="flex items-center gap-3 w-full px-4 py-3 text-sm font-medium text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-xl transition-all cursor-pointer"
+                  >
+                    <LogOut size={20} />
+                    Voltar para Login
+                  </button>
+                </div>
+              </>
+            )}
           </>
         )}
       </nav>
@@ -1797,13 +2062,23 @@ function App() {
             <div className="flex items-center gap-1.5 mt-0.5">
               <div className={cn("w-1.5 h-1.5 rounded-full", syncStatus === 'syncing' ? "bg-emerald-400 animate-pulse" : syncStatus === 'local' ? "bg-amber-400" : "bg-red-400")} />
               <span className="text-[10px] text-slate-400 font-medium">
-                {syncStatus === 'syncing' ? 'Sincronizado' : syncStatus === 'local' ? 'Modo Local' : 'Erro de Conexão'}
+                {isVendorMode ? 'Portal do Vendedor' : syncStatus === 'syncing' ? 'Sincronizado' : syncStatus === 'local' ? 'Modo Local' : 'Erro de Conexão'}
               </span>
             </div>
           </div>
         </div>
 
-        {!isSharedMode ? (
+        {isVendorMode ? (
+          <button
+            type="button"
+            onClick={() => window.location.href = '/'}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-800/80 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded-xl text-xs font-bold transition-all cursor-pointer"
+            title="Sair do Portal do Vendedor"
+          >
+            <LogOut size={13} />
+            <span>Sair</span>
+          </button>
+        ) : !isSharedMode ? (
           <button
             type="button"
             onClick={handleLogout}
@@ -1859,7 +2134,7 @@ function App() {
             isSharedMode={isSharedMode}
           />
         )}
-        {activeTab === 'entradas' && !isSharedMode && (
+        {activeTab === 'entradas' && !isSharedMode && !isVendorMode && (
           <IncomesTab 
             incomes={state.incomes} 
             payments={state.payments}
@@ -1875,7 +2150,7 @@ function App() {
             formatCurrency={formatCurrency} 
           />
         )}
-        {activeTab === 'relatorios' && !isSharedMode && (
+        {activeTab === 'relatorios' && !isSharedMode && !isVendorMode && (
           <ReportsTab 
             expenses={state.expenses} 
             categories={categories}
@@ -1887,11 +2162,15 @@ function App() {
         {activeTab === 'terreno' && (
           <TerrenoTab 
             paidInstallments={state.terrenoPaidInstallments}
+            installmentsData={state.terrenoInstallmentsData}
             onTogglePayment={handleToggleTerrenoPayment}
+            onRemovePayment={handleRemoveTerrenoPayment}
+            onUpdateReceipt={handleUpdateTerrenoReceipt}
             formatCurrency={formatCurrency} 
+            isVendorMode={isVendorMode}
           />
         )}
-        {activeTab === 'config' && (
+        {activeTab === 'config' && !isSharedMode && !isVendorMode && (
           <ConfigTab 
             state={state} 
             categories={categories}

@@ -116,14 +116,33 @@ export function useOfflineSync(fetchAllData: () => Promise<void>) {
               }
             } else {
               try {
-                await pb.collection('terreno_installments').getFirstListItem(`month_id="${op.id}" || original_id="${op.id}"`);
-              } catch (e: any) {
-                if (e.status === 404) {
-                  await pb.collection('terreno_installments').create({
-                    month_id: op.id,
-                    original_id: op.id
-                  });
+                const existing = await pb.collection('terreno_installments').getFirstListItem(`month_id="${op.id}" || original_id="${op.id}"`).catch(() => null);
+                const payloadData: any = {
+                  month_id: op.id,
+                  original_id: op.id
+                };
+                if (op.payload?.receipt_url) payloadData.receipt_url = op.payload.receipt_url;
+                if (op.payload?.receipt_name) payloadData.receipt_name = op.payload.receipt_name;
+                if (op.payload?.notes) payloadData.notes = op.payload.notes;
+
+                if (existing) {
+                  try {
+                    await pb.collection('terreno_installments').update(existing.id, payloadData);
+                  } catch {
+                    await pb.collection('terreno_installments').update(existing.id, { month_id: op.id });
+                  }
+                } else {
+                  try {
+                    await pb.collection('terreno_installments').create(payloadData);
+                  } catch {
+                    await pb.collection('terreno_installments').create({
+                      month_id: op.id,
+                      original_id: op.id
+                    });
+                  }
                 }
+              } catch (e: any) {
+                console.error("Erro ao sincronizar parcela terreno:", e);
               }
             }
           }

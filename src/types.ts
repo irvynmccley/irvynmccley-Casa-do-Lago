@@ -39,9 +39,20 @@ export interface Payment {
   auditId?: string;
 }
 
+export interface TerrenoInstallmentRecord {
+  id: string;
+  month_id: string; // e.g., '2024-02'
+  original_id?: string;
+  receipt_url?: string;
+  receipt_name?: string;
+  notes?: string;
+  paid_at?: string;
+}
+
 export interface AppState {
   expenses: Expense[];
   incomes: Income[];
   payments: Payment[];
   terrenoPaidInstallments: string[];
+  terrenoInstallmentsData?: Record<string, TerrenoInstallmentRecord>;
 }
