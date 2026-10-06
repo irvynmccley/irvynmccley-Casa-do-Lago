@@ -17,7 +17,8 @@ import {
   getStoredTerrenoReceipts, 
   saveStoredTerrenoReceipt, 
   deleteStoredTerrenoReceipt, 
-  ensureTerrenoInstallmentsSchema 
+  ensureTerrenoInstallmentsSchema,
+  getTerrenoReceiptFileUrl
 } from './utils/terrenoStorage';
 import { NavItem } from './components/ui/NavItem';
 import { Dashboard } from './components/Dashboard';
@@ -341,11 +342,13 @@ function App() {
         const mId = t.month_id || t.original_id || t.id;
         if (mId) {
           terrenoIds.push(mId);
+          const computedUrl = t.receipt_file ? getTerrenoReceiptFileUrl(t) : (t.receipt_url || terrenoDetailsMap[mId]?.receipt_url);
           terrenoDetailsMap[mId] = {
             id: t.id,
             month_id: mId,
             original_id: t.original_id,
-            receipt_url: t.receipt_url || terrenoDetailsMap[mId]?.receipt_url,
+            receipt_file: t.receipt_file,
+            receipt_url: computedUrl,
             receipt_name: t.receipt_name || terrenoDetailsMap[mId]?.receipt_name,
             notes: t.notes || terrenoDetailsMap[mId]?.notes,
             paid_at: t.paid_at || t.created || terrenoDetailsMap[mId]?.paid_at
@@ -508,11 +511,13 @@ function App() {
           const ids = records.map((t: any) => {
             const mId = t.month_id || t.original_id || t.id;
             if (mId) {
+              const computedUrl = t.receipt_file ? getTerrenoReceiptFileUrl(t) : (t.receipt_url || terrenoDetailsMap[mId]?.receipt_url);
               terrenoDetailsMap[mId] = {
                 id: t.id,
                 month_id: mId,
                 original_id: t.original_id,
-                receipt_url: t.receipt_url || terrenoDetailsMap[mId]?.receipt_url,
+                receipt_file: t.receipt_file,
+                receipt_url: computedUrl,
                 receipt_name: t.receipt_name || terrenoDetailsMap[mId]?.receipt_name,
                 notes: t.notes || terrenoDetailsMap[mId]?.notes,
                 paid_at: t.paid_at || t.created || terrenoDetailsMap[mId]?.paid_at
@@ -1690,7 +1695,7 @@ function App() {
 
   const handleToggleTerrenoPayment = async (
     id: string, 
-    paymentData?: { receipt_url?: string; receipt_name?: string; notes?: string }
+    paymentData?: { file?: File; receipt_url?: string; receipt_name?: string; notes?: string }
   ) => {
     recentActionIdsRef.current.add(id);
     setTimeout(() => recentActionIdsRef.current.delete(id), 10000);
@@ -1751,7 +1756,7 @@ function App() {
       toast.success(`Parcela ${id} desmarcada com sucesso.`);
     } else {
       const obsInfo = paymentData?.notes ? ` (${paymentData.notes})` : '';
-      const receiptInfo = paymentData?.receipt_url ? ' [Com comprovante anexado]' : '';
+      const receiptInfo = (paymentData?.file || paymentData?.receipt_url) ? ' [Com comprovante anexado]' : '';
       auditLogger.log({
         action: 'PAYMENT',
         actionLabel: 'Parcela Terreno Paga',
@@ -1789,29 +1794,80 @@ function App() {
         } else {
           try {
             const existing = await pb.collection('terreno_installments').getFirstListItem(`month_id="${id}" || original_id="${id}"`).catch(() => null);
-            const payload: any = {
-              month_id: id,
-              original_id: id
-            };
-            if (paymentData?.receipt_url) payload.receipt_url = paymentData.receipt_url;
-            if (paymentData?.receipt_name) payload.receipt_name = paymentData.receipt_name;
-            if (paymentData?.notes) payload.notes = paymentData.notes;
+            let savedRecord: any = null;
 
-            if (existing) {
-              try {
-                await pb.collection('terreno_installments').update(existing.id, payload);
-              } catch {
-                await pb.collection('terreno_installments').update(existing.id, { month_id: id });
+            if (paymentData?.file) {
+              const formData = new FormData();
+              formData.append('month_id', id);
+              formData.append('original_id', id);
+              formData.append('receipt_file', paymentData.file);
+              if (paymentData.receipt_name) formData.append('receipt_name', paymentData.receipt_name);
+              if (paymentData.notes) formData.append('notes', paymentData.notes);
+
+              if (existing) {
+                savedRecord = await pb.collection('terreno_installments').update(existing.id, formData);
+              } else {
+                savedRecord = await pb.collection('terreno_installments').create(formData);
               }
             } else {
-              try {
-                await pb.collection('terreno_installments').create(payload);
-              } catch {
-                await pb.collection('terreno_installments').create({
-                  month_id: id,
-                  original_id: id
-                });
+              const payload: any = {
+                month_id: id,
+                original_id: id
+              };
+              if (paymentData?.receipt_name) payload.receipt_name = paymentData.receipt_name;
+              if (paymentData?.notes) payload.notes = paymentData.notes;
+              if (paymentData?.receipt_url && !paymentData.receipt_url.startsWith('data:')) {
+                payload.receipt_url = paymentData.receipt_url;
               }
+
+              if (existing) {
+                try {
+                  savedRecord = await pb.collection('terreno_installments').update(existing.id, payload);
+                } catch {
+                  savedRecord = await pb.collection('terreno_installments').update(existing.id, { month_id: id });
+                }
+              } else {
+                try {
+                  savedRecord = await pb.collection('terreno_installments').create(payload);
+                } catch {
+                  savedRecord = await pb.collection('terreno_installments').create({
+                    month_id: id,
+                    original_id: id
+                  });
+                }
+              }
+            }
+
+            if (savedRecord) {
+              const finalUrl = savedRecord.receipt_file 
+                ? getTerrenoReceiptFileUrl(savedRecord) 
+                : (paymentData?.receipt_url || '');
+
+              saveStoredTerrenoReceipt(id, {
+                id: savedRecord.id,
+                month_id: id,
+                receipt_file: savedRecord.receipt_file,
+                receipt_url: finalUrl,
+                receipt_name: savedRecord.receipt_name || paymentData?.receipt_name,
+                notes: savedRecord.notes || paymentData?.notes,
+                paid_at: savedRecord.created || new Date().toISOString()
+              });
+
+              setState(prev => ({
+                ...prev,
+                terrenoInstallmentsData: {
+                  ...(prev.terrenoInstallmentsData || {}),
+                  [id]: {
+                    id: savedRecord.id,
+                    month_id: id,
+                    receipt_file: savedRecord.receipt_file,
+                    receipt_url: finalUrl,
+                    receipt_name: savedRecord.receipt_name || paymentData?.receipt_name,
+                    notes: savedRecord.notes || paymentData?.notes,
+                    paid_at: savedRecord.created || new Date().toISOString()
+                  }
+                }
+              }));
             }
           } catch (e: any) {
             console.error("Erro ao sincronizar parcela no PocketBase:", e);
@@ -1841,7 +1897,7 @@ function App() {
 
   const handleUpdateTerrenoReceipt = async (
     id: string, 
-    receiptData: { receipt_url?: string; receipt_name?: string; notes?: string }
+    receiptData: { file?: File; receipt_url?: string; receipt_name?: string; notes?: string }
   ) => {
     saveStoredTerrenoReceipt(id, {
       month_id: id,
@@ -1871,21 +1927,65 @@ function App() {
       recordId: id,
       auditId: formatAuditId('TER', id),
       user: getUserName(),
-      details: `Comprovante da parcela ${id} atualizado${receiptData.receipt_url ? ' com novo anexo' : ' (anexo removido)'}`
+      details: `Comprovante da parcela ${id} atualizado${(receiptData.file || receiptData.receipt_url) ? ' com novo anexo' : ' (anexo removido)'}`
     });
 
     if (ENABLE_POCKETBASE_SYNC && !isOffline) {
       try {
         const existing = await pb.collection('terreno_installments').getFirstListItem(`month_id="${id}" || original_id="${id}"`).catch(() => null);
         if (existing) {
-          try {
-            await pb.collection('terreno_installments').update(existing.id, {
-              receipt_url: receiptData.receipt_url || '',
-              receipt_name: receiptData.receipt_name || '',
+          let updatedRecord: any = null;
+          if (receiptData.file) {
+            const formData = new FormData();
+            formData.append('receipt_file', receiptData.file);
+            if (receiptData.receipt_name) formData.append('receipt_name', receiptData.receipt_name);
+            if (receiptData.notes !== undefined) formData.append('notes', receiptData.notes);
+            updatedRecord = await pb.collection('terreno_installments').update(existing.id, formData);
+          } else if (receiptData.receipt_url === '') {
+            updatedRecord = await pb.collection('terreno_installments').update(existing.id, {
+              receipt_file: null,
+              receipt_url: '',
+              receipt_name: '',
               notes: receiptData.notes || ''
             });
-          } catch {
-            // Ignora se coluna não existir no PB
+          } else {
+            const payload: any = {
+              receipt_name: receiptData.receipt_name || '',
+              notes: receiptData.notes || ''
+            };
+            if (receiptData.receipt_url && !receiptData.receipt_url.startsWith('data:')) {
+              payload.receipt_url = receiptData.receipt_url;
+            }
+            try {
+              updatedRecord = await pb.collection('terreno_installments').update(existing.id, payload);
+            } catch {
+              // Ignora erro se coluna não existir
+            }
+          }
+
+          if (updatedRecord) {
+            const finalUrl = updatedRecord.receipt_file ? getTerrenoReceiptFileUrl(updatedRecord) : (receiptData.receipt_url || '');
+            saveStoredTerrenoReceipt(id, {
+              id: updatedRecord.id,
+              month_id: id,
+              receipt_file: updatedRecord.receipt_file,
+              receipt_url: finalUrl,
+              receipt_name: updatedRecord.receipt_name,
+              notes: updatedRecord.notes
+            });
+            setState(prev => ({
+              ...prev,
+              terrenoInstallmentsData: {
+                ...(prev.terrenoInstallmentsData || {}),
+                [id]: {
+                  ...(prev.terrenoInstallmentsData?.[id] || { id: updatedRecord.id, month_id: id }),
+                  receipt_file: updatedRecord.receipt_file,
+                  receipt_url: finalUrl,
+                  receipt_name: updatedRecord.receipt_name,
+                  notes: updatedRecord.notes
+                }
+              }
+            }));
           }
         }
       } catch (err) {

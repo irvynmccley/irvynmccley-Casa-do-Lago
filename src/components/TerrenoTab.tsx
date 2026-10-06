@@ -28,9 +28,9 @@ interface TerrenoInstallment {
 interface TerrenoTabProps {
   paidInstallments: string[];
   installmentsData?: Record<string, TerrenoInstallmentRecord>;
-  onTogglePayment: (id: string, paymentData?: { receipt_url?: string; receipt_name?: string; notes?: string }) => void;
+  onTogglePayment: (id: string, paymentData?: { file?: File; receipt_url?: string; receipt_name?: string; notes?: string }) => void;
   onRemovePayment?: (id: string) => void;
-  onUpdateReceipt?: (id: string, receiptData: { receipt_url?: string; receipt_name?: string; notes?: string }) => void;
+  onUpdateReceipt?: (id: string, receiptData: { file?: File; receipt_url?: string; receipt_name?: string; notes?: string }) => void;
   formatCurrency: (v: number) => string;
   isVendorMode?: boolean;
 }
@@ -109,7 +109,7 @@ export function TerrenoTab({
     setReceiptModalOpen(true);
   };
 
-  const handleConfirmPaymentWithData = (data: { receipt_url?: string; receipt_name?: string; notes?: string }) => {
+  const handleConfirmPaymentWithData = (data: { file?: File; receipt_url?: string; receipt_name?: string; notes?: string }) => {
     if (!activeInstallment) return;
     onTogglePayment(activeInstallment.id, data);
   };
@@ -119,7 +119,7 @@ export function TerrenoTab({
     onTogglePayment(activeInstallment.id);
   };
 
-  const handleSaveUpdateReceipt = (data: { receipt_url?: string; receipt_name?: string; notes?: string }) => {
+  const handleSaveUpdateReceipt = (data: { file?: File; receipt_url?: string; receipt_name?: string; notes?: string }) => {
     if (!activeInstallment) return;
     if (onUpdateReceipt) {
       onUpdateReceipt(activeInstallment.id, data);
@@ -148,7 +148,7 @@ export function TerrenoTab({
     const year = installment.date.getFullYear();
     const auditId = formatAuditId('TER', installment.id);
     const receiptData = installmentsData[installment.id];
-    const hasReceipt = Boolean(receiptData?.receipt_url);
+    const hasReceipt = Boolean(receiptData?.receipt_url || receiptData?.receipt_file);
     
     return (
       <div 
@@ -198,10 +198,10 @@ export function TerrenoTab({
                 <button
                   type="button"
                   onClick={() => handleOpenReceiptModal(installment, 'view')}
-                  className="flex items-center gap-1 sm:gap-1.5 text-blue-400 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20 px-2 sm:px-2.5 py-1 rounded-lg transition-all text-[11px] sm:text-xs font-semibold active:scale-95 shadow-sm"
-                  title="Visualizar e compartilhar comprovante"
+                  className="flex items-center gap-1 sm:gap-1.5 text-blue-300 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 px-2 sm:px-2.5 py-1 rounded-lg transition-all text-[11px] sm:text-xs font-bold active:scale-95 shadow-sm"
+                  title="Visualizar e baixar comprovante"
                 >
-                  <Eye size={13} className="shrink-0" />
+                  <FileText size={13} className="shrink-0 text-emerald-400" />
                   <span className="hidden xs:inline">Comprovante</span>
                   <span className="xs:hidden">Ver</span>
                 </button>
@@ -224,10 +224,15 @@ export function TerrenoTab({
           {/* Status / Botão de Ação */}
           {isPaid ? (
             isVendorMode ? (
-              <span className="flex items-center gap-1 sm:gap-1.5 text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-lg border border-emerald-500/20 text-[11px] sm:text-xs font-semibold">
+              <button
+                type="button"
+                onClick={() => hasReceipt ? handleOpenReceiptModal(installment, 'view') : null}
+                className={`flex items-center gap-1 sm:gap-1.5 text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-lg border border-emerald-500/20 text-[11px] sm:text-xs font-semibold ${hasReceipt ? 'hover:bg-emerald-500/20 active:scale-95 cursor-pointer' : ''}`}
+                title={hasReceipt ? "Visualizar comprovante desta parcela" : "Parcela liquidada"}
+              >
                 <CheckCircle size={14} className="shrink-0" />
                 <span>Pago</span>
-              </span>
+              </button>
             ) : (
               <button
                 type="button"

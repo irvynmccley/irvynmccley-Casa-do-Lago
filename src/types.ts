@@ -44,6 +44,7 @@ export interface TerrenoInstallmentRecord {
   month_id: string; // e.g., '2024-02'
   original_id?: string;
   receipt_url?: string;
+  receipt_file?: string;
   receipt_name?: string;
   notes?: string;
   paid_at?: string;

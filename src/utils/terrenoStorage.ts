@@ -187,20 +187,65 @@ export async function ensureTerrenoInstallmentsSchema(): Promise<void> {
 }
 
 /**
- * Dispara o download de um comprovante no navegador do usuário
+ * Retorna a URL pública completa para visualização/download do comprovante no PocketBase
  */
-export function downloadReceiptFile(dataUrl: string, filename: string): void {
+export function getTerrenoReceiptFileUrl(record: { id?: string; receipt_file?: string; receipt_url?: string }): string {
+  if (record.receipt_file && record.id) {
+    const pbUrl = (import.meta.env.VITE_POCKETBASE_URL || 'https://pb-casadolago.janagencia.com.br').replace(/\/$/, '');
+    return `${pbUrl}/api/files/terreno_installments/${record.id}/${record.receipt_file}`;
+  }
+  return record.receipt_url || '';
+}
+
+/**
+ * Dispara o download de um comprovante diretamente no dispositivo (smartphone ou PC)
+ */
+export async function downloadReceiptFile(url: string, filename: string): Promise<void> {
   try {
+    if (!url) return;
+    const cleanFilename = filename || 'comprovante-terreno.jpg';
+
+    // Se for URL remota (PocketBase), busca como blob para forçar download local no smartphone/desktop
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      try {
+        const downloadUrl = url.includes('?') ? `${url}&download=1` : `${url}?download=1`;
+        const res = await fetch(downloadUrl);
+        if (res.ok) {
+          const blob = await res.blob();
+          const blobUrl = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = blobUrl;
+          link.download = cleanFilename;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          setTimeout(() => URL.revokeObjectURL(blobUrl), 2000);
+          return;
+        }
+      } catch (fetchErr) {
+        console.warn('Fallback para download direto via link:', fetchErr);
+      }
+    }
+
+    // Se for Data URL ou fallback direto
     const link = document.createElement('a');
-    link.href = dataUrl;
-    link.download = filename || 'comprovante-terreno.jpg';
+    link.href = url;
+    link.download = cleanFilename;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   } catch (err) {
     console.error('Erro ao baixar comprovante:', err);
-    window.open(dataUrl, '_blank');
+    window.open(url, '_blank');
   }
+}
+
+/**
+ * Abre o comprovante na visualização nativa do dispositivo (nova aba) com suporte a zoom nativo e tela cheia
+ */
+export function openReceiptInDevice(url: string): void {
+  if (!url) return;
+  window.open(url, '_blank', 'noopener,noreferrer');
 }
 
 /**

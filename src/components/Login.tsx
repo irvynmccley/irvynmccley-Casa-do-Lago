@@ -147,21 +147,13 @@ export function Login() {
             </button>
           </form>
 
-          <div className="mt-8 pt-6 border-t border-slate-800/60 space-y-2.5">
-            <a 
-              href="?vendedor=true" 
-              className="w-full flex justify-center items-center gap-2 py-3 px-4 border border-blue-500/30 rounded-2xl text-xs sm:text-sm font-medium text-blue-300 bg-blue-500/10 hover:bg-blue-500/20 hover:text-white hover:border-blue-500/50 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all group"
-            >
-              <span>Acesso Vendedor: <strong className="font-semibold text-white">Acompanhar Terreno e Comprovantes</strong></span>
-              <ArrowRight size={15} className="opacity-70 group-hover:opacity-100 group-hover:translate-x-1 transition-all" />
-            </a>
-
+          <div className="mt-8 pt-6 border-t border-slate-800/60">
             <a 
               href="?shared=true" 
-              className="w-full flex justify-center items-center gap-2 py-3 px-4 border border-slate-700/50 rounded-2xl text-xs sm:text-sm font-medium text-slate-400 bg-slate-900/30 hover:bg-slate-800 hover:text-slate-200 hover:border-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-700 transition-all group"
+              className="w-full flex justify-center items-center gap-2 py-3.5 px-4 border border-slate-700/50 rounded-2xl text-sm font-medium text-slate-400 bg-slate-900/30 hover:bg-slate-800 hover:text-slate-200 hover:border-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-700 transition-all group"
             >
               <span>Acesso Restrito: <strong className="font-semibold text-slate-300 group-hover:text-white">Mestre de Obras</strong></span>
-              <ArrowRight size={15} className="opacity-50 group-hover:opacity-100 group-hover:translate-x-1 transition-all" />
+              <ArrowRight size={16} className="opacity-50 group-hover:opacity-100 group-hover:translate-x-1 transition-all" />
             </a>
           </div>
         </div>

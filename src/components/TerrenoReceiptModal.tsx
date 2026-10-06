@@ -18,7 +18,7 @@ import { toast } from 'sonner';
 import { 
   readFileAsDataUrl, 
   downloadReceiptFile, 
-  getReceiptWhatsAppShareText 
+  openReceiptInDevice 
 } from '../utils/terrenoStorage';
 import { copyAuditIdToClipboard } from '../utils/audit';
 
@@ -36,14 +36,15 @@ export interface TerrenoReceiptModalProps {
   };
   receiptData?: {
     receipt_url?: string;
+    receipt_file?: string;
     receipt_name?: string;
     notes?: string;
     paid_at?: string;
   };
   formatCurrency: (v: number) => string;
-  onConfirmPayment?: (data: { receipt_url?: string; receipt_name?: string; notes?: string }) => void;
+  onConfirmPayment?: (data: { file?: File; receipt_url?: string; receipt_name?: string; notes?: string }) => void;
   onConfirmWithoutReceipt?: () => void;
-  onUpdateReceipt?: (data: { receipt_url?: string; receipt_name?: string; notes?: string }) => void;
+  onUpdateReceipt?: (data: { file?: File; receipt_url?: string; receipt_name?: string; notes?: string }) => void;
   onRemoveReceipt?: () => void;
   onUnmarkPayment?: () => void;
   isVendorMode?: boolean;
@@ -64,18 +65,16 @@ export function TerrenoReceiptModal({
   isVendorMode = false
 }: TerrenoReceiptModalProps) {
   const [mode, setMode] = useState<'view' | 'pay' | 'attach'>(initialMode);
-  const [selectedFile, setSelectedFile] = useState<{ dataUrl: string; name: string; size: number } | null>(null);
+  const [selectedFile, setSelectedFile] = useState<{ dataUrl: string; name: string; size: number; file?: File } | null>(null);
   const [notes, setNotes] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
-  const [zoomImage, setZoomImage] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     setMode(initialMode);
     setSelectedFile(null);
     setNotes(receiptData?.notes || '');
-    setZoomImage(false);
   }, [initialMode, receiptData, isOpen]);
 
   if (!isOpen) return null;
@@ -91,7 +90,7 @@ export function TerrenoReceiptModal({
     try {
       setIsProcessing(true);
       const result = await readFileAsDataUrl(file);
-      setSelectedFile(result);
+      setSelectedFile({ ...result, file });
       toast.success(`Comprovante "${file.name}" carregado com sucesso!`);
     } catch (err: any) {
       console.error(err);
@@ -110,7 +109,7 @@ export function TerrenoReceiptModal({
     try {
       setIsProcessing(true);
       const result = await readFileAsDataUrl(file);
-      setSelectedFile(result);
+      setSelectedFile({ ...result, file });
       toast.success(`Comprovante "${file.name}" anexado!`);
     } catch (err: any) {
       console.error(err);
@@ -123,6 +122,7 @@ export function TerrenoReceiptModal({
   const handleSavePaymentWithReceipt = () => {
     if (onConfirmPayment) {
       onConfirmPayment({
+        file: selectedFile?.file,
         receipt_url: selectedFile?.dataUrl || undefined,
         receipt_name: selectedFile?.name || undefined,
         notes: notes.trim() || undefined
@@ -134,6 +134,7 @@ export function TerrenoReceiptModal({
   const handleSaveUpdateReceipt = () => {
     if (onUpdateReceipt && selectedFile) {
       onUpdateReceipt({
+        file: selectedFile.file,
         receipt_url: selectedFile.dataUrl,
         receipt_name: selectedFile.name,
         notes: notes.trim() || undefined
@@ -149,26 +150,9 @@ export function TerrenoReceiptModal({
     toast.success('Download do comprovante iniciado!');
   };
 
-  const handleShareWhatsApp = () => {
-    const title = `${installment.monthName} ${installment.year}`;
-    const value = formatCurrency(installment.value);
-    const shareText = getReceiptWhatsAppShareText(title, value, installment.auditId, receiptData?.notes || notes);
-    window.open(`https://api.whatsapp.com/send?text=${shareText}`, '_blank');
-  };
-
-  const handleCopyLink = async () => {
-    try {
-      if (currentReceiptUrl && !currentReceiptUrl.startsWith('data:')) {
-        await navigator.clipboard.writeText(currentReceiptUrl);
-        toast.success('Link do comprovante copiado!');
-      } else {
-        const text = `Comprovante Parcela Terreno (${installment.monthName} ${installment.year}) - Valor: ${formatCurrency(installment.value)} - ID: ${installment.auditId}`;
-        await navigator.clipboard.writeText(text);
-        toast.success('Informações do comprovante copiadas!');
-      }
-    } catch {
-      toast.error('Não foi possível copiar link.');
-    }
+  const handleOpenInDevice = () => {
+    if (!currentReceiptUrl) return;
+    openReceiptInDevice(currentReceiptUrl);
   };
 
   return (
@@ -248,54 +232,50 @@ export function TerrenoReceiptModal({
           {mode === 'view' && (
             <div className="space-y-4">
               {currentReceiptUrl ? (
-                <div className="space-y-3">
-                  <div className="relative rounded-2xl border border-slate-800 bg-slate-950/70 overflow-hidden group">
-                    {isPdf ? (
-                      <div className="p-8 flex flex-col items-center justify-center text-center space-y-3 min-h-[220px]">
-                        <div className="w-16 h-16 rounded-2xl bg-red-500/10 border border-red-500/20 flex items-center justify-center text-red-400 shadow-lg shadow-red-500/5">
-                          <FileText size={32} />
+                <div className="space-y-4">
+                  {/* Card do Comprovante - Otimizado para visualização em alta resolução no smartphone */}
+                  <div 
+                    onClick={handleOpenInDevice}
+                    className="relative rounded-2xl border border-slate-800 bg-slate-950/70 p-3.5 sm:p-4 cursor-pointer hover:border-blue-500/50 transition-all group overflow-hidden"
+                  >
+                    <div className="flex items-center justify-between gap-3 mb-3">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 shrink-0">
+                          {isPdf ? <FileText size={20} /> : <ImageIcon size={20} />}
                         </div>
-                        <div>
-                          <p className="font-semibold text-slate-200 text-sm">{currentReceiptName}</p>
-                          <p className="text-xs text-slate-500 mt-0.5">Documento em formato PDF</p>
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold text-slate-200 truncate">{currentReceiptName}</p>
+                          <p className="text-xs text-slate-400 flex items-center gap-1.5">
+                            <span className="inline-block w-2 h-2 rounded-full bg-emerald-400"></span>
+                            {isPdf ? 'Documento PDF' : 'Comprovante em Alta Resolução'}
+                          </p>
                         </div>
-                        <button
-                          type="button"
-                          onClick={handleDownload}
-                          className="mt-2 inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-300 border border-red-500/20 text-xs font-semibold transition-all active:scale-95"
-                        >
-                          <Download size={14} />
-                          Baixar / Abrir Documento PDF
-                        </button>
+                      </div>
+                      <span className="text-[11px] font-medium text-blue-400 bg-blue-500/10 border border-blue-500/20 px-2.5 py-1 rounded-lg group-hover:bg-blue-500/20 transition-colors shrink-0 flex items-center gap-1">
+                        <ExternalLink size={12} />
+                        Abrir
+                      </span>
+                    </div>
+
+                    {/* Preview interativo com aviso de toque para tela cheia */}
+                    {!isPdf ? (
+                      <div className="relative rounded-xl overflow-hidden bg-black/60 border border-slate-800/80 max-h-56 sm:max-h-64 flex items-center justify-center">
+                        <img
+                          src={currentReceiptUrl}
+                          alt="Prévia do Comprovante"
+                          className="w-full object-contain max-h-56 sm:max-h-64 opacity-90 group-hover:opacity-100 transition-opacity"
+                        />
+                        <div className="absolute inset-0 bg-gradient-to-t from-slate-950/90 via-transparent to-transparent flex items-end justify-center p-3">
+                          <span className="text-xs text-slate-200 font-medium flex items-center gap-1.5 bg-slate-900/90 px-3 py-1.5 rounded-xl border border-slate-700/80 backdrop-blur-md shadow-lg">
+                            <Eye size={13} className="text-blue-400" />
+                            Toque para abrir com zoom nativo
+                          </span>
+                        </div>
                       </div>
                     ) : (
-                      <div className="relative">
-                        <div className="max-h-[380px] flex items-center justify-center bg-black/40 overflow-hidden">
-                          <img
-                            src={currentReceiptUrl}
-                            alt="Comprovante de pagamento"
-                            className={`w-full object-contain max-h-[380px] rounded-xl transition-all duration-300 ${zoomImage ? 'scale-125 cursor-zoom-out' : 'cursor-zoom-in'}`}
-                            onClick={() => setZoomImage(!zoomImage)}
-                          />
-                        </div>
-                        <div className="absolute top-3 right-3 flex items-center gap-1.5 opacity-90 group-hover:opacity-100 transition-opacity">
-                          <button
-                            type="button"
-                            onClick={() => setZoomImage(!zoomImage)}
-                            className="p-2 rounded-xl bg-slate-900/80 backdrop-blur-md text-white hover:bg-slate-800 border border-slate-700 shadow-md text-xs"
-                            title="Alternar zoom"
-                          >
-                            <Eye size={14} />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={handleDownload}
-                            className="p-2 rounded-xl bg-slate-900/80 backdrop-blur-md text-white hover:bg-slate-800 border border-slate-700 shadow-md text-xs"
-                            title="Baixar comprovante"
-                          >
-                            <Download size={14} />
-                          </button>
-                        </div>
+                      <div className="py-6 flex flex-col items-center justify-center text-center space-y-2 bg-slate-900/40 rounded-xl border border-slate-800/60">
+                        <FileText size={36} className="text-red-400" />
+                        <p className="text-xs text-slate-400">Documento em formato PDF pronto para visualização e download</p>
                       </div>
                     )}
                   </div>
@@ -316,33 +296,24 @@ export function TerrenoReceiptModal({
                     </div>
                   )}
 
-                  {/* Barra de Ações de Compartilhamento e Download */}
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 pt-2">
+                  {/* BOTÕES DE AÇÃO: SOMENTE BAIXAR E VISUALIZAR NO DISPOSITIVO (PRIORIZANDO SMARTPHONE) */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
                     <button
                       type="button"
                       onClick={handleDownload}
-                      className="flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700/80 text-white text-xs font-semibold transition-all shadow-sm active:scale-95"
+                      className="w-full flex items-center justify-center gap-2.5 py-3.5 px-4 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-sm font-bold shadow-lg shadow-emerald-500/20 active:scale-95 transition-all"
                     >
-                      <Download size={15} className="text-emerald-400" />
-                      <span>Baixar Arquivo</span>
+                      <Download size={18} />
+                      <span>Baixar no Dispositivo</span>
                     </button>
 
                     <button
                       type="button"
-                      onClick={handleShareWhatsApp}
-                      className="flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/30 text-emerald-300 text-xs font-semibold transition-all active:scale-95"
+                      onClick={handleOpenInDevice}
+                      className="w-full flex items-center justify-center gap-2.5 py-3.5 px-4 rounded-2xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-100 text-sm font-bold shadow-sm active:scale-95 transition-all"
                     >
-                      <Share2 size={15} className="text-emerald-400" />
-                      <span>Enviar no WhatsApp</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={handleCopyLink}
-                      className="col-span-2 sm:col-span-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700/80 text-slate-300 text-xs font-semibold transition-all active:scale-95"
-                    >
-                      <Copy size={15} className="text-blue-400" />
-                      <span>Copiar Dados</span>
+                      <ExternalLink size={18} className="text-blue-400" />
+                      <span>Visualizar no Dispositivo</span>
                     </button>
                   </div>
 
