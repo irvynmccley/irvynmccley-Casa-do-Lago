@@ -13,7 +13,7 @@ import {
   LabelList,
   Legend
 } from 'recharts';
-import { Banknote, TrendingUp, CreditCard, BarChart as BarChartIcon, User, RefreshCw, Wallet, ChevronDown, ChevronUp, Download, RotateCcw, CheckCircle2, Clock, ShieldCheck, Check, Pencil, Building2 } from 'lucide-react';
+import { Banknote, TrendingUp, CreditCard, BarChart as BarChartIcon, User, RefreshCw, Wallet, ChevronDown, ChevronUp, Download, RotateCcw, CheckCircle2, Clock, ShieldCheck, Check, Pencil, Building2, Heart, Trophy, Sparkles, ArrowUpRight, FileText } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { Card } from './ui/Card';
@@ -57,6 +57,7 @@ interface DashboardProps {
   isSharedMode?: boolean;
   financialSettings?: FinancialSettings;
   onUpdateCondominio?: (newVal: number) => Promise<void> | void;
+  onNavigateToReports?: (subTab?: 'geral' | 'extrato' | 'doacoes' | 'apagar' | 'faturas') => void;
 }
 
 const TriangleBar = (props: any) => {
@@ -90,7 +91,8 @@ export function Dashboard({
   onToggleRefund,
   isSharedMode = false,
   financialSettings,
-  onUpdateCondominio
+  onUpdateCondominio,
+  onNavigateToReports
 }: DashboardProps) {
   const [isRefreshing, setIsRefreshing] = React.useState(false);
   const [expandedInvoice, setExpandedInvoice] = React.useState<string | null>(null);
@@ -148,6 +150,35 @@ export function Dashboard({
       return { partner: p, count: pPending.length, total };
     });
   }, [pendingReimbursements]);
+
+  // Cálculos do Gráfico de Doações por Pessoa
+  const donationExpenses = React.useMemo(() => {
+    return (expenses || []).filter(e => e.paymentMethod === 'doação');
+  }, [expenses]);
+
+  const totalCalculatedDonations = React.useMemo(() => {
+    return donationExpenses.reduce((sum, e) => sum + (Number(e.value) || 0), 0);
+  }, [donationExpenses]);
+
+  const donationsByPerson = React.useMemo(() => {
+    const totals: Record<string, number> = {};
+    donationExpenses.forEach(e => {
+      const donor = e.donor?.trim() || 'Não Identificado';
+      totals[donor] = (totals[donor] || 0) + (Number(e.value) || 0);
+    });
+
+    return Object.entries(totals)
+      .map(([name, value]) => {
+        const percentage = totalCalculatedDonations > 0 ? (value / totalCalculatedDonations) * 100 : 0;
+        return {
+          name,
+          value,
+          percentage
+        };
+      })
+      .filter(item => item.value > 0)
+      .sort((a, b) => b.value - a.value);
+  }, [donationExpenses, totalCalculatedDonations]);
 
   const filteredReimbursements = React.useMemo(() => {
     let list = allReimbursements;
@@ -335,11 +366,11 @@ export function Dashboard({
 
         <Card className="bg-slate-900/60 backdrop-blur-xl border border-purple-500/20 ring-1 ring-white/5 shadow-xl p-4 sm:p-6 flex flex-col justify-between h-full hover:shadow-purple-500/10 hover:border-purple-500/40 transition-all relative overflow-hidden group">
           <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
-             <User size={80} />
+             <Heart size={80} />
           </div>
           <div className="flex items-center gap-3 mb-4 relative z-10">
             <div className="p-2 bg-purple-500/10 rounded-xl ring-1 ring-purple-500/20">
-              <User size={18} className="text-purple-400" />
+              <Heart size={18} className="text-purple-400 fill-purple-400/20" />
             </div>
             <span className="text-xs sm:text-sm font-bold uppercase tracking-wider text-slate-300">Total Doações</span>
           </div>
@@ -599,6 +630,116 @@ export function Dashboard({
             </div>
           </Card>
         )}
+
+        {/* ======================================================== */}
+        {/* CARD COM GRÁFICO: DOAÇÕES POR PESSOA                     */}
+        {/* ======================================================== */}
+        <Card className="bg-slate-900/60 backdrop-blur-xl border border-purple-500/20 ring-1 ring-white/5 shadow-xl p-4 sm:p-8 flex flex-col hover:shadow-purple-500/10 transition-all">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-4 mb-6">
+            <h3 className="text-base sm:text-lg font-bold flex items-center gap-3 text-white">
+              <div className="p-2 bg-purple-500/10 rounded-xl ring-1 ring-purple-500/20">
+                <Heart size={20} className="text-purple-400 fill-purple-400/20" />
+              </div>
+              Doações por Pessoa
+            </h3>
+            <div className="text-xs font-mono font-bold text-purple-300 bg-purple-500/10 px-3 py-1.5 rounded-full ring-1 ring-purple-500/20 self-start sm:self-auto">
+              Total Doado: {formatCurrency(totalCalculatedDonations)}
+            </div>
+          </div>
+
+          {donationsByPerson.length > 0 ? (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-center flex-grow">
+              {/* Gráfico Donut de Doações */}
+              <div className="h-[280px] w-full flex items-center justify-center">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={donationsByPerson}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={65}
+                      outerRadius={100}
+                      paddingAngle={4}
+                      dataKey="value"
+                    >
+                      {donationsByPerson.map((entry, index) => (
+                        <Cell 
+                          key={`cell-donor-${index}`} 
+                          fill={COLORS[index % COLORS.length]} 
+                          stroke="#0f172a"
+                          strokeWidth={2}
+                        />
+                      ))}
+                    </Pie>
+                    <Tooltip
+                      contentStyle={{ 
+                        backgroundColor: '#0f172a', 
+                        borderColor: '#334155', 
+                        borderRadius: '12px', 
+                        color: '#f1f5f9',
+                        boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.5)'
+                      }}
+                      formatter={(val: number, name: string, item: any) => [
+                        `${formatCurrency(val)} (${item?.payload?.percentage?.toFixed(1) ?? 0}%)`,
+                        name
+                      ]}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+
+              {/* Lista dos Valores Doados e Percentuais por Pessoa */}
+              <div className="space-y-3">
+                {donationsByPerson.map((d, index) => {
+                  const color = COLORS[index % COLORS.length];
+                  return (
+                    <div 
+                      key={d.name}
+                      className="p-3.5 rounded-2xl bg-slate-950/50 border border-slate-800/80 hover:bg-slate-800/40 hover:border-slate-700 transition-all space-y-2"
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <span 
+                            className="w-3.5 h-3.5 rounded-full shrink-0 shadow-sm" 
+                            style={{ backgroundColor: color }} 
+                          />
+                          <span className="text-sm font-bold text-white truncate">
+                            {d.name}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-3 shrink-0">
+                          <span className="text-sm sm:text-base font-mono font-bold text-slate-100">
+                            {formatCurrency(d.value)}
+                          </span>
+                          <span className="text-xs font-mono font-bold text-purple-300 bg-purple-500/15 border border-purple-500/30 px-2.5 py-0.5 rounded-full min-w-[55px] text-center">
+                            {d.percentage.toFixed(1)}%
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Barra de progresso visual */}
+                      <div className="w-full h-1.5 bg-slate-800/80 rounded-full overflow-hidden">
+                        <div 
+                          className="h-full rounded-full transition-all duration-500"
+                          style={{ 
+                            width: `${Math.min(100, Math.max(0, d.percentage))}%`,
+                            backgroundColor: color
+                          }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center py-12 text-slate-400 italic text-sm bg-slate-800/30 rounded-2xl border border-dashed border-slate-700">
+              <Heart size={28} className="text-slate-600 mb-2" />
+              <p className="font-medium">Nenhuma doação registrada até o momento.</p>
+              <p className="text-xs mt-1 text-slate-500">Lançamentos de doação aparecerão aqui.</p>
+            </div>
+          )}
+        </Card>
 
         {/* ======================================================== */}
         {/* PAINEL DE GESTÃO DE VALORES A RESTITUIR AOS SÓCIOS       */}

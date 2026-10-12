@@ -1,7 +1,7 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { Expense, Category, Person, PaymentMethod } from '../types';
+import { Expense, Category, Person, PaymentMethod, Donor } from '../types';
 import { Card } from './ui/Card';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -9,7 +9,8 @@ import {
   Search, ChevronDown, ChevronUp, Download, Landmark, FileText, 
   Users, CreditCard, RotateCcw, CheckCircle2, Clock, ShieldCheck, 
   Share2, Copy, FileSpreadsheet, ArrowUpDown, Filter, Sparkles, 
-  Check, Building2, Wallet, ArrowDownRight, ArrowUpRight
+  Check, Building2, Wallet, ArrowDownRight, ArrowUpRight,
+  Heart, Trophy, Gift, ArrowRight
 } from 'lucide-react';
 import { formatAuditId, copyAuditIdToClipboard } from '../utils/audit';
 import { toPng } from 'html-to-image';
@@ -23,6 +24,8 @@ function cn(...inputs: ClassValue[]) {
 
 const CATEGORIES: Category[] = ['Combustível', 'Documentação', 'Material', 'Mão de Obra', 'Monitoramento', 'Alimentação'];
 const PARTNERS: Person[] = ['Mccley', 'Jan', 'Saulo', 'Jorge'];
+
+export type ReportSubTab = 'geral' | 'extrato' | 'doacoes' | 'apagar' | 'faturas';
 
 interface ReportsTabProps {
   expenses: Expense[];
@@ -41,6 +44,7 @@ interface ReportsTabProps {
   formatCurrency: (v: number) => string;
   categories?: string[];
   financialSettings?: FinancialSettings;
+  initialSubTab?: ReportSubTab;
 }
 
 export function ReportsTab({ 
@@ -48,9 +52,16 @@ export function ReportsTab({
   categories = [], 
   allCardInstallments = [], 
   formatCurrency,
-  financialSettings
+  financialSettings,
+  initialSubTab
 }: ReportsTabProps) {
-  const [activeReportTab, setActiveReportTab] = useState<'geral' | 'extrato' | 'apagar' | 'faturas'>('geral');
+  const [activeReportTab, setActiveReportTab] = useState<ReportSubTab>(initialSubTab || 'geral');
+
+  useEffect(() => {
+    if (initialSubTab) {
+      setActiveReportTab(initialSubTab);
+    }
+  }, [initialSubTab]);
   
   const availableCategories = useMemo(() => {
     const list = categories && categories.length > 0 ? [...categories] : [...CATEGORIES];
@@ -73,6 +84,13 @@ export function ReportsTab({
   const [statementSortOrder, setStatementSortOrder] = useState<'desc' | 'asc'>('desc');
   const [statementSearch, setStatementSearch] = useState('');
   const [isExportingImage, setIsExportingImage] = useState(false);
+
+  // Filtros da aba Extrato de Doações (Auditoria de Aportes Voluntários)
+  const [statementDonor, setStatementDonor] = useState<string>('todos');
+  const [donorCategoryFilter, setDonorCategoryFilter] = useState<string>('all');
+  const [donorSearch, setDonorSearch] = useState<string>('');
+  const [donorSortOrder, setDonorSortOrder] = useState<'desc' | 'asc' | 'highest' | 'lowest'>('desc');
+  const [isExportingDonorImage, setIsExportingDonorImage] = useState<boolean>(false);
 
   // Faturas accordion
   const [expandedInvoice, setExpandedInvoice] = useState<string | null>(null);
@@ -246,6 +264,138 @@ export function ReportsTab({
   }, [allReimbursements, statementPartner, statementStatus, statementSearch, statementSortOrder]);
 
   // -------------------------------------------------------------
+  // ABA EXTRATO DE DOAÇÕES (AUDITORIA DE APORTES VOLUNTÁRIOS)
+  // -------------------------------------------------------------
+  const donationExpenses = useMemo(() => {
+    return expenses.filter(e => e.paymentMethod === 'doação');
+  }, [expenses]);
+
+  const totalDonationsAmount = useMemo(() => {
+    return donationExpenses.reduce((sum, e) => sum + (Number(e.value) || 0), 0);
+  }, [donationExpenses]);
+
+  const donorMetrics = useMemo(() => {
+    const KNOWN_DONORS: Donor[] = ['Jorge', 'Jane', 'Saulo', 'Mccley', 'Jan'];
+    const allNames = Array.from(new Set([
+      ...KNOWN_DONORS,
+      ...donationExpenses.map(e => e.donor?.trim()).filter(Boolean) as string[]
+    ]));
+
+    return allNames.map(dName => {
+      const items = donationExpenses.filter(e => (e.donor?.trim() || 'Não Identificado') === dName);
+      const total = items.reduce((sum, e) => sum + (Number(e.value) || 0), 0);
+      const count = items.length;
+      const percentage = totalDonationsAmount > 0 ? (total / totalDonationsAmount) * 100 : 0;
+      
+      const catCount: Record<string, number> = {};
+      items.forEach(e => {
+        catCount[e.category] = (catCount[e.category] || 0) + (Number(e.value) || 0);
+      });
+      const topCat = Object.entries(catCount).sort((a, b) => b[1] - a[1])[0]?.[0] || '-';
+      const highestItem = items.reduce((max, e) => Math.max(max, Number(e.value) || 0), 0);
+
+      return {
+        donor: dName,
+        total,
+        count,
+        percentage,
+        topCategory: topCat,
+        highestItem,
+        items
+      };
+    }).sort((a, b) => b.total - a.total);
+  }, [donationExpenses, totalDonationsAmount]);
+
+  const selectedDonorSummary = useMemo(() => {
+    if (statementDonor === 'todos') {
+      const topDonor = donorMetrics.find(m => m.total > 0)?.donor || '-';
+      return {
+        donor: 'Todos os Doadores (Consolidado)',
+        total: totalDonationsAmount,
+        count: donationExpenses.length,
+        average: donationExpenses.length > 0 ? totalDonationsAmount / donationExpenses.length : 0,
+        topDonor,
+        highestDonation: donationExpenses.reduce((max, e) => Math.max(max, Number(e.value) || 0), 0)
+      };
+    }
+
+    const found = donorMetrics.find(m => m.donor === statementDonor);
+    if (found) {
+      return {
+        donor: found.donor,
+        total: found.total,
+        count: found.count,
+        average: found.count > 0 ? found.total / found.count : 0,
+        topDonor: found.donor,
+        highestDonation: found.highestItem
+      };
+    }
+
+    return {
+      donor: statementDonor,
+      total: 0,
+      count: 0,
+      average: 0,
+      topDonor: '-',
+      highestDonation: 0
+    };
+  }, [statementDonor, donorMetrics, totalDonationsAmount, donationExpenses]);
+
+  const donationRows = useMemo(() => {
+    let list = donationExpenses;
+
+    if (statementDonor !== 'todos') {
+      list = list.filter(e => (e.donor?.trim() || 'Não Identificado') === statementDonor);
+    }
+
+    if (donorCategoryFilter !== 'all') {
+      list = list.filter(e => e.category === donorCategoryFilter);
+    }
+
+    if (donorSearch) {
+      const lower = donorSearch.toLowerCase();
+      list = list.filter(e => {
+        const auditId = formatAuditId('EXP', e.id).toLowerCase();
+        return (
+          auditId.includes(lower) ||
+          (e.local && e.local.toLowerCase().includes(lower)) ||
+          (e.observation && e.observation.toLowerCase().includes(lower)) ||
+          (e.category && e.category.toLowerCase().includes(lower)) ||
+          (e.donor && e.donor.toLowerCase().includes(lower))
+        );
+      });
+    }
+
+    const sorted = [...list].sort((a, b) => {
+      if (donorSortOrder === 'desc') {
+        return (b.date || '').localeCompare(a.date || '');
+      }
+      if (donorSortOrder === 'asc') {
+        return (a.date || '').localeCompare(b.date || '');
+      }
+      if (donorSortOrder === 'highest') {
+        return (Number(b.value) || 0) - (Number(a.value) || 0);
+      }
+      if (donorSortOrder === 'lowest') {
+        return (Number(a.value) || 0) - (Number(b.value) || 0);
+      }
+      return 0;
+    });
+
+    let runningTotal = 0;
+    return sorted.map(row => {
+      const val = Number(row.value) || 0;
+      runningTotal += val;
+      const itemPercentage = totalDonationsAmount > 0 ? (val / totalDonationsAmount) * 100 : 0;
+      return {
+        ...row,
+        runningTotal,
+        itemPercentage
+      };
+    });
+  }, [donationExpenses, statementDonor, donorCategoryFilter, donorSearch, donorSortOrder, totalDonationsAmount]);
+
+  // -------------------------------------------------------------
   // FUNÇÕES DE EXPORTAÇÃO
   // -------------------------------------------------------------
   const exportStatementToExcel = () => {
@@ -358,6 +508,133 @@ export function ReportsTab({
     }
   };
 
+  const exportDonationsToExcel = () => {
+    try {
+      const dataToExport = donationRows.map(row => {
+        const auditId = formatAuditId('EXP', row.id);
+        const donorName = row.donor?.trim() || 'Não Identificado';
+        return {
+          'Data': row.date ? row.date.split('-').reverse().join('/') : '',
+          'Código': auditId,
+          'Doador Titular': donorName,
+          'Histórico / Material / Local': row.local || '',
+          'Categoria': row.category || '',
+          'Forma de Pagamento': 'Doação (Sem rateio)',
+          'Valor (R$)': Number(row.value) || 0,
+          '% do Total': totalDonationsAmount > 0 ? `${((Number(row.value) || 0) / totalDonationsAmount * 100).toFixed(2)}%` : '0%',
+          'Observações': row.observation || ''
+        };
+      });
+
+      const summaryData = donorMetrics.map(m => ({
+        'Doador': m.donor,
+        'Total Doado (R$)': m.total,
+        'Qtd. de Contribuições': m.count,
+        '% do Total Geral': `${m.percentage.toFixed(2)}%`,
+        'Categoria Principal': m.topCategory,
+        'Maior Doação (R$)': m.highestItem
+      }));
+
+      const wb = XLSX.utils.book_new();
+      const wsDetails = XLSX.utils.json_to_sheet(dataToExport);
+      const wsSummary = XLSX.utils.json_to_sheet(summaryData);
+      
+      XLSX.utils.book_append_sheet(wb, wsDetails, 'Extrato de Doações');
+      XLSX.utils.book_append_sheet(wb, wsSummary, 'Resumo por Doador');
+
+      const donorTag = statementDonor === 'todos' ? 'Consolidado' : statementDonor;
+      const fileName = `Extrato_Doacoes_${donorTag}_${format(new Date(), 'yyyyMMdd_HHmm')}.xlsx`;
+      XLSX.writeFile(wb, fileName);
+
+      toast.success('Extrato de doações em Excel exportado com sucesso!');
+    } catch (err) {
+      console.error('Erro ao exportar doações:', err);
+      toast.error('Erro ao gerar planilha do extrato de doações.');
+    }
+  };
+
+  const copyDonationsToWhatsApp = () => {
+    try {
+      const dataEmissao = format(new Date(), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR });
+      const donorTitle = selectedDonorSummary.donor;
+
+      let text = `💜 *EXTRATO DE DOAÇÕES PARA AUDITORIA - CASA DO LAGO*\n`;
+      text += `━━━━━━━━━━━━━━━━━━━━━\n`;
+      text += `👤 *Titular:* ${donorTitle}\n`;
+      text += `📅 *Emissão:* ${dataEmissao}\n`;
+      text += `💎 *Total Geral em Doações:* ${formatCurrency(selectedDonorSummary.total)}\n`;
+      text += `📦 *Total de Contribuições:* ${selectedDonorSummary.count} itens\n`;
+      text += `⚖️ *Regra:* Gastos voluntários • Não geram débito de rateio entre sócios\n`;
+      text += `━━━━━━━━━━━━━━━━━━━━━\n\n`;
+
+      if (statementDonor === 'todos') {
+        text += `🏆 *RESUMO POR DOADOR:*\n`;
+        donorMetrics.filter(m => m.total > 0).forEach(m => {
+          text += `• *${m.donor}:* ${formatCurrency(m.total)} (${m.count} itens • ${m.percentage.toFixed(1)}%)\n`;
+        });
+        text += `\n`;
+      }
+
+      if (donationRows.length > 0) {
+        text += `📋 *ITENS AUDITADOS (${donationRows.length}):*\n`;
+        donationRows.forEach((r, idx) => {
+          const auditId = formatAuditId('EXP', r.id);
+          const dt = r.date ? r.date.split('-').reverse().join('/') : '-';
+          const dName = r.donor || 'Não Identificado';
+          text += `${idx + 1}. ${dt} | *${r.local}* (${r.category})\n`;
+          text += `   ↳ ${auditId} | *${formatCurrency(r.value)}* [Doador: ${dName}]\n`;
+          if (r.observation) text += `   ↳ _Obs: ${r.observation}_\n`;
+        });
+      } else {
+        text += `Nenhum lançamento encontrado para os filtros selecionados.\n`;
+      }
+
+      text += `\n_Relatório auditado pelo Sistema de Gestão Casa do Lago_`;
+
+      navigator.clipboard.writeText(text);
+      toast.success('Extrato de doações copiado para o WhatsApp com sucesso!');
+    } catch (err) {
+      console.error('Erro ao copiar extrato de doações:', err);
+      toast.error('Não foi possível copiar o extrato de doações.');
+    }
+  };
+
+  const exportDonationImage = async () => {
+    const element = document.getElementById('extrato-doacoes-view');
+    if (!element) return;
+
+    setIsExportingDonorImage(true);
+    try {
+      const dataUrl = await toPng(element, {
+        backgroundColor: '#020817',
+        style: {
+          padding: '24px',
+          borderRadius: '16px',
+        },
+        filter: (node) => {
+          if (node instanceof HTMLElement) {
+            if (node.classList?.contains('no-export')) {
+              return false;
+            }
+          }
+          return true;
+        }
+      });
+
+      const donorTag = statementDonor === 'todos' ? 'Consolidado' : statementDonor;
+      const link = document.createElement('a');
+      link.download = `Extrato_Doacoes_${donorTag}_${format(new Date(), 'yyyyMMdd')}.png`;
+      link.href = dataUrl;
+      link.click();
+      toast.success('Imagem do extrato de doações gerada com sucesso!');
+    } catch (err) {
+      console.error('Erro ao exportar imagem:', err);
+      toast.error('Não foi possível gerar imagem do extrato.');
+    } finally {
+      setIsExportingDonorImage(false);
+    }
+  };
+
   const exportGeneralToExcel = () => {
     try {
       const data = filteredExpenses.map(e => ({
@@ -449,6 +726,28 @@ export function ReportsTab({
                 activeReportTab === 'extrato' ? "bg-slate-950 text-amber-300" : "bg-amber-500/30 text-amber-300 border border-amber-500/40"
               )}>
                 {pendingRefundsCount}
+              </span>
+            )}
+          </button>
+
+          {/* NOVA ABA: EXTRATO DE DOAÇÕES (AUDITORIA DE APORTES VOLUNTÁRIOS) */}
+          <button
+            onClick={() => setActiveReportTab('doacoes')}
+            className={cn(
+              "px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer relative",
+              activeReportTab === 'doacoes' 
+                ? "bg-purple-600 text-white shadow-lg font-bold shadow-purple-600/30 ring-1 ring-purple-400/50" 
+                : "text-purple-400 hover:text-purple-300 hover:bg-purple-500/10"
+            )}
+          >
+            <Heart size={15} className={cn(activeReportTab === 'doacoes' ? "text-white fill-white" : "text-purple-400")} />
+            <span>Extrato de Doações</span>
+            {donationExpenses.length > 0 && (
+              <span className={cn(
+                "px-1.5 py-0.2 rounded-full text-[10px] font-bold",
+                activeReportTab === 'doacoes' ? "bg-purple-950 text-purple-200" : "bg-purple-500/30 text-purple-300 border border-purple-500/40"
+              )}>
+                {donationExpenses.length}
               </span>
             )}
           </button>
@@ -1123,6 +1422,456 @@ export function ReportsTab({
               </div>
               <div className="flex items-center gap-4">
                 <span>Saldo em Aberto Apurado: <strong className="text-amber-300 text-sm">{formatCurrency(selectedStatementSummary.totalPending)}</strong></span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* ABA 2.5: EXTRATO DE DOAÇÕES (AUDITORIA CONTÁBIL)        */}
+      {/* ======================================================== */}
+      {activeReportTab === 'doacoes' && (
+        <div className="space-y-6">
+          {/* Seletor de Contas de Doadores (Pills Estilo Contábil) */}
+          <div className="bg-slate-900/60 backdrop-blur-xl border border-purple-500/20 rounded-2xl p-4 sm:p-5 ring-1 ring-white/5 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <span className="text-xs font-bold uppercase tracking-wider text-purple-400 block flex items-center gap-1.5">
+                  <Heart size={14} className="fill-purple-400 text-purple-400" />
+                  Selecione o Doador Titular para Auditoria
+                </span>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Conferência detalhada item a item de doações voluntárias e materiais sem rateio
+                </p>
+              </div>
+
+              {/* Botões de Ação do Extrato */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  type="button"
+                  onClick={copyDonationsToWhatsApp}
+                  className="px-3 py-1.5 bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-300 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
+                  title="Copiar extrato formatado para colar no WhatsApp"
+                >
+                  <Share2 size={13} />
+                  <span>WhatsApp</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={exportDonationsToExcel}
+                  className="px-3 py-1.5 bg-blue-500/15 hover:bg-blue-500/25 border border-blue-500/30 text-blue-300 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
+                  title="Baixar planilha Excel do extrato"
+                >
+                  <FileSpreadsheet size={13} />
+                  <span>Excel</span>
+                </button>
+                <button
+                  type="button"
+                  disabled={isExportingDonorImage}
+                  onClick={exportDonationImage}
+                  className="px-3 py-1.5 bg-purple-500/15 hover:bg-purple-500/25 border border-purple-500/30 text-purple-300 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-sm disabled:opacity-50"
+                  title="Exportar imagem PNG do extrato"
+                >
+                  <Download size={13} />
+                  <span>{isExportingDonorImage ? 'Gerando...' : 'Imagem'}</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Contas dos Doadores (Pills Grandes) */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
+              <button
+                type="button"
+                onClick={() => setStatementDonor('todos')}
+                className={cn(
+                  "p-3 rounded-xl border text-left transition-all cursor-pointer",
+                  statementDonor === 'todos'
+                    ? "bg-purple-600 text-white border-purple-400 shadow-lg shadow-purple-600/30 font-bold ring-1 ring-purple-300/40"
+                    : "bg-slate-950/50 border-slate-800 text-slate-300 hover:bg-slate-800/50 hover:text-white"
+                )}
+              >
+                <div className="text-xs font-bold uppercase tracking-wider">
+                  Consolidado
+                </div>
+                <div className={cn(
+                  "text-sm sm:text-base font-mono font-bold mt-1",
+                  statementDonor === 'todos' ? "text-white" : "text-purple-300"
+                )}>
+                  {formatCurrency(totalDonationsAmount)}
+                </div>
+                <div className={cn(
+                  "text-[10px] mt-0.5",
+                  statementDonor === 'todos' ? "text-purple-200" : "text-slate-400"
+                )}>
+                  {donationExpenses.length} doações
+                </div>
+              </button>
+
+              {donorMetrics.map(m => {
+                const isSelected = statementDonor === m.donor;
+                return (
+                  <button
+                    key={m.donor}
+                    type="button"
+                    onClick={() => setStatementDonor(m.donor)}
+                    className={cn(
+                      "p-3 rounded-xl border text-left transition-all cursor-pointer",
+                      isSelected
+                        ? "bg-purple-600 text-white border-purple-400 shadow-lg shadow-purple-600/30 font-bold ring-1 ring-purple-300/40"
+                        : "bg-slate-950/50 border-slate-800 text-slate-300 hover:bg-slate-800/50 hover:text-white"
+                    )}
+                  >
+                    <div className="text-xs font-bold uppercase tracking-wider flex items-center justify-between">
+                      <span>{m.donor}</span>
+                      {m.count > 0 && (
+                        <span className={cn(
+                          "w-2 h-2 rounded-full",
+                          isSelected ? "bg-white" : "bg-purple-400 animate-pulse"
+                        )} />
+                      )}
+                    </div>
+                    <div className={cn(
+                      "text-sm sm:text-base font-mono font-bold mt-1",
+                      isSelected ? "text-white" : m.total > 0 ? "text-purple-300" : "text-slate-500"
+                    )}>
+                      {formatCurrency(m.total)}
+                    </div>
+                    <div className={cn(
+                      "text-[10px] mt-0.5",
+                      isSelected ? "text-purple-200" : "text-slate-400"
+                    )}>
+                      {m.total > 0 ? `${m.count} nota(s) • ${m.percentage.toFixed(0)}%` : 'Sem doações'}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* ======================================================== */}
+          {/* CARTÃO DO EXTRATO CONTÁBIL DE DOAÇÕES                     */}
+          {/* ======================================================== */}
+          <div id="extrato-doacoes-view" className="bg-slate-900/80 backdrop-blur-2xl border border-purple-500/20 rounded-3xl p-5 sm:p-7 shadow-2xl ring-1 ring-white/10 space-y-6">
+            {/* Cabeçalho do Extrato Tipo Folha Oficial */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-slate-800">
+              <div className="flex items-center gap-3.5">
+                <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-purple-600 to-indigo-600 text-white flex items-center justify-center font-bold shadow-lg shadow-purple-600/30 shrink-0">
+                  <Heart size={24} className="fill-white/30" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-mono tracking-widest uppercase bg-purple-500/20 text-purple-300 border border-purple-500/30 px-2 py-0.5 rounded font-bold">
+                      Aportes Voluntários
+                    </span>
+                    <span className="text-xs text-slate-400 font-mono">
+                      Auditoria Nº {format(new Date(), 'yyyyMMdd')}
+                    </span>
+                  </div>
+                  <h3 className="text-xl sm:text-2xl font-bold text-white tracking-tight mt-1">
+                    Extrato Contábil de Doações
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    Titular: <span className="font-bold text-white">{selectedDonorSummary.donor}</span> • Emissão: {format(new Date(), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
+                  </p>
+                </div>
+              </div>
+
+              {/* Saldo Líquido do Extrato de Doações */}
+              <div className="bg-slate-950/80 border border-purple-500/30 rounded-2xl p-4 text-left sm:text-right shrink-0">
+                <span className="text-[10px] uppercase font-bold tracking-wider text-purple-300/80 block">
+                  Total Doado no Período
+                </span>
+                <span className="text-2xl sm:text-3xl font-mono font-bold block mt-0.5 text-purple-300">
+                  {formatCurrency(selectedDonorSummary.total)}
+                </span>
+                <div className="mt-1 flex items-center sm:justify-end gap-1.5">
+                  <span className="text-[10px] font-bold text-purple-400 bg-purple-500/10 border border-purple-500/20 px-2 py-0.5 rounded-full inline-flex items-center gap-1">
+                    <ShieldCheck size={10} /> Não Gera Rateio Entre Sócios
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Balancete Resumo das Doações (3 Cards) */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="bg-slate-950/60 border border-slate-800/80 rounded-xl p-3.5 flex items-center justify-between">
+                <div>
+                  <span className="text-[10px] font-bold uppercase text-slate-400 block tracking-wider">
+                    Total Registrado (R$)
+                  </span>
+                  <span className="text-base sm:text-lg font-mono font-bold text-white mt-0.5 block">
+                    {formatCurrency(selectedDonorSummary.total)}
+                  </span>
+                  <span className="text-[10px] text-slate-500">
+                    {selectedDonorSummary.count} lançamento(s) auditado(s)
+                  </span>
+                </div>
+                <div className="w-9 h-9 rounded-xl bg-purple-500/10 border border-purple-500/20 text-purple-400 flex items-center justify-center">
+                  <Heart size={18} className="fill-purple-400/20" />
+                </div>
+              </div>
+
+              <div className="bg-slate-950/60 border border-slate-800/80 rounded-xl p-3.5 flex items-center justify-between">
+                <div>
+                  <span className="text-[10px] font-bold uppercase text-slate-400 block tracking-wider">
+                    Ticket Médio por Nota
+                  </span>
+                  <span className="text-base sm:text-lg font-mono font-bold text-slate-200 mt-0.5 block">
+                    {formatCurrency(selectedDonorSummary.average)}
+                  </span>
+                  <span className="text-[10px] text-slate-500">
+                    Valor médio por contribuição
+                  </span>
+                </div>
+                <div className="w-9 h-9 rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-400 flex items-center justify-center">
+                  <FileText size={18} />
+                </div>
+              </div>
+
+              <div className="bg-slate-950/60 border border-slate-800/80 rounded-xl p-3.5 flex items-center justify-between">
+                <div>
+                  <span className="text-[10px] font-bold uppercase text-slate-400 block tracking-wider">
+                    Maior Aporte Único
+                  </span>
+                  <span className="text-base sm:text-lg font-mono font-bold text-emerald-400 mt-0.5 block">
+                    {formatCurrency(selectedDonorSummary.highestDonation)}
+                  </span>
+                  <span className="text-[10px] text-slate-500 truncate max-w-[150px] block" title={`Doador: ${selectedDonorSummary.topDonor}`}>
+                    Doador: {selectedDonorSummary.topDonor}
+                  </span>
+                </div>
+                <div className="w-9 h-9 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center">
+                  <Trophy size={18} />
+                </div>
+              </div>
+            </div>
+
+            {/* Barra de Filtros Internos do Extrato de Doações */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2 no-export">
+              {/* Categorias Pills com Contadores */}
+              <div className="flex items-center gap-1.5 overflow-x-auto custom-scrollbar pb-1 pt-1">
+                <button 
+                  onClick={() => setDonorCategoryFilter('all')}
+                  className={cn(
+                    "px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap cursor-pointer flex items-center gap-1.5 border",
+                    donorCategoryFilter === 'all' 
+                      ? "bg-purple-600/30 text-purple-200 border-purple-500/50 ring-1 ring-purple-500/30" 
+                      : "bg-slate-950/40 text-slate-400 border-slate-800 hover:bg-slate-800/60 hover:text-slate-200"
+                  )}
+                >
+                  <span>Todas</span>
+                  <span className="text-[10px] bg-slate-800 px-1.5 py-0.2 rounded-full font-mono">
+                    {donationExpenses.length}
+                  </span>
+                </button>
+                {availableCategories.map(cat => {
+                  const count = donationExpenses.filter(e => e.category === cat).length;
+                  if (count === 0) return null;
+                  return (
+                    <button 
+                      key={cat}
+                      onClick={() => setDonorCategoryFilter(cat)}
+                      className={cn(
+                        "px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap cursor-pointer flex items-center gap-1.5 border",
+                        donorCategoryFilter === cat 
+                          ? "bg-purple-600/30 text-purple-200 border-purple-500/50 ring-1 ring-purple-500/30" 
+                          : "bg-slate-950/40 text-slate-400 border-slate-800 hover:bg-slate-800/60 hover:text-slate-200"
+                      )}
+                    >
+                      <span>{cat}</span>
+                      <span className="text-[10px] bg-slate-800 px-1.5 py-0.2 rounded-full font-mono">
+                        {count}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Busca e Ordenação */}
+              <div className="flex items-center gap-2">
+                <div className="relative">
+                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="Filtrar por local, ID, doador..."
+                    value={donorSearch}
+                    onChange={(e) => setDonorSearch(e.target.value)}
+                    className="pl-8 pr-3 py-1.5 bg-slate-950/80 border border-slate-800 text-xs rounded-xl text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-purple-500/50 w-48 sm:w-60"
+                  />
+                </div>
+
+                <select
+                  value={donorSortOrder}
+                  onChange={(e) => setDonorSortOrder(e.target.value as any)}
+                  className="px-2.5 py-1.5 bg-slate-950/80 border border-slate-800 hover:bg-slate-800 text-slate-300 rounded-xl text-xs font-semibold transition-all cursor-pointer outline-none"
+                >
+                  <option value="desc" className="bg-slate-900">Mais recentes</option>
+                  <option value="asc" className="bg-slate-900">Mais antigos</option>
+                  <option value="highest" className="bg-slate-900">Maior valor</option>
+                  <option value="lowest" className="bg-slate-900">Menor valor</option>
+                </select>
+              </div>
+            </div>
+
+            {/* TABELA DE LANÇAMENTOS DO EXTRATO DE DOAÇÕES */}
+            <div className="overflow-x-auto custom-scrollbar border border-slate-800/80 rounded-2xl bg-slate-950/50">
+              <table className="w-full text-left border-collapse min-w-[760px]">
+                <thead>
+                  <tr className="bg-slate-950/90 border-b border-slate-800 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                    <th className="px-3.5 py-3">Data</th>
+                    <th className="px-3.5 py-3">Documento</th>
+                    <th className="px-3.5 py-3">Histórico / Estabelecimento</th>
+                    <th className="px-3.5 py-3">Doador Titular</th>
+                    <th className="px-3.5 py-3">Categoria</th>
+                    <th className="px-3.5 py-3 text-right">Valor R$</th>
+                    <th className="px-3.5 py-3 text-center">% Impacto</th>
+                    <th className="px-3.5 py-3 text-right">Total Acumulado</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800/60 font-mono text-xs">
+                  {donationRows.map((row) => {
+                    const auditId = formatAuditId('EXP', row.id);
+                    const donorName = row.donor?.trim() || 'Não Identificado';
+
+                    return (
+                      <tr 
+                        key={row.id} 
+                        className="transition-colors hover:bg-purple-600/5 bg-slate-950/20"
+                      >
+                        {/* Data */}
+                        <td className="px-3.5 py-3 whitespace-nowrap text-slate-300 font-sans text-xs">
+                          {row.date ? row.date.split('-').reverse().join('/') : '-'}
+                        </td>
+
+                        {/* ID Documento */}
+                        <td className="px-3.5 py-3 whitespace-nowrap">
+                          <button
+                            type="button"
+                            onClick={(e) => copyAuditIdToClipboard(auditId, e)}
+                            title="Clique para copiar código do documento"
+                            className="font-mono text-[9px] text-purple-400 bg-purple-500/10 hover:bg-purple-500/25 border border-purple-500/20 px-1.5 py-0.5 rounded transition-all active:scale-95 inline-flex items-center cursor-pointer"
+                          >
+                            {auditId}
+                          </button>
+                        </td>
+
+                        {/* Histórico / Fornecedor */}
+                        <td className="px-3.5 py-3 font-sans">
+                          <div className="font-semibold text-white text-xs sm:text-sm flex items-center gap-1.5">
+                            <span>{row.local}</span>
+                          </div>
+                          {row.observation && (
+                            <div className="text-[11px] text-slate-400 italic mt-0.5 font-sans" title={row.observation}>
+                              {row.observation}
+                            </div>
+                          )}
+                        </td>
+
+                        {/* Doador Titular */}
+                        <td className="px-3.5 py-3 whitespace-nowrap font-sans">
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                            {donorName}
+                          </span>
+                        </td>
+
+                        {/* Categoria */}
+                        <td className="px-3.5 py-3 whitespace-nowrap font-sans text-[11px] text-slate-300">
+                          <span className="text-[10px] font-normal text-slate-400 bg-slate-800/80 px-2 py-0.5 rounded border border-slate-700/60 font-mono">
+                            {row.category}
+                          </span>
+                        </td>
+
+                        {/* Valor R$ */}
+                        <td className="px-3.5 py-3 text-right whitespace-nowrap font-bold text-white text-xs sm:text-sm">
+                          {formatCurrency(row.value)}
+                        </td>
+
+                        {/* % Impacto sobre total doado */}
+                        <td className="px-3.5 py-3 text-center whitespace-nowrap font-sans">
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-800 text-purple-300 border border-slate-700">
+                            {row.itemPercentage.toFixed(1)}%
+                          </span>
+                        </td>
+
+                        {/* Saldo Acumulado Progressivo */}
+                        <td className="px-3.5 py-3 text-right whitespace-nowrap font-bold text-purple-300 font-mono text-xs sm:text-sm">
+                          {formatCurrency(row.runningTotal)}
+                        </td>
+                      </tr>
+                    );
+                  })}
+
+                  {donationRows.length === 0 && (
+                    <tr>
+                      <td colSpan={8} className="px-6 py-12 text-center text-slate-500 font-sans text-sm">
+                        Nenhum lançamento no extrato para o titular e filtros selecionados.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Encerramento Contábil do Extrato */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-3 border-t border-slate-800 text-xs text-slate-400 font-mono">
+              <div>
+                Total de transações listadas: <span className="font-bold text-white">{donationRows.length}</span>
+              </div>
+              <div className="flex items-center gap-4">
+                <span>Total Auditado Apurado: <strong className="text-purple-300 text-sm">{formatCurrency(selectedDonorSummary.total)}</strong></span>
+              </div>
+            </div>
+
+            {/* Demonstrativo Resumido por Doador (Ranking Contábil) */}
+            <div className="mt-6 pt-6 border-t border-slate-800/80 space-y-3">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
+                <Trophy size={14} className="text-amber-400" />
+                Quadro Resumo de Doações por Participante
+              </h4>
+              <div className="overflow-x-auto custom-scrollbar border border-slate-800 rounded-xl bg-slate-950/40">
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead>
+                    <tr className="bg-slate-950/80 border-b border-slate-800 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                      <th className="px-3.5 py-2.5">Participante</th>
+                      <th className="px-3.5 py-2.5 text-right">Total Contribuído</th>
+                      <th className="px-3.5 py-2.5 text-center">Qtd. Notas</th>
+                      <th className="px-3.5 py-2.5 text-center">% de Participação</th>
+                      <th className="px-3.5 py-2.5">Categoria Principal</th>
+                      <th className="px-3.5 py-2.5 text-right">Maior Doação</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/60 font-mono">
+                    {donorMetrics.map((m, idx) => (
+                      <tr key={m.donor} className="hover:bg-slate-800/30 transition-colors">
+                        <td className="px-3.5 py-2.5 font-sans font-semibold text-white flex items-center gap-2">
+                          <span className={cn(
+                            "w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold font-mono",
+                            idx === 0 && m.total > 0 ? "bg-amber-500 text-slate-950" : "bg-slate-800 text-slate-300"
+                          )}>
+                            {idx + 1}
+                          </span>
+                          <span>{m.donor}</span>
+                        </td>
+                        <td className="px-3.5 py-2.5 text-right font-bold text-purple-300">
+                          {formatCurrency(m.total)}
+                        </td>
+                        <td className="px-3.5 py-2.5 text-center text-slate-300 font-sans">
+                          {m.count}
+                        </td>
+                        <td className="px-3.5 py-2.5 text-center text-slate-300">
+                          {m.percentage.toFixed(1)}%
+                        </td>
+                        <td className="px-3.5 py-2.5 font-sans text-slate-400">
+                          {m.topCategory}
+                        </td>
+                        <td className="px-3.5 py-2.5 text-right text-slate-300">
+                          {formatCurrency(m.highestItem)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </div>
           </div>

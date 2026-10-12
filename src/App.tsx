@@ -135,6 +135,7 @@ const INITIAL_PAID_TERRENO = [
 
 function App() {
   const [activeTab, setActiveTab] = useState('inicio');
+  const [reportsSubTab, setReportsSubTab] = useState<'geral' | 'extrato' | 'doacoes' | 'apagar' | 'faturas'>('geral');
   const [isSharedMode, setIsSharedMode] = useState(false);
   const [isVendorMode, setIsVendorMode] = useState(false);
   const [user, setUser] = useState<any>(null);
@@ -2220,6 +2221,10 @@ function App() {
             isSharedMode={isSharedMode}
             financialSettings={financialSettings}
             onUpdateCondominio={handleUpdateCondominio}
+            onNavigateToReports={(subTab) => {
+              if (subTab) setReportsSubTab(subTab);
+              setActiveTab('relatorios');
+            }}
           />
         )}
         {activeTab === 'saidas' && (
@@ -2257,6 +2262,7 @@ function App() {
             allCardInstallments={allCardInstallmentsByMonth}
             formatCurrency={formatCurrency} 
             financialSettings={financialSettings}
+            initialSubTab={reportsSubTab}
           />
         )}
         {activeTab === 'terreno' && (
