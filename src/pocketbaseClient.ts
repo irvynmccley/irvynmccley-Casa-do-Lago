@@ -1,6 +1,6 @@
 import PocketBase from 'pocketbase';
 
-let pocketbaseUrl = import.meta.env.VITE_POCKETBASE_URL || 'https://pb-casadolago.janagencia.com.br';
+let pocketbaseUrl = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_POCKETBASE_URL) || 'https://pb-casadolago.janagencia.com.br';
 
 pocketbaseUrl = String(pocketbaseUrl).replace(/['"]/g, '').trim();
 

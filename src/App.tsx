@@ -43,7 +43,11 @@ import {
 import { 
   FinancialSettings, 
   getStoredFinancialSettings, 
-  saveStoredFinancialSettings 
+  saveStoredFinancialSettings,
+  applyCondominioAdjustment,
+  sanitizeFinancialSettings,
+  PB_SETTINGS_RECORD_KEY,
+  FINANCIAL_SETTINGS_STORAGE_KEY
 } from './utils/financialSettings';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -322,26 +326,42 @@ function App() {
         auditId: formatAuditId('PAG', p.id)
       }));
 
+      // Carregar configurações financeiras sincronizadas no PocketBase
+      const cfgRecord = (terrenoData as any[]).find(t => 
+        (t.month_id === PB_SETTINGS_RECORD_KEY || t.original_id === PB_SETTINGS_RECORD_KEY) && t.notes
+      );
+      if (cfgRecord && cfgRecord.notes) {
+        try {
+          const pbSettings = sanitizeFinancialSettings(JSON.parse(cfgRecord.notes));
+          setFinancialSettings(pbSettings);
+          localStorage.setItem(FINANCIAL_SETTINGS_STORAGE_KEY, JSON.stringify(pbSettings));
+        } catch (err) {
+          console.warn('[PocketBase] Falha ao ler configurações financeiras:', err);
+        }
+      }
+
       const localReceipts = getStoredTerrenoReceipts();
       const terrenoDetailsMap: Record<string, TerrenoInstallmentRecord> = {};
 
-      // Inserir comprovantes locais
+      // Inserir comprovantes locais (ignorando registros de configuração)
       Object.entries(localReceipts).forEach(([mId, data]) => {
-        terrenoDetailsMap[mId] = {
-          id: data.id || mId,
-          month_id: mId,
-          receipt_url: data.receipt_url,
-          receipt_name: data.receipt_name,
-          notes: data.notes,
-          paid_at: data.paid_at
-        };
+        if (!mId.startsWith('cfg_')) {
+          terrenoDetailsMap[mId] = {
+            id: data.id || mId,
+            month_id: mId,
+            receipt_url: data.receipt_url,
+            receipt_name: data.receipt_name,
+            notes: data.notes,
+            paid_at: data.paid_at
+          };
+        }
       });
 
-      // Mesclar registros do PocketBase
+      // Mesclar registros do PocketBase (filtrando registros de configuração)
       const terrenoIds: string[] = [];
       (terrenoData as any[]).forEach(t => {
         const mId = t.month_id || t.original_id || t.id;
-        if (mId) {
+        if (mId && !mId.startsWith('cfg_')) {
           terrenoIds.push(mId);
           const computedUrl = t.receipt_file ? getTerrenoReceiptFileUrl(t) : (t.receipt_url || terrenoDetailsMap[mId]?.receipt_url);
           terrenoDetailsMap[mId] = {
@@ -482,6 +502,22 @@ function App() {
         await pb.collection('terreno_installments').subscribe('*', async (e: any) => {
           if (!isMounted) return;
           const recId = e.record?.month_id || e.record?.original_id || e.record?.id;
+
+          // Se for atualização das configurações financeiras na nuvem
+          if (recId === PB_SETTINGS_RECORD_KEY) {
+            if (e.record?.notes) {
+              try {
+                const updatedSettings = sanitizeFinancialSettings(JSON.parse(e.record.notes));
+                setFinancialSettings(updatedSettings);
+                localStorage.setItem(FINANCIAL_SETTINGS_STORAGE_KEY, JSON.stringify(updatedSettings));
+                window.dispatchEvent(new CustomEvent('financialSettingsUpdated', { detail: updatedSettings }));
+              } catch (err) {
+                console.warn('Erro ao processar atualização realtime de configurações:', err);
+              }
+            }
+            return;
+          }
+
           if (recId && !recentActionIdsRef.current.has(recId)) {
             if (e.action === 'delete') {
               auditLogger.logDelete({
@@ -499,19 +535,25 @@ function App() {
           const terrenoDetailsMap: Record<string, TerrenoInstallmentRecord> = {};
 
           Object.entries(localReceipts).forEach(([mId, data]) => {
-            terrenoDetailsMap[mId] = {
-              id: data.id || mId,
-              month_id: mId,
-              receipt_url: data.receipt_url,
-              receipt_name: data.receipt_name,
-              notes: data.notes,
-              paid_at: data.paid_at
-            };
+            if (!mId.startsWith('cfg_')) {
+              terrenoDetailsMap[mId] = {
+                id: data.id || mId,
+                month_id: mId,
+                receipt_url: data.receipt_url,
+                receipt_name: data.receipt_name,
+                notes: data.notes,
+                paid_at: data.paid_at
+              };
+            }
           });
 
-          const ids = records.map((t: any) => {
-            const mId = t.month_id || t.original_id || t.id;
-            if (mId) {
+          const ids = records
+            .filter((t: any) => {
+              const mId = t.month_id || t.original_id || t.id;
+              return mId && !mId.startsWith('cfg_');
+            })
+            .map((t: any) => {
+              const mId = t.month_id || t.original_id || t.id;
               const computedUrl = t.receipt_file ? getTerrenoReceiptFileUrl(t) : (t.receipt_url || terrenoDetailsMap[mId]?.receipt_url);
               terrenoDetailsMap[mId] = {
                 id: t.id,
@@ -523,9 +565,9 @@ function App() {
                 notes: t.notes || terrenoDetailsMap[mId]?.notes,
                 paid_at: t.paid_at || t.created || terrenoDetailsMap[mId]?.paid_at
               };
-            }
-            return mId;
-          }).filter(Boolean);
+              return mId;
+            })
+            .filter(Boolean);
 
           setState(prev => ({ 
             ...prev, 
@@ -1999,11 +2041,17 @@ function App() {
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
   };
 
-  const handleUpdateCondominio = useCallback(async (newCost: number) => {
+  const handleUpdateCondominio = useCallback(async (newCost: number, effectiveFrom?: string) => {
     const userName = user?.email ? String(user.email).split('@')[0] : 'Administrador';
-    const updated = saveStoredFinancialSettings({ condominioCost: newCost }, userName);
-    setFinancialSettings(updated);
-    toast.success(`Valor do condomínio reajustado para ${formatCurrency(newCost)}! Todos os totais foram atualizados.`);
+    const effectiveMonth = effectiveFrom || format(new Date(), 'yyyy-MM');
+    try {
+      const updated = await applyCondominioAdjustment(newCost, effectiveMonth, userName);
+      setFinancialSettings(updated);
+      toast.success(`Condomínio reajustado para ${formatCurrency(newCost)} a partir de ${effectiveMonth}! Meses anteriores preservados.`);
+    } catch (err: any) {
+      console.error('Erro ao salvar reajuste do condomínio:', err);
+      toast.error(err?.message || 'Erro ao sincronizar reajuste do condomínio.');
+    }
   }, [user]);
 
   if (!isAuthReady) {

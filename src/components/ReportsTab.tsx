@@ -16,7 +16,12 @@ import { formatAuditId, copyAuditIdToClipboard } from '../utils/audit';
 import { toPng } from 'html-to-image';
 import * as XLSX from 'xlsx';
 import { toast } from 'sonner';
-import { FinancialSettings, getStoredFinancialSettings } from '../utils/financialSettings';
+import { 
+  FinancialSettings, 
+  getStoredFinancialSettings,
+  calculateFixedPerPersonForMonth,
+  getCondominioCostForMonth
+} from '../utils/financialSettings';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -1898,8 +1903,9 @@ export function ReportsTab({
           <div className="space-y-2.5">
             {allCardInstallments.length > 0 ? (
               allCardInstallments.map((item) => {
+                const fixedPerPersonThisMonth = calculateFixedPerPersonForMonth(item.month, currentSettings);
                 const cardPerPerson = item.total / PEOPLE_COUNT;
-                const totalPerPerson = cardPerPerson + FIXED_PER_PERSON;
+                const totalPerPerson = cardPerPerson + fixedPerPersonThisMonth;
                 
                 return (
                   <div key={item.month} className="flex flex-col sm:flex-row sm:items-center justify-between px-4 py-3 bg-slate-950/50 rounded-xl border border-slate-800/80 hover:bg-slate-800/40 transition-colors gap-3">
@@ -1910,7 +1916,7 @@ export function ReportsTab({
                       <div className="text-[11px] text-slate-400 font-semibold tracking-wide uppercase mt-1 flex items-center gap-2">
                         <span>Cartão: <span className="text-slate-200 font-mono">{formatCurrency(cardPerPerson)}</span></span>
                         <span className="text-slate-600">+</span>
-                        <span>Fixo Terreno/Cond.: <span className="text-slate-200 font-mono">{formatCurrency(FIXED_PER_PERSON)}</span></span>
+                        <span>Fixo Terreno/Cond.: <span className="text-slate-200 font-mono">{formatCurrency(fixedPerPersonThisMonth)}</span></span>
                       </div>
                     </div>
                     <div className="flex items-center gap-3">

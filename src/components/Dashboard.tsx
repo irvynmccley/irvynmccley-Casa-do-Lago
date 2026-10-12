@@ -21,7 +21,14 @@ import { toPng } from 'html-to-image';
 import { formatAuditId, copyAuditIdToClipboard } from '../utils/audit';
 import { Expense, Person } from '../types';
 import { EditCondominioModal } from './EditCondominioModal';
-import { FinancialSettings, getStoredFinancialSettings, saveStoredFinancialSettings } from '../utils/financialSettings';
+import { 
+  FinancialSettings, 
+  getStoredFinancialSettings, 
+  saveStoredFinancialSettings,
+  calculateFixedPerPersonForMonth,
+  getCondominioCostForMonth,
+  applyCondominioAdjustment 
+} from '../utils/financialSettings';
 import { toast } from 'sonner';
 
 const COLORS = [
@@ -56,7 +63,7 @@ interface DashboardProps {
   onToggleRefund?: (id: string) => Promise<void>;
   isSharedMode?: boolean;
   financialSettings?: FinancialSettings;
-  onUpdateCondominio?: (newVal: number) => Promise<void> | void;
+  onUpdateCondominio?: (newVal: number, effectiveFrom?: string) => Promise<void> | void;
   onNavigateToReports?: (subTab?: 'geral' | 'extrato' | 'doacoes' | 'apagar' | 'faturas') => void;
 }
 
@@ -249,9 +256,11 @@ export function Dashboard({
     }
   };
 
-  const activeCondominioCost = financialSettings?.condominioCost ?? localSettings.condominioCost;
-  const activeTerrenoCost = financialSettings?.terrenoCost ?? localSettings.terrenoCost;
-  const PEOPLE_COUNT = financialSettings?.peopleCount ?? localSettings.peopleCount ?? 4;
+  const currentMonthKey = React.useMemo(() => format(new Date(), 'yyyy-MM'), []);
+  const activeSettings = financialSettings ?? localSettings;
+  const activeCondominioCost = getCondominioCostForMonth(currentMonthKey, activeSettings);
+  const activeTerrenoCost = activeSettings.terrenoCost;
+  const PEOPLE_COUNT = activeSettings.peopleCount || 4;
   const FIXED_COSTS = activeTerrenoCost + activeCondominioCost;
   const FIXED_PER_PERSON = FIXED_COSTS / PEOPLE_COUNT;
 
@@ -270,13 +279,14 @@ export function Dashboard({
     if (!allCardInstallments) return null;
     const prevMonthKey = format(previousMonthInfo.date, 'yyyy-MM');
     const prevMonthData = allCardInstallments.find(item => item.month === prevMonthKey);
+    const prevFixedPerPerson = calculateFixedPerPersonForMonth(prevMonthKey, activeSettings);
     
     if (prevMonthData) {
       const cardPerPerson = prevMonthData.total / PEOPLE_COUNT;
-      return cardPerPerson + FIXED_PER_PERSON;
+      return cardPerPerson + prevFixedPerPerson;
     }
-    return FIXED_PER_PERSON;
-  }, [allCardInstallments, previousMonthInfo]);
+    return prevFixedPerPerson;
+  }, [allCardInstallments, previousMonthInfo, activeSettings, PEOPLE_COUNT]);
 
   const previousMonthInvoiceTotal = React.useMemo(() => {
     if (!allCardInstallments) return null;
@@ -404,8 +414,9 @@ export function Dashboard({
           <div className="space-y-2 sm:space-y-4 overflow-y-auto max-h-[350px] pr-2 custom-scrollbar flex-grow">
             {cardInstallments.length > 0 ? (
               cardInstallments.map((item) => {
+                const fixedPerPersonThisMonth = calculateFixedPerPersonForMonth(item.month, activeSettings);
                 const cardPerPerson = item.total / PEOPLE_COUNT;
-                const totalPerPerson = cardPerPerson + FIXED_PER_PERSON;
+                const totalPerPerson = cardPerPerson + fixedPerPersonThisMonth;
                 
                 return (
                   <div key={item.month} className="flex flex-col sm:flex-row sm:items-center justify-between p-3 sm:p-4 bg-slate-800/40 rounded-2xl border border-slate-700/50 hover:bg-slate-800/60 hover:border-slate-600 transition-colors">
@@ -414,7 +425,7 @@ export function Dashboard({
                         {format(new Date(parseInt(item.month.split('-')[0]), parseInt(item.month.split('-')[1]) - 1, 1), 'MMMM yyyy', { locale: ptBR })}
                       </div>
                       <div className="text-[10px] text-slate-400 font-semibold uppercase tracking-tighter mt-1">
-                        Cartão: {formatCurrency(cardPerPerson)} + Fixo: {formatCurrency(FIXED_PER_PERSON)}
+                        Cartão: {formatCurrency(cardPerPerson)} + Fixo: {formatCurrency(fixedPerPersonThisMonth)}
                       </div>
                     </div>
                     <div className="text-lg sm:text-xl font-mono font-bold text-white bg-slate-900/50 px-4 py-2 rounded-xl shadow-inner border border-slate-700/50">
@@ -1036,13 +1047,14 @@ export function Dashboard({
         currentValue={activeCondominioCost}
         terrenoValue={activeTerrenoCost}
         peopleCount={PEOPLE_COUNT}
-        onSave={async (newValue) => {
+        history={activeSettings.history}
+        onSave={async (newValue, effectiveFrom) => {
           if (onUpdateCondominio) {
-            await onUpdateCondominio(newValue);
+            await onUpdateCondominio(newValue, effectiveFrom);
           } else {
-            const updated = saveStoredFinancialSettings({ condominioCost: newValue });
+            const updated = await applyCondominioAdjustment(newValue, effectiveFrom);
             setLocalSettings(updated);
-            toast.success(`Condomínio reajustado para ${formatCurrency(newValue)}! Totais recalculados.`);
+            toast.success(`Condomínio reajustado para ${formatCurrency(newValue)} a partir de ${effectiveFrom}! Totais recalculados.`);
           }
         }}
         formatCurrency={formatCurrency}

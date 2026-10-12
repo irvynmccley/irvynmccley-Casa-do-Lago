@@ -31,7 +31,7 @@ import { formatAuditId, copyAuditIdToClipboard } from '../utils/audit';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { toast } from 'sonner';
-import { FinancialSettings, getStoredFinancialSettings, saveStoredFinancialSettings } from '../utils/financialSettings';
+import { FinancialSettings, getStoredFinancialSettings, saveStoredFinancialSettings, applyCondominioAdjustment } from '../utils/financialSettings';
 import { EditCondominioModal } from './EditCondominioModal';
 
 function cn(...inputs: ClassValue[]) {
@@ -46,7 +46,7 @@ interface ConfigTabProps {
   onDeleteCategory?: (name: string) => Promise<boolean>;
   formatCurrency?: (v: number) => string;
   financialSettings?: FinancialSettings;
-  onUpdateCondominio?: (newVal: number) => Promise<void> | void;
+  onUpdateCondominio?: (newVal: number, effectiveFrom?: string) => Promise<void> | void;
 }
 
 export function ConfigTab({ 
@@ -1397,13 +1397,44 @@ export function ConfigTab({
                   <strong className="text-slate-200">Fórmula de Fechamento:</strong> Todo mês, cada sócio é responsável pela sua cota do cartão de crédito (fatura com fechamento no dia 28) somada à cota de custos fixos: <code className="text-purple-300 font-mono">({fmt(localFinancialSettings.terrenoCost)} + {fmt(localFinancialSettings.condominioCost)}) ÷ 4 = {fmt((localFinancialSettings.terrenoCost + localFinancialSettings.condominioCost) / (localFinancialSettings.peopleCount || 4))}</code>.
                 </li>
                 <li>
-                  <strong className="text-slate-200">Reajuste Instantâneo:</strong> Ao alterar o valor do condomínio aqui ou direto pelo Início (Dashboard), todos os relatórios, faturas projetadas e resumos são recalculados imediatamente.
+                  <strong className="text-slate-200">Regra de Competência:</strong> Ao reajustar o valor do condomínio, a alteração é aplicada somente ao mês vigente e aos meses futuros. Os meses anteriores continuam registrados com o valor de sua época.
+                </li>
+                <li>
+                  <strong className="text-slate-200">Sincronização em Nuvem:</strong> As alterações são salvas diretamente no banco de dados e sincronizadas em tempo real entre todos os celulares e computadores.
                 </li>
                 <li>
                   <strong className="text-slate-200">Trilha de Auditoria:</strong> Toda alteração de taxa gera um registro automático com o usuário, valor anterior, novo valor e código <code className="text-blue-300 font-mono">#CFG-CONDO</code> na aba de Logs.
                 </li>
               </ul>
             </div>
+
+            {/* Histórico de Vigências de Condomínio */}
+            {localFinancialSettings.history && localFinancialSettings.history.length > 0 && (
+              <div className="bg-slate-950/60 p-4 rounded-xl border border-slate-800 space-y-3">
+                <h4 className="font-bold text-white uppercase tracking-wider text-[11px] flex items-center gap-1.5">
+                  <Clock size={14} className="text-purple-400" />
+                  Histórico de Vigências de Condomínio
+                </h4>
+                <div className="space-y-1.5">
+                  {localFinancialSettings.history.map((h, i) => (
+                    <div 
+                      key={h.effectiveFrom + i}
+                      className="flex items-center justify-between p-2.5 bg-slate-900/60 rounded-lg border border-slate-800 text-xs"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono font-bold text-blue-300 bg-blue-500/10 px-2 py-0.5 rounded border border-blue-500/20">
+                          A partir de {h.effectiveFrom}
+                        </span>
+                        {h.notes && <span className="text-slate-400 italic text-[11px]">{h.notes}</span>}
+                      </div>
+                      <span className="font-mono font-bold text-white text-sm">
+                        {fmt(h.condominioCost)} / mês
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -1415,13 +1446,14 @@ export function ConfigTab({
         currentValue={localFinancialSettings.condominioCost}
         terrenoValue={localFinancialSettings.terrenoCost}
         peopleCount={localFinancialSettings.peopleCount || 4}
-        onSave={async (newValue) => {
+        history={localFinancialSettings.history}
+        onSave={async (newValue, effectiveFrom) => {
           if (onUpdateCondominio) {
-            await onUpdateCondominio(newValue);
+            await onUpdateCondominio(newValue, effectiveFrom);
           } else {
-            const updated = saveStoredFinancialSettings({ condominioCost: newValue });
+            const updated = await applyCondominioAdjustment(newValue, effectiveFrom);
             setLocalFinancialSettings(updated);
-            toast.success(`Condomínio reajustado para ${fmt(newValue)}! Totais recalculados.`);
+            toast.success(`Condomínio reajustado para ${fmt(newValue)} a partir de ${effectiveFrom}! Totais recalculados.`);
           }
         }}
         formatCurrency={fmt}
