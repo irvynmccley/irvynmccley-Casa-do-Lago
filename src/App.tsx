@@ -105,17 +105,40 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
   render() {
     if (this.state.hasError) {
       return (
-        <div className="min-h-screen flex flex-col items-center justify-center bg-[#020817] text-slate-200 p-4">
-          <h1 className="text-2xl font-bold text-red-400 mb-4">Algo deu errado.</h1>
-          <pre className="bg-slate-900/60 p-4 rounded-xl border border-slate-800 text-sm overflow-auto max-w-full text-slate-300">
-            {this.state.error?.toString()}
-          </pre>
-          <button 
-            onClick={() => window.location.reload()}
-            className="mt-6 px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl shadow-lg shadow-blue-500/20"
-          >
-            Recarregar página
-          </button>
+        <div className="min-h-screen flex flex-col items-center justify-center bg-[#020817] text-slate-200 p-4 select-none">
+          <div className="w-full max-w-lg p-6 bg-slate-900/80 backdrop-blur-xl border border-red-500/30 rounded-2xl shadow-2xl flex flex-col items-center text-center">
+            <h1 className="text-2xl font-bold text-red-400 mb-2">Algo deu errado.</h1>
+            <p className="text-xs text-slate-400 mb-4">
+              Ocorreu uma falha inesperada na interface. Você pode tentar continuar ou recarregar a página.
+            </p>
+            <pre className="bg-slate-950/80 p-3.5 rounded-xl border border-slate-800 text-xs overflow-auto max-w-full text-slate-300 font-mono text-left w-full">
+              {this.state.error?.toString()}
+            </pre>
+            {this.state.error?.stack && (
+              <details className="mt-3 w-full text-left">
+                <summary className="text-[11px] text-slate-400 cursor-pointer hover:text-slate-200 py-1">
+                  Ver detalhes técnicos (Stack Trace)
+                </summary>
+                <pre className="mt-1 p-2 bg-slate-950/60 rounded-lg text-[10px] text-slate-400 overflow-auto max-h-40 font-mono">
+                  {this.state.error.stack}
+                </pre>
+              </details>
+            )}
+            <div className="flex items-center gap-3 mt-6">
+              <button 
+                onClick={() => this.setState({ hasError: false, error: null })}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl text-xs font-bold transition-all cursor-pointer"
+              >
+                Tentar Novamente
+              </button>
+              <button 
+                onClick={() => window.location.reload()}
+                className="px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-blue-500/20 active:scale-95 transition-all cursor-pointer"
+              >
+                Recarregar página
+              </button>
+            </div>
+          </div>
         </div>
       );
     }

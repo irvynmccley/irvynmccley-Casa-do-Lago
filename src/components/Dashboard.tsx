@@ -158,7 +158,7 @@ export function Dashboard({
       totals[donor] = (totals[donor] || 0) + (Number(e.value) || 0);
     });
 
-    return Object.entries(totals)
+    const list = Object.entries(totals)
       .map(([name, value]) => {
         const percentage = totalCalculatedDonations > 0 ? (value / totalCalculatedDonations) * 100 : 0;
         return {
@@ -167,8 +167,9 @@ export function Dashboard({
           percentage
         };
       })
-      .filter(item => item.value > 0)
-      .sort((a, b) => b.value - a.value);
+      .filter(item => item.value > 0);
+
+    return [...list].sort((a, b) => b.value - a.value);
   }, [donationExpenses, totalCalculatedDonations]);
 
   const filteredReimbursements = React.useMemo(() => {
@@ -842,7 +843,7 @@ export function Dashboard({
             <div className="overflow-x-auto pb-2 custom-scrollbar">
               <div className="min-w-[620px] sm:min-w-0 h-[380px]">
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={categoryTotals} margin={{ top: 40, right: 25, left: 15, bottom: 35 }}>
+                  <BarChart data={(categoryTotals || []).map(c => ({ ...c }))} margin={{ top: 40, right: 25, left: 15, bottom: 35 }}>
                     <defs>
                       {categoryTotals.map((entry, index) => {
                         const color = COLORS[index % COLORS.length];
@@ -990,7 +991,7 @@ export function Dashboard({
                 <div className="min-w-[760px] h-[370px]">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart 
-                      data={twelveMonthsInvoices} 
+                      data={(twelveMonthsInvoices || []).map(m => ({ ...m }))} 
                       margin={{ top: 38, right: 25, left: 15, bottom: 42 }}
                     >
                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#334155" opacity={0.5} />
@@ -1358,7 +1359,7 @@ export function Dashboard({
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie
-                      data={donationsByPerson}
+                      data={(donationsByPerson || []).map(d => ({ ...d }))}
                       cx="50%"
                       cy="50%"
                       innerRadius={65}
