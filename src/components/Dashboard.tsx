@@ -20,7 +20,6 @@ import { Card } from './ui/Card';
 import { toPng } from 'html-to-image';
 import { formatAuditId, copyAuditIdToClipboard } from '../utils/audit';
 import { Expense, Person } from '../types';
-import { EditCondominioModal } from './EditCondominioModal';
 import { 
   FinancialSettings, 
   getStoredFinancialSettings, 
@@ -89,7 +88,6 @@ export function Dashboard({
 }: DashboardProps) {
   const [isRefreshing, setIsRefreshing] = React.useState(false);
   const [expandedInvoice, setExpandedInvoice] = React.useState<string | null>(null);
-  const [isEditCondoOpen, setIsEditCondoOpen] = React.useState(false);
   const [localSettings, setLocalSettings] = React.useState<FinancialSettings>(() => financialSettings ?? getStoredFinancialSettings());
 
   React.useEffect(() => {
@@ -779,29 +777,10 @@ export function Dashboard({
               <span className="text-xs text-emerald-300 font-medium">Terreno: <span className="font-bold text-emerald-200">{formatCurrency(activeTerrenoCost)}</span></span>
             </div>
 
-            <button
-              type="button"
-              onClick={() => {
-                if (!isSharedMode) {
-                  setIsEditCondoOpen(true);
-                }
-              }}
-              disabled={isSharedMode}
-              className={`flex items-center gap-2 bg-blue-500/10 px-3 py-1.5 rounded-lg border border-blue-500/20 transition-all ${
-                !isSharedMode 
-                  ? "hover:bg-blue-500/20 hover:border-blue-500/50 cursor-pointer active:scale-95 group shadow-sm hover:shadow-blue-500/10" 
-                  : "opacity-90 cursor-default"
-              }`}
-              title={isSharedMode ? "Taxa mensal de condomínio" : "Clique para reajustar o valor do condomínio"}
-            >
-              <div className="w-2 h-2 rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.8)] group-hover:scale-125 transition-transform"></div>
-              <span className="text-xs text-blue-300 font-medium flex items-center gap-1.5">
-                Condomínio: <span className="font-bold text-blue-200">{formatCurrency(activeCondominioCost)}</span>
-                {!isSharedMode && (
-                  <Pencil size={11} className="text-blue-400 opacity-70 group-hover:opacity-100 group-hover:text-blue-300 transition-opacity ml-0.5" />
-                )}
-              </span>
-            </button>
+            <div className="flex items-center gap-2 bg-blue-500/10 px-3 py-1.5 rounded-lg border border-blue-500/20">
+              <div className="w-2 h-2 rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.8)]"></div>
+              <span className="text-xs text-blue-300 font-medium">Condomínio: <span className="font-bold text-blue-200">{formatCurrency(activeCondominioCost)}</span></span>
+            </div>
 
             <div className="flex items-center gap-2 bg-purple-500/10 px-3 py-1.5 rounded-lg border border-purple-500/20">
               <div className="w-2 h-2 rounded-full bg-purple-500 shadow-[0_0_8px_rgba(168,85,247,0.8)]"></div>
@@ -1753,26 +1732,6 @@ export function Dashboard({
           </div>
         </Card>
       </div>
-
-      {/* Modal de Reajuste do Condomínio */}
-      <EditCondominioModal
-        isOpen={isEditCondoOpen}
-        onClose={() => setIsEditCondoOpen(false)}
-        currentValue={activeCondominioCost}
-        terrenoValue={activeTerrenoCost}
-        peopleCount={PEOPLE_COUNT}
-        history={activeSettings.history}
-        onSave={async (newValue, effectiveFrom) => {
-          if (onUpdateCondominio) {
-            await onUpdateCondominio(newValue, effectiveFrom);
-          } else {
-            const updated = await applyCondominioAdjustment(newValue, effectiveFrom);
-            setLocalSettings(updated);
-            toast.success(`Condomínio reajustado para ${formatCurrency(newValue)} a partir de ${effectiveFrom}! Totais recalculados.`);
-          }
-        }}
-        formatCurrency={formatCurrency}
-      />
     </div>
   );
 }

@@ -339,13 +339,14 @@ function App() {
 
       // Carregar configurações financeiras sincronizadas no PocketBase
       const cfgRecord = (terrenoData as any[]).find(t => 
-        (t.month_id === PB_SETTINGS_RECORD_KEY || t.original_id === PB_SETTINGS_RECORD_KEY) && t.notes
+        (t.month_id === PB_SETTINGS_RECORD_KEY || t.original_id === PB_SETTINGS_RECORD_KEY || t.id === 's7hk3g9prdclwxp') && t.notes
       );
       if (cfgRecord && cfgRecord.notes) {
         try {
           const pbSettings = sanitizeFinancialSettings(JSON.parse(cfgRecord.notes));
           setFinancialSettings(pbSettings);
           localStorage.setItem(FINANCIAL_SETTINGS_STORAGE_KEY, JSON.stringify(pbSettings));
+          window.dispatchEvent(new CustomEvent('financialSettingsUpdated', { detail: pbSettings }));
         } catch (err) {
           console.warn('[PocketBase] Falha ao ler configurações financeiras:', err);
         }
@@ -523,7 +524,7 @@ function App() {
           const recId = e.record?.month_id || e.record?.original_id || e.record?.id;
 
           // Se for atualização das configurações financeiras na nuvem
-          if (recId === PB_SETTINGS_RECORD_KEY) {
+          if (recId === PB_SETTINGS_RECORD_KEY || e.record?.id === 's7hk3g9prdclwxp' || e.record?.month_id === PB_SETTINGS_RECORD_KEY) {
             if (e.record?.notes) {
               try {
                 const updatedSettings = sanitizeFinancialSettings(JSON.parse(e.record.notes));

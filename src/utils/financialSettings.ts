@@ -220,33 +220,55 @@ export function calculateFixedPerPerson(settings: FinancialSettings): number {
 }
 
 /**
+ * Localiza com segurança máxima o registro de configurações no PocketBase.
+ * Utiliza busca por filtro correto e fallback de busca em memória para garantir
+ * que o registro existente seja sempre encontrado e nunca ocorram erros de duplicidade ou filtro inválido.
+ */
+export async function findFinancialSettingsRecord() {
+  try {
+    // 1. Tenta buscar com filtro correto em aspas simples (formato expr do PocketBase)
+    const record = await pb.collection('terreno_installments')
+      .getFirstListItem("month_id = 'cfg_financial_settings' || original_id = 'cfg_financial_settings' || id = 's7hk3g9prdclwxp'", { requestKey: null })
+      .catch(() => null);
+
+    if (record) return record;
+
+    // 2. Fallback resiliente: busca a lista completa e filtra em memória (100% à prova de falhas de filtro da API)
+    const all = await pb.collection('terreno_installments').getFullList({ requestKey: null }).catch(() => []);
+    return all.find((r: any) => 
+      r.month_id === PB_SETTINGS_RECORD_KEY || 
+      r.original_id === PB_SETTINGS_RECORD_KEY || 
+      r.id === 's7hk3g9prdclwxp'
+    ) || null;
+  } catch (err) {
+    console.warn('[FinancialSettings] Erro ao buscar registro de configurações no PocketBase:', err);
+    return null;
+  }
+}
+
+/**
  * Salva as configurações financeiras no PocketBase (na nuvem)
  */
 export async function saveFinancialSettingsToPocketBase(settings: FinancialSettings): Promise<boolean> {
-  try {
-    const payload = JSON.stringify(settings);
-    const existing = await pb.collection('terreno_installments')
-      .getFirstListItem(`month_id = "${PB_SETTINGS_RECORD_KEY}" || original_id = "${PB_SETTINGS_RECORD_KEY}"`)
-      .catch(() => null);
+  const payload = JSON.stringify(settings);
+  const existing = await findFinancialSettingsRecord();
 
-    if (existing) {
-      await pb.collection('terreno_installments').update(existing.id, {
-        notes: payload,
-        paid_at: new Date().toISOString()
-      });
-    } else {
-      await pb.collection('terreno_installments').create({
-        month_id: PB_SETTINGS_RECORD_KEY,
-        original_id: PB_SETTINGS_RECORD_KEY,
-        notes: payload,
-        paid_at: new Date().toISOString()
-      });
-    }
-    return true;
-  } catch (err) {
-    console.warn('[FinancialSettings] Erro ao sincronizar com PocketBase:', err);
-    return false;
+  if (existing) {
+    await pb.collection('terreno_installments').update(existing.id, {
+      month_id: PB_SETTINGS_RECORD_KEY,
+      original_id: PB_SETTINGS_RECORD_KEY,
+      notes: payload,
+      paid_at: new Date().toISOString()
+    });
+  } else {
+    await pb.collection('terreno_installments').create({
+      month_id: PB_SETTINGS_RECORD_KEY,
+      original_id: PB_SETTINGS_RECORD_KEY,
+      notes: payload,
+      paid_at: new Date().toISOString()
+    });
   }
+  return true;
 }
 
 /**
@@ -254,10 +276,7 @@ export async function saveFinancialSettingsToPocketBase(settings: FinancialSetti
  */
 export async function loadFinancialSettingsFromPocketBase(): Promise<FinancialSettings | null> {
   try {
-    const record = await pb.collection('terreno_installments')
-      .getFirstListItem(`month_id = "${PB_SETTINGS_RECORD_KEY}" || original_id = "${PB_SETTINGS_RECORD_KEY}"`)
-      .catch(() => null);
-
+    const record = await findFinancialSettingsRecord();
     if (!record || !record.notes) return null;
     const parsed = JSON.parse(record.notes);
     return sanitizeFinancialSettings(parsed);
@@ -279,7 +298,21 @@ export async function applyCondominioAdjustment(
   userName: string = 'Administrador',
   notes?: string
 ): Promise<FinancialSettings> {
-  const current = getStoredFinancialSettings();
+  let current = getStoredFinancialSettings();
+  try {
+    const cloudSettings = await loadFinancialSettingsFromPocketBase();
+    if (cloudSettings) {
+      current = {
+        ...current,
+        ...cloudSettings,
+        history: cloudSettings.history && cloudSettings.history.length > 0 ? cloudSettings.history : (current.history || []),
+        partnerFixedInstallments: cloudSettings.partnerFixedInstallments || current.partnerFixedInstallments
+      };
+    }
+  } catch {
+    // Se offline, prossegue com o cache local
+  }
+
   const currentHistory = [...(current.history || [])];
 
   const nowIso = new Date().toISOString();
