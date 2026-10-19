@@ -22,16 +22,29 @@ import {
   AlertTriangle,
   FolderPlus,
   Building2,
-  Calculator
+  Calculator,
+  UserCheck,
+  Users,
+  Save,
+  Coins
 } from 'lucide-react';
-import { AppState } from '../types';
+import { AppState, Person } from '../types';
 import * as XLSX from 'xlsx';
 import { auditLogger, AuditLogEntry } from '../utils/auditLogger';
 import { formatAuditId, copyAuditIdToClipboard } from '../utils/audit';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { toast } from 'sonner';
-import { FinancialSettings, getStoredFinancialSettings, saveStoredFinancialSettings, applyCondominioAdjustment } from '../utils/financialSettings';
+import { 
+  FinancialSettings, 
+  PartnerFixedInstallment,
+  DEFAULT_PARTNER_FIXED_INSTALLMENTS,
+  getStoredFinancialSettings, 
+  saveStoredFinancialSettings, 
+  applyCondominioAdjustment,
+  savePartnerFixedInstallments,
+  updateSinglePartnerFixedInstallment
+} from '../utils/financialSettings';
 import { EditCondominioModal } from './EditCondominioModal';
 
 function cn(...inputs: ClassValue[]) {
@@ -81,6 +94,119 @@ export function ConfigTab({
     window.addEventListener('financialSettingsUpdated', handleSync);
     return () => window.removeEventListener('financialSettingsUpdated', handleSync);
   }, []);
+
+  // --- Estado para Gestão de Parcelas Fixas por Sócio ---
+  const PARTNERS_ORDER: Person[] = ['Jorge', 'Mccley', 'Jan', 'Saulo'];
+
+  const [partnerInstallments, setPartnerInstallments] = useState<Record<Person, PartnerFixedInstallment>>(() => {
+    return localFinancialSettings.partnerFixedInstallments || { ...DEFAULT_PARTNER_FIXED_INSTALLMENTS };
+  });
+
+  const [isSavingPartners, setIsSavingPartners] = useState(false);
+  const [partnerSaveSuccess, setPartnerSaveSuccess] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (localFinancialSettings.partnerFixedInstallments) {
+      setPartnerInstallments(localFinancialSettings.partnerFixedInstallments);
+    }
+  }, [localFinancialSettings]);
+
+  const activePartnersCount = useMemo(() => {
+    return PARTNERS_ORDER.filter(p => partnerInstallments[p]?.enabled).length;
+  }, [partnerInstallments]);
+
+  const totalPartnerFixedAmount = useMemo(() => {
+    return PARTNERS_ORDER.reduce((acc, p) => {
+      const item = partnerInstallments[p];
+      return acc + (item?.enabled ? (Number(item.value) || 0) : 0);
+    }, 0);
+  }, [partnerInstallments]);
+
+  const handleTogglePartner = async (person: Person) => {
+    const current = partnerInstallments[person] || { enabled: false, value: 0, description: '' };
+    const nextEnabled = !current.enabled;
+    const nextState = {
+      ...partnerInstallments,
+      [person]: {
+        ...current,
+        enabled: nextEnabled
+      }
+    };
+    setPartnerInstallments(nextState);
+
+    try {
+      const updated = await savePartnerFixedInstallments(nextState, 'Administrador');
+      setLocalFinancialSettings(updated);
+      toast.success(
+        nextEnabled 
+          ? `Parcela fixa de ${person} ATIVADA! Campo de valor liberado para edição.` 
+          : `Parcela fixa de ${person} DESATIVADA (Campo bloqueado).`
+      );
+    } catch (e) {
+      console.error(e);
+      toast.error('Erro ao atualizar status da parcela fixa.');
+    }
+  };
+
+  const handlePartnerValueChange = (person: Person, val: number) => {
+    setPartnerInstallments(prev => ({
+      ...prev,
+      [person]: {
+        ...(prev[person] || { enabled: false, description: '' }),
+        value: val >= 0 ? val : 0
+      }
+    }));
+  };
+
+  const handlePartnerDescChange = (person: Person, desc: string) => {
+    setPartnerInstallments(prev => ({
+      ...prev,
+      [person]: {
+        ...(prev[person] || { enabled: false, value: 0 }),
+        description: desc
+      }
+    }));
+  };
+
+  const handleSaveAllPartners = async () => {
+    setIsSavingPartners(true);
+    try {
+      const updated = await savePartnerFixedInstallments(partnerInstallments, 'Administrador');
+      setLocalFinancialSettings(updated);
+      setPartnerSaveSuccess('all');
+      setTimeout(() => setPartnerSaveSuccess(null), 3000);
+      toast.success('Todas as parcelas fixas dos sócios foram salvas com sucesso!');
+    } catch (e) {
+      console.error(e);
+      toast.error('Erro ao salvar configurações dos sócios.');
+    } finally {
+      setIsSavingPartners(false);
+    }
+  };
+
+  const handleSaveSinglePartner = async (person: Person) => {
+    const item = partnerInstallments[person] || { enabled: false, value: 0, description: '' };
+    setIsSavingPartners(true);
+    try {
+      const updated = await updateSinglePartnerFixedInstallment(
+        person,
+        item.enabled,
+        item.value,
+        item.description,
+        'Administrador'
+      );
+      setLocalFinancialSettings(updated);
+      setPartnerSaveSuccess(person);
+      setTimeout(() => setPartnerSaveSuccess(null), 2500);
+      toast.success(`Parcela fixa de ${person} salva com sucesso!`);
+    } catch (e) {
+      console.error(e);
+      toast.error(`Erro ao salvar parcela de ${person}.`);
+    } finally {
+      setIsSavingPartners(false);
+    }
+  };
+
   const [searchTerm, setSearchTerm] = useState('');
   const [entityFilter, setEntityFilter] = useState<string>('all');
   const [actionFilter, setActionFilter] = useState<string>('all');
@@ -1435,6 +1561,327 @@ export function ConfigTab({
                 </div>
               </div>
             )}
+          </div>
+
+          {/* ======================================================== */}
+          {/* CARD 2: PAINEL DE CONFIGURAÇÃO DE PARCELAS FIXAS POR SÓCIO */}
+          {/* ======================================================== */}
+          <div className="bg-slate-900/60 backdrop-blur-xl rounded-2xl border border-slate-700/50 shadow-xl p-5 sm:p-6 ring-1 ring-white/5 space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-800">
+              <div className="flex items-center gap-3">
+                <div className="p-3 bg-cyan-500/10 text-cyan-400 rounded-xl ring-1 ring-cyan-500/20 shadow-[0_0_15px_rgba(6,182,212,0.15)]">
+                  <UserCheck size={24} />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                    <span>Parcelas Fixas Individuais por Sócio</span>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 uppercase tracking-wider">
+                      Individual
+                    </span>
+                  </h3>
+                  <p className="text-xs sm:text-sm text-slate-400">
+                    Determine uma parcela fixa para cada sócio quando necessário. Quando ativado, o campo fica editável para estipular o valor.
+                  </p>
+                </div>
+              </div>
+
+              {/* Badges de Resumo e Botão Master */}
+              <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+                <div className="px-3 py-1.5 rounded-xl bg-cyan-500/10 border border-cyan-500/25 text-cyan-300 text-xs font-bold flex items-center gap-1.5 shadow-sm">
+                  <Users size={14} />
+                  <span>{activePartnersCount} de 4 Ativos</span>
+                </div>
+
+                <div className="px-3 py-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/25 text-emerald-300 text-xs font-bold flex items-center gap-1.5 shadow-sm font-mono">
+                  <Coins size={14} />
+                  <span>Total: {fmt(totalPartnerFixedAmount)}/mês</span>
+                </div>
+
+                <button
+                  type="button"
+                  disabled={isSavingPartners}
+                  onClick={handleSaveAllPartners}
+                  className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white rounded-xl text-xs sm:text-sm font-bold shadow-lg shadow-cyan-500/20 transition-all cursor-pointer active:scale-95 disabled:opacity-50"
+                  title="Salvar todas as alterações dos 4 sócios"
+                >
+                  {isSavingPartners ? (
+                    <>
+                      <RefreshCw size={14} className="animate-spin" />
+                      <span>Salvando...</span>
+                    </>
+                  ) : partnerSaveSuccess === 'all' ? (
+                    <>
+                      <Check size={14} className="stroke-[3]" />
+                      <span>Salvo com Sucesso!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Save size={14} />
+                      <span>Salvar Todas</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+
+            {/* Grid dos Cards dos 4 Sócios */}
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+              {PARTNERS_ORDER.map((person) => {
+                const pState = partnerInstallments[person] || { enabled: false, value: 0, description: '' };
+                const isEnabled = pState.enabled;
+                const isSavedJustNow = partnerSaveSuccess === person || partnerSaveSuccess === 'all';
+
+                // Cores personalizadas por parceiro para máxima elegância
+                const theme = {
+                  Jorge: {
+                    borderActive: 'border-blue-500/60 ring-2 ring-blue-500/20 shadow-blue-500/10',
+                    badgeBg: 'bg-blue-500/15 text-blue-300 border-blue-500/30',
+                    avatarBg: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
+                    toggleBg: 'bg-blue-500',
+                    accentText: 'text-blue-400',
+                    btnBg: 'bg-blue-600 hover:bg-blue-500 shadow-blue-500/20'
+                  },
+                  Mccley: {
+                    borderActive: 'border-emerald-500/60 ring-2 ring-emerald-500/20 shadow-emerald-500/10',
+                    badgeBg: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30',
+                    avatarBg: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30',
+                    toggleBg: 'bg-emerald-500',
+                    accentText: 'text-emerald-400',
+                    btnBg: 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-500/20'
+                  },
+                  Jan: {
+                    borderActive: 'border-amber-500/60 ring-2 ring-amber-500/20 shadow-amber-500/10',
+                    badgeBg: 'bg-amber-500/15 text-amber-300 border-amber-500/30',
+                    avatarBg: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
+                    toggleBg: 'bg-amber-500',
+                    accentText: 'text-amber-400',
+                    btnBg: 'bg-amber-600 hover:bg-amber-500 shadow-amber-500/20'
+                  },
+                  Saulo: {
+                    borderActive: 'border-purple-500/60 ring-2 ring-purple-500/20 shadow-purple-500/10',
+                    badgeBg: 'bg-purple-500/15 text-purple-300 border-purple-500/30',
+                    avatarBg: 'bg-purple-500/20 text-purple-400 border-purple-500/30',
+                    toggleBg: 'bg-purple-500',
+                    accentText: 'text-purple-400',
+                    btnBg: 'bg-purple-600 hover:bg-purple-500 shadow-purple-500/20'
+                  }
+                }[person];
+
+                return (
+                  <div 
+                    key={person}
+                    className={cn(
+                      "rounded-2xl p-4 sm:p-5 border transition-all duration-200 flex flex-col justify-between relative group",
+                      isEnabled 
+                        ? cn("bg-slate-900/90 shadow-xl", theme.borderActive)
+                        : "bg-slate-950/50 border-slate-800/80 hover:border-slate-700"
+                    )}
+                  >
+                    <div>
+                      {/* Cabeçalho do Card do Sócio */}
+                      <div className="flex items-center justify-between pb-3.5 border-b border-slate-800/80">
+                        <div className="flex items-center gap-2.5">
+                          <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center font-extrabold text-base border shadow-inner", theme.avatarBg)}>
+                            {person.charAt(0)}
+                          </div>
+                          <div>
+                            <h4 className="font-bold text-white text-base leading-tight">
+                              {person}
+                            </h4>
+                            <span className="text-[10px] text-slate-400 font-medium">Sócio Participante</span>
+                          </div>
+                        </div>
+
+                        <div>
+                          {isEnabled ? (
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 flex items-center gap-1.5 shadow-sm">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                              Ativo
+                            </span>
+                          ) : (
+                            <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 border border-slate-700/60">
+                              Inativo
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Botão Switch de Ativação */}
+                      <div className="my-3.5 p-3 bg-slate-950/60 rounded-xl border border-slate-800/80 flex items-center justify-between gap-3">
+                        <div>
+                          <span className="text-xs font-bold text-slate-200 block">
+                            Ativar Parcela Fixa
+                          </span>
+                          <span className="text-[10px] text-slate-400 block mt-0.5">
+                            {isEnabled ? "Campo liberado para edição" : "Campo bloqueado para edição"}
+                          </span>
+                        </div>
+
+                        <button
+                          type="button"
+                          role="switch"
+                          aria-checked={isEnabled}
+                          onClick={() => handleTogglePartner(person)}
+                          className={cn(
+                            "w-12 h-6.5 rounded-full transition-colors relative p-0.5 cursor-pointer flex items-center focus:outline-none focus:ring-2 focus:ring-cyan-500/40 shrink-0",
+                            isEnabled ? theme.toggleBg : "bg-slate-700"
+                          )}
+                          title={isEnabled ? `Desativar parcela de ${person}` : `Ativar parcela de ${person}`}
+                        >
+                          <span
+                            className={cn(
+                              "w-5.5 h-5.5 rounded-full bg-white shadow-md transform transition-transform duration-200 ease-in-out flex items-center justify-center",
+                              isEnabled ? "translate-x-5.5" : "translate-x-0"
+                            )}
+                          >
+                            {isEnabled ? (
+                              <Check size={12} className="text-slate-900 stroke-[3]" />
+                            ) : (
+                              <X size={12} className="text-slate-500 stroke-[3]" />
+                            )}
+                          </span>
+                        </button>
+                      </div>
+
+                      {/* Campo de Valor Editável quando Ativado */}
+                      <div className="space-y-3 mb-4">
+                        <div>
+                          <div className="flex items-center justify-between mb-1.5 px-0.5">
+                            <label className={cn(
+                              "text-[10px] font-bold uppercase tracking-wider block",
+                              isEnabled ? "text-slate-300" : "text-slate-500"
+                            )}>
+                              Valor da Parcela (R$)
+                            </label>
+                            {isEnabled && pState.value > 0 && (
+                              <span className="text-xs font-mono font-bold text-emerald-400">
+                                {fmt(pState.value)}
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="relative">
+                            <span className={cn(
+                              "absolute left-3.5 top-1/2 -translate-y-1/2 text-sm font-bold pointer-events-none transition-colors",
+                              isEnabled ? "text-slate-300" : "text-slate-600"
+                            )}>
+                              R$
+                            </span>
+                            <input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              disabled={!isEnabled}
+                              value={isEnabled ? (pState.value > 0 ? pState.value : '') : ''}
+                              placeholder={isEnabled ? "0,00" : "Desativado (bloqueado)"}
+                              onChange={(e) => handlePartnerValueChange(person, parseFloat(e.target.value) || 0)}
+                              className={cn(
+                                "w-full rounded-xl pl-10 pr-3.5 py-2.5 font-mono text-base font-bold outline-none transition-all",
+                                isEnabled 
+                                  ? "bg-slate-950 border border-slate-700 focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/30 text-white placeholder:text-slate-600 shadow-inner"
+                                  : "bg-slate-950/40 border border-slate-800/80 text-slate-600 placeholder:text-slate-600 cursor-not-allowed opacity-60"
+                              )}
+                            />
+                          </div>
+
+                          <p className="text-[10px] mt-1.5 px-0.5 flex items-center gap-1.5">
+                            {isEnabled ? (
+                              <span className="text-emerald-400 flex items-center gap-1 font-medium">
+                                <CheckCircle size={11} />
+                                Campo editável ativo
+                              </span>
+                            ) : (
+                              <span className="text-slate-500 flex items-center gap-1">
+                                <AlertCircle size={11} />
+                                Ative acima para liberar edição
+                              </span>
+                            )}
+                          </p>
+                        </div>
+
+                        <div>
+                          <label className={cn(
+                            "text-[10px] font-bold uppercase tracking-wider block mb-1 px-0.5",
+                            isEnabled ? "text-slate-400" : "text-slate-600"
+                          )}>
+                            Observação / Motivo (Opcional)
+                          </label>
+                          <input
+                            type="text"
+                            disabled={!isEnabled}
+                            value={pState.description || ''}
+                            onChange={(e) => handlePartnerDescChange(person, e.target.value)}
+                            placeholder={isEnabled ? "Ex: Parcela do Terreno, Acordo..." : "Desativado"}
+                            className={cn(
+                              "w-full rounded-xl px-3 py-2 text-xs outline-none transition-all",
+                              isEnabled 
+                                ? "bg-slate-950 border border-slate-700 focus:border-cyan-500 text-slate-200 placeholder:text-slate-600"
+                                : "bg-slate-950/30 border border-slate-800/60 text-slate-600 placeholder:text-slate-600 cursor-not-allowed opacity-50"
+                            )}
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Rodapé do Card do Sócio com Ação Direta */}
+                    <div className="pt-3 border-t border-slate-800/80 flex items-center justify-between mt-auto">
+                      <span className="text-[11px] text-slate-400 font-mono font-semibold">
+                        {isEnabled && pState.value > 0 ? `${fmt(pState.value)} / mês` : 'R$ 0,00'}
+                      </span>
+
+                      <button
+                        type="button"
+                        disabled={isSavingPartners}
+                        onClick={() => handleSaveSinglePartner(person)}
+                        className={cn(
+                          "px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 active:scale-95 shadow-sm disabled:opacity-50",
+                          isSavedJustNow
+                            ? "bg-emerald-500 text-slate-950"
+                            : isEnabled 
+                            ? cn("text-white shadow-md", theme.btnBg)
+                            : "bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700"
+                        )}
+                        title={`Salvar configuração de ${person}`}
+                      >
+                        {isSavedJustNow ? (
+                          <>
+                            <Check size={12} className="stroke-[3]" />
+                            <span>Salvo!</span>
+                          </>
+                        ) : (
+                          <>
+                            <Save size={12} />
+                            <span>Salvar</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Informações Contábeis e Regras do Painel */}
+            <div className="bg-slate-950/40 p-4 rounded-xl border border-slate-800 space-y-2 text-xs text-slate-300">
+              <h4 className="font-bold text-white uppercase tracking-wider text-[11px] flex items-center gap-1.5">
+                <Calculator size={14} className="text-cyan-400" />
+                Como funciona a parcela fixa individual:
+              </h4>
+              <ul className="list-disc pl-5 space-y-1 text-slate-400 leading-relaxed">
+                <li>
+                  <strong className="text-slate-200">Ativação Sob Demanda:</strong> Permite atribuir valores fixos mensais a determinados sócios sem alterar a regra dos demais participantes.
+                </li>
+                <li>
+                  <strong className="text-slate-200">Campo Editável:</strong> O campo de valor só aceita edição quando a chave de ativação estiver ligada. Se desativado, o valor fica protegido e travado.
+                </li>
+                <li>
+                  <strong className="text-slate-200">Persistência em Nuvem:</strong> As configurações são salvas no banco de dados e sincronizadas em tempo real em todos os smartphones e computadores.
+                </li>
+                <li>
+                  <strong className="text-slate-200">Trilha de Auditoria:</strong> Toda alteração ou ativação de parcela fixa gera um registro com data, hora, usuário e código <code className="text-cyan-300 font-mono">#CFG-PARC-SOCIOS</code> na aba de Logs.
+                </li>
+              </ul>
+            </div>
           </div>
         </div>
       )}

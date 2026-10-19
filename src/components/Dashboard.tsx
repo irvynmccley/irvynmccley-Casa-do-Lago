@@ -699,8 +699,18 @@ export function Dashboard({
                   const hasSauloSplit = cardSauloTotal > 0.001;
                   const cardPerPersonNormal = cardNormalTotal / PEOPLE_COUNT;
                   const cardPerPersonSauloSplit = cardSauloTotal / 3;
+                  
+                  const pFixed = activeSettings.partnerFixedInstallments;
+                  const hasAnyPartnerFixed = Boolean(
+                    pFixed && Object.values(pFixed).some(p => p.enabled && p.value > 0)
+                  );
+
+                  const valJorge = cardPerPersonNormal + (hasSauloSplit ? cardPerPersonSauloSplit : 0) + fixedPerPersonThisMonth + (pFixed?.Jorge?.enabled ? (Number(pFixed.Jorge.value) || 0) : 0);
+                  const valMccley = cardPerPersonNormal + (hasSauloSplit ? cardPerPersonSauloSplit : 0) + fixedPerPersonThisMonth + (pFixed?.Mccley?.enabled ? (Number(pFixed.Mccley.value) || 0) : 0);
+                  const valJan = cardPerPersonNormal + (hasSauloSplit ? cardPerPersonSauloSplit : 0) + fixedPerPersonThisMonth + (pFixed?.Jan?.enabled ? (Number(pFixed.Jan.value) || 0) : 0);
+                  const valSaulo = cardPerPersonNormal + fixedPerPersonThisMonth + (pFixed?.Saulo?.enabled ? (Number(pFixed.Saulo.value) || 0) : 0);
+
                   const valMccleyJanJorge = cardPerPersonNormal + cardPerPersonSauloSplit + fixedPerPersonThisMonth;
-                  const valSaulo = cardPerPersonNormal + fixedPerPersonThisMonth;
                   const standardTotal = (item.total / PEOPLE_COUNT) + fixedPerPersonThisMonth;
                   
                   return (
@@ -709,14 +719,43 @@ export function Dashboard({
                         <div className="text-sm font-bold text-slate-200 capitalize">
                           {format(new Date(parseInt(item.month.split('-')[0]), parseInt(item.month.split('-')[1]) - 1, 1), 'MMMM yyyy', { locale: ptBR })}
                         </div>
-                        {hasSauloSplit && (
-                          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30">
-                            Parc. Saulo Diferenciada
-                          </span>
-                        )}
+                        <div className="flex items-center gap-1">
+                          {hasAnyPartnerFixed && (
+                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">
+                              Parcelas Fixas
+                            </span>
+                          )}
+                          {hasSauloSplit && (
+                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30">
+                              Parc. Saulo
+                            </span>
+                          )}
+                        </div>
                       </div>
 
-                      {hasSauloSplit ? (
+                      {hasAnyPartnerFixed ? (
+                        <div className="flex flex-col gap-1.5 w-full mt-auto pt-1">
+                          {(['Jorge', 'Mccley', 'Jan', 'Saulo'] as Person[]).map((p) => {
+                            const pVal = p === 'Saulo' ? valSaulo : (p === 'Jorge' ? valJorge : (p === 'Mccley' ? valMccley : valJan));
+                            const partnerFixedVal = pFixed?.[p]?.enabled ? Number(pFixed[p].value) || 0 : 0;
+                            return (
+                              <div key={p} className="flex items-center justify-between text-[11px] bg-slate-900/70 px-2.5 py-1.5 rounded-xl border border-slate-800">
+                                <div>
+                                  <span className="font-bold text-slate-200">{p}</span>
+                                  {partnerFixedVal > 0 && (
+                                    <span className="text-[9px] text-cyan-300 block font-mono">
+                                      + {formatCurrency(partnerFixedVal)} fixa
+                                    </span>
+                                  )}
+                                </div>
+                                <span className="text-sm font-mono font-extrabold text-white">
+                                  {formatCurrency(pVal)}
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : hasSauloSplit ? (
                         <div className="flex flex-col gap-1.5 w-full mt-auto pt-1">
                           <div className="flex items-center justify-between text-[11px] bg-slate-900/70 px-2.5 py-1.5 rounded-xl border border-slate-700/60">
                             <div>

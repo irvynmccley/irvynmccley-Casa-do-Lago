@@ -6,6 +6,7 @@
 import { auditLogger } from './auditLogger';
 import { pb } from '../pocketbaseClient';
 import { format } from 'date-fns';
+import { Person } from '../types';
 
 export interface CondominioAdjustment {
   effectiveFrom: string; // Formato 'YYYY-MM' (ex: '2024-02', '2026-10')
@@ -15,14 +16,30 @@ export interface CondominioAdjustment {
   notes?: string;        // Observação ou motivo do reajuste
 }
 
+export interface PartnerFixedInstallment {
+  enabled: boolean;
+  value: number;
+  description?: string;
+  updatedAt?: string;
+  updatedBy?: string;
+}
+
 export interface FinancialSettings {
   condominioCost: number; // Taxa mensal do mês vigente
   terrenoCost: number;    // Parcela mensal do terreno (R$ 700,00)
   peopleCount: number;    // Número de sócios no rateio (padrão: 4)
   history: CondominioAdjustment[]; // Histórico cronológico de vigências
+  partnerFixedInstallments?: Record<Person, PartnerFixedInstallment>; // Parcelas fixas individuais por sócio
 }
 
 export const BASELINE_CONDOMINIO_DATE = '2024-02'; // Início do financiamento da Casa do Lago
+
+export const DEFAULT_PARTNER_FIXED_INSTALLMENTS: Record<Person, PartnerFixedInstallment> = {
+  Jorge: { enabled: false, value: 0, description: '' },
+  Mccley: { enabled: false, value: 0, description: '' },
+  Jan: { enabled: false, value: 0, description: '' },
+  Saulo: { enabled: false, value: 0, description: '' },
+};
 
 export const DEFAULT_FINANCIAL_SETTINGS: FinancialSettings = {
   condominioCost: 50.00,
@@ -34,7 +51,8 @@ export const DEFAULT_FINANCIAL_SETTINGS: FinancialSettings = {
       condominioCost: 50.00,
       notes: 'Valor inicial estabelecido no início da obra'
     }
-  ]
+  ],
+  partnerFixedInstallments: { ...DEFAULT_PARTNER_FIXED_INSTALLMENTS }
 };
 
 export const FINANCIAL_SETTINGS_STORAGE_KEY = 'casadolago_financial_settings';
@@ -89,11 +107,36 @@ export function sanitizeFinancialSettings(parsed: any): FinancialSettings {
   const currentMonthKey = format(new Date(), 'yyyy-MM');
   const activeCost = getCondominioCostForMonth(currentMonthKey, { condominioCost: 50, terrenoCost, peopleCount, history });
 
+  // Normalização das parcelas fixas por sócio
+  const partnerFixedInstallments: Record<Person, PartnerFixedInstallment> = {
+    Jorge: { enabled: false, value: 0, description: '' },
+    Mccley: { enabled: false, value: 0, description: '' },
+    Jan: { enabled: false, value: 0, description: '' },
+    Saulo: { enabled: false, value: 0, description: '' },
+  };
+
+  if (parsed && typeof parsed.partnerFixedInstallments === 'object' && parsed.partnerFixedInstallments !== null) {
+    const raw = parsed.partnerFixedInstallments;
+    (['Jorge', 'Mccley', 'Jan', 'Saulo'] as Person[]).forEach(person => {
+      if (raw[person] && typeof raw[person] === 'object') {
+        const item = raw[person];
+        partnerFixedInstallments[person] = {
+          enabled: Boolean(item.enabled),
+          value: typeof item.value === 'number' && !isNaN(item.value) && item.value >= 0 ? Number(item.value) : 0,
+          description: typeof item.description === 'string' ? item.description : '',
+          updatedAt: item.updatedAt || undefined,
+          updatedBy: item.updatedBy || undefined
+        };
+      }
+    });
+  }
+
   return {
     condominioCost: activeCost,
     terrenoCost,
     peopleCount,
-    history
+    history,
+    partnerFixedInstallments
   };
 }
 
@@ -347,7 +390,8 @@ export function saveStoredFinancialSettings(
     peopleCount: typeof partialSettings.peopleCount === 'number' && !isNaN(partialSettings.peopleCount) && partialSettings.peopleCount > 0
       ? partialSettings.peopleCount
       : current.peopleCount,
-    history: partialSettings.history || history
+    history: partialSettings.history || history,
+    partnerFixedInstallments: partialSettings.partnerFixedInstallments || current.partnerFixedInstallments || { ...DEFAULT_PARTNER_FIXED_INSTALLMENTS }
   };
 
   try {
@@ -364,4 +408,77 @@ export function saveStoredFinancialSettings(
   }
 
   return updated;
+}
+
+/**
+ * Salva as parcelas fixas individuais dos sócios no localStorage, nuvem e emite atualização
+ */
+export async function savePartnerFixedInstallments(
+  installments: Record<Person, PartnerFixedInstallment>,
+  userName: string = 'Administrador'
+): Promise<FinancialSettings> {
+  const current = getStoredFinancialSettings();
+  const updated: FinancialSettings = {
+    ...current,
+    partnerFixedInstallments: installments
+  };
+
+  try {
+    localStorage.setItem(FINANCIAL_SETTINGS_STORAGE_KEY, JSON.stringify(updated));
+  } catch (e) {
+    console.warn('Erro ao salvar no localStorage:', e);
+  }
+
+  // Registra na trilha de auditoria
+  try {
+    const activePartners = (['Jorge', 'Mccley', 'Jan', 'Saulo'] as Person[])
+      .filter(p => installments[p]?.enabled && installments[p]?.value > 0)
+      .map(p => `${p}: R$ ${installments[p].value.toFixed(2)}${installments[p].description ? ` (${installments[p].description})` : ''}`);
+
+    auditLogger.logUpdate({
+      entity: 'Configuração',
+      recordId: 'cfg-partner-fixed-installments',
+      auditId: '#CFG-PARC-SOCIOS',
+      user: userName,
+      actionLabel: 'Parcelas Fixas dos Sócios Atualizadas',
+      details: activePartners.length > 0 
+        ? `Parcelas fixas ativas: ${activePartners.join(' | ')}`
+        : 'Todas as parcelas fixas dos sócios estão desativadas',
+      previousValue: 'Configuração anterior',
+      newValue: activePartners.join(' | ') || 'Nenhuma'
+    });
+  } catch (e) {
+    console.warn('Erro ao registrar log de auditoria:', e);
+  }
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('financialSettingsUpdated', { detail: updated }));
+  }
+
+  await saveFinancialSettingsToPocketBase(updated);
+  return updated;
+}
+
+/**
+ * Atualiza a parcela fixa de um único sócio
+ */
+export async function updateSinglePartnerFixedInstallment(
+  person: Person,
+  enabled: boolean,
+  value: number,
+  description?: string,
+  userName: string = 'Administrador'
+): Promise<FinancialSettings> {
+  const current = getStoredFinancialSettings();
+  const currentMap = { ...(current.partnerFixedInstallments || DEFAULT_PARTNER_FIXED_INSTALLMENTS) };
+
+  currentMap[person] = {
+    enabled,
+    value: enabled ? (Math.max(0, value) || 0) : 0,
+    description: description || '',
+    updatedAt: new Date().toISOString(),
+    updatedBy: userName
+  };
+
+  return savePartnerFixedInstallments(currentMap, userName);
 }
