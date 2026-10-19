@@ -15,12 +15,15 @@ import {
   CheckCircle2, 
   Clock, 
   Calendar,
-  AlertCircle
+  AlertCircle,
+  Users,
+  ChevronRight
 } from 'lucide-react';
 import { format } from 'date-fns';
-import { Expense, Category, PaymentMethod, Donor, Person, RefundStatus } from '../types';
+import { Expense, Category, PaymentMethod, Donor, Person, RefundStatus, RateioType } from '../types';
 import { Card } from './ui/Card';
 import { ConfirmDialog } from './ui/ConfirmDialog';
+import { RateioPaymentModal } from './RateioPaymentModal';
 import { formatAuditId, copyAuditIdToClipboard } from '../utils/audit';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -76,12 +79,16 @@ export function ExpensesTab({
 
   const getTodayDate = () => format(new Date(), 'yyyy-MM-dd');
 
+  const [isRateioModalOpen, setIsRateioModalOpen] = useState(false);
+  const [rateioModalTarget, setRateioModalTarget] = useState<'single' | 'split1' | 'split2'>('single');
+
   const [formData, setFormData] = useState({
     date: getTodayDate(),
     category: '' as Category,
     local: '',
     value: '',
     paymentMethod: '' as PaymentMethod,
+    rateioType: 'Rateio Normal' as RateioType,
     installments: 1,
     donor: '' as Donor,
     isReimbursement: false,
@@ -94,10 +101,12 @@ export function ExpensesTab({
   const [splitData, setSplitData] = useState({
     value1: '',
     paymentMethod1: '' as PaymentMethod,
+    rateioType1: 'Rateio Normal' as RateioType,
     installments1: 1,
     donor1: '' as Donor,
     value2: '',
     paymentMethod2: '' as PaymentMethod,
+    rateioType2: 'Rateio Normal' as RateioType,
     installments2: 1,
     donor2: '' as Donor,
   });
@@ -111,6 +120,36 @@ export function ExpensesTab({
     return pendingRefunds.reduce((acc, exp) => acc + (exp.value || 0), 0);
   }, [pendingRefunds]);
 
+  const openRateioModal = (target: 'single' | 'split1' | 'split2' = 'single') => {
+    setRateioModalTarget(target);
+    setIsRateioModalOpen(true);
+  };
+
+  const handleRateioPaymentSelect = (rateio: RateioType, method: PaymentMethod) => {
+    if (rateioModalTarget === 'single') {
+      setFormData(prev => ({
+        ...prev,
+        rateioType: rateio,
+        paymentMethod: method,
+        donor: method === 'doação' ? (prev.donor || 'Jorge') : prev.donor
+      }));
+    } else if (rateioModalTarget === 'split1') {
+      setSplitData(prev => ({
+        ...prev,
+        rateioType1: rateio,
+        paymentMethod1: method,
+        donor1: method === 'doação' ? (prev.donor1 || 'Jorge') : prev.donor1
+      }));
+    } else if (rateioModalTarget === 'split2') {
+      setSplitData(prev => ({
+        ...prev,
+        rateioType2: rateio,
+        paymentMethod2: method,
+        donor2: method === 'doação' ? (prev.donor2 || 'Jorge') : prev.donor2
+      }));
+    }
+  };
+
   const resetForm = () => {
     setFormData({
       date: getTodayDate(),
@@ -118,6 +157,7 @@ export function ExpensesTab({
       local: '',
       value: '',
       paymentMethod: '' as PaymentMethod,
+      rateioType: 'Rateio Normal' as RateioType,
       installments: 1,
       donor: '' as Donor,
       isReimbursement: false,
@@ -128,10 +168,12 @@ export function ExpensesTab({
     setSplitData({
       value1: '',
       paymentMethod1: '' as PaymentMethod,
+      rateioType1: 'Rateio Normal' as RateioType,
       installments1: 1,
       donor1: '' as Donor,
       value2: '',
       paymentMethod2: '' as PaymentMethod,
+      rateioType2: 'Rateio Normal' as RateioType,
       installments2: 1,
       donor2: '' as Donor,
     });
@@ -159,6 +201,18 @@ export function ExpensesTab({
         }
 
         const baseOriginalId = `split_${Date.now()}`;
+        const rType1 = splitData.rateioType1 || 'Rateio Normal';
+        const rType2 = splitData.rateioType2 || 'Rateio Normal';
+
+        let obs1 = formData.observation ? `${formData.observation} (Parte 1)` : '(Parte 1)';
+        if (rType1 === 'Parc. Fixa Saulo' && !obs1.includes('Parc. Fixa Saulo')) {
+          obs1 = `${obs1} [Parc. Fixa Saulo]`;
+        }
+
+        let obs2 = formData.observation ? `${formData.observation} (Parte 2)` : '(Parte 2)';
+        if (rType2 === 'Parc. Fixa Saulo' && !obs2.includes('Parc. Fixa Saulo')) {
+          obs2 = `${obs2} [Parc. Fixa Saulo]`;
+        }
 
         const expense1: Omit<Expense, 'id'> = {
           date: formData.date,
@@ -166,9 +220,11 @@ export function ExpensesTab({
           local: formData.local,
           value: parseFloat(splitData.value1),
           paymentMethod: splitData.paymentMethod1,
+          rateioType: rType1,
+          splitPartners: rType1 === 'Parc. Fixa Saulo' ? ['Mccley', 'Jan', 'Jorge'] : ['Mccley', 'Jan', 'Saulo', 'Jorge'],
           installments: splitData.paymentMethod1 === 'Cartão' ? splitData.installments1 : undefined,
           donor: splitData.paymentMethod1 === 'doação' ? splitData.donor1 : undefined,
-          observation: formData.observation ? `${formData.observation} (Parte 1)` : '(Parte 1)',
+          observation: obs1,
           isReimbursement: formData.isReimbursement,
           reimburseTo: formData.isReimbursement ? formData.reimburseTo : undefined,
           refundStatus: formData.isReimbursement ? formData.refundStatus : undefined,
@@ -181,9 +237,11 @@ export function ExpensesTab({
           local: formData.local,
           value: parseFloat(splitData.value2),
           paymentMethod: splitData.paymentMethod2,
+          rateioType: rType2,
+          splitPartners: rType2 === 'Parc. Fixa Saulo' ? ['Mccley', 'Jan', 'Jorge'] : ['Mccley', 'Jan', 'Saulo', 'Jorge'],
           installments: splitData.paymentMethod2 === 'Cartão' ? splitData.installments2 : undefined,
           donor: splitData.paymentMethod2 === 'doação' ? splitData.donor2 : undefined,
-          observation: formData.observation ? `${formData.observation} (Parte 2)` : '(Parte 2)',
+          observation: obs2,
           isReimbursement: formData.isReimbursement,
           reimburseTo: formData.isReimbursement ? formData.reimburseTo : undefined,
           refundStatus: formData.isReimbursement ? formData.refundStatus : undefined,
@@ -201,6 +259,12 @@ export function ExpensesTab({
         }
 
         const originalId = `exp_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+        const rType = formData.rateioType || 'Rateio Normal';
+
+        let obs = formData.observation?.trim() || '';
+        if (rType === 'Parc. Fixa Saulo' && !obs.includes('Parc. Fixa Saulo')) {
+          obs = obs ? `${obs} [Parc. Fixa Saulo]` : '[Parc. Fixa Saulo]';
+        }
 
         const expenseData: Omit<Expense, 'id'> = {
           date: formData.date,
@@ -208,9 +272,11 @@ export function ExpensesTab({
           local: formData.local,
           value: parseFloat(formData.value),
           paymentMethod: formData.paymentMethod,
+          rateioType: rType,
+          splitPartners: rType === 'Parc. Fixa Saulo' ? ['Mccley', 'Jan', 'Jorge'] : ['Mccley', 'Jan', 'Saulo', 'Jorge'],
           installments: formData.paymentMethod === 'Cartão' ? formData.installments : undefined,
           donor: formData.paymentMethod === 'doação' ? formData.donor : undefined,
-          observation: formData.observation || undefined,
+          observation: obs || undefined,
           isReimbursement: formData.isReimbursement,
           reimburseTo: formData.isReimbursement ? formData.reimburseTo : undefined,
           refundStatus: formData.isReimbursement ? formData.refundStatus : undefined,
@@ -255,12 +321,17 @@ export function ExpensesTab({
 
   const handleEditClick = (exp: Expense) => {
     setEditingId(exp.id);
+    const isSauloExcluded = Boolean(
+      exp.rateioType === 'Parc. Fixa Saulo' || 
+      (exp.observation && exp.observation.includes('Parc. Fixa Saulo'))
+    );
     setFormData({
       date: exp.date || getTodayDate(),
       category: exp.category,
       local: exp.local,
       value: exp.value.toString(),
       paymentMethod: exp.paymentMethod,
+      rateioType: isSauloExcluded ? 'Parc. Fixa Saulo' : 'Rateio Normal',
       installments: exp.installments || 1,
       donor: exp.donor || 'Jorge',
       isReimbursement: Boolean(exp.isReimbursement),
@@ -292,6 +363,8 @@ export function ExpensesTab({
         const installments = parseInt(row['Parcelas'] || row['installments'] || '1');
         const donor = (row['Doador'] || row['donor'] || 'Jorge') as Donor;
         const observation = row['Observação'] || row['observation'] || '';
+        const rawRateio = row['Forma de Rateio'] || row['rateioType'] || (observation.includes('Parc. Fixa Saulo') ? 'Parc. Fixa Saulo' : 'Rateio Normal');
+        const rateioType: RateioType = rawRateio === 'Parc. Fixa Saulo' ? 'Parc. Fixa Saulo' : 'Rateio Normal';
 
         if (local && value > 0) {
           let parsedDate = date;
@@ -303,15 +376,22 @@ export function ExpensesTab({
             parsedDate = `${y}-${m}-${d}`;
           }
 
+          let finalObs = observation;
+          if (rateioType === 'Parc. Fixa Saulo' && !finalObs.includes('Parc. Fixa Saulo')) {
+            finalObs = finalObs ? `${finalObs} [Parc. Fixa Saulo]` : '[Parc. Fixa Saulo]';
+          }
+
           onAdd({
             date: parsedDate,
             category: category as Category,
             local,
             value,
             paymentMethod,
+            rateioType,
+            splitPartners: rateioType === 'Parc. Fixa Saulo' ? ['Mccley', 'Jan', 'Jorge'] : ['Mccley', 'Jan', 'Saulo', 'Jorge'],
             installments: paymentMethod === 'Cartão' ? installments : undefined,
             donor: paymentMethod === 'doação' ? donor : undefined,
-            observation: observation || undefined
+            observation: finalObs || undefined
           });
         }
       });
@@ -329,6 +409,7 @@ export function ExpensesTab({
         'Local': 'Leroy Merlin',
         'Valor': 150.50,
         'Forma de Pagamento': 'Pix',
+        'Forma de Rateio': 'Rateio Normal',
         'Parcelas': '',
         'Doador': '',
         'Observação': 'Compra de tintas'
@@ -339,6 +420,7 @@ export function ExpensesTab({
         'Local': 'Pedreiro João',
         'Valor': 500.00,
         'Forma de Pagamento': 'Cartão',
+        'Forma de Rateio': 'Parc. Fixa Saulo',
         'Parcelas': 3,
         'Doador': '',
         'Observação': 'Semana 1'
@@ -558,17 +640,76 @@ export function ExpensesTab({
                   </div>
 
                   <div>
-                    <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1.5 px-1">Forma de Pagamento</label>
-                    <select 
-                      required
+                    <div className="flex items-center justify-between mb-1.5 px-1">
+                      <label className="block text-[10px] font-bold uppercase text-slate-400">
+                        Forma de Pagamento & Rateio
+                      </label>
+                      {formData.paymentMethod && (
+                        <button
+                          type="button"
+                          onClick={() => openRateioModal('single')}
+                          className="text-[10px] font-bold text-emerald-400 hover:text-emerald-300 flex items-center gap-1 transition-colors cursor-pointer"
+                        >
+                          <Edit2 size={11} />
+                          Alterar
+                        </button>
+                      )}
+                    </div>
+                    
+                    <button
+                      type="button"
                       disabled={isSubmitting}
-                      value={formData.paymentMethod}
-                      onChange={e => setFormData({ ...formData, paymentMethod: e.target.value as PaymentMethod })}
-                      className="w-full bg-slate-950/50 border border-slate-700/50 text-white rounded-xl px-4 py-3 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500/50 outline-none transition-all appearance-none disabled:opacity-50"
+                      onClick={() => openRateioModal('single')}
+                      className={cn(
+                        "w-full text-left rounded-xl px-4 py-3 border outline-none transition-all flex items-center justify-between gap-3 cursor-pointer group active:scale-[0.99]",
+                        formData.paymentMethod 
+                          ? "bg-slate-950/60 border-slate-700/60 hover:border-slate-600 hover:bg-slate-900/80 shadow-md" 
+                          : "bg-emerald-500/5 border-emerald-500/40 hover:border-emerald-500/70 ring-1 ring-emerald-500/20"
+                      )}
                     >
-                      <option value="" disabled className="text-slate-500">Selecione a forma de pagamento...</option>
-                      {PAYMENT_METHODS.map(pm => <option key={pm} value={pm} className="bg-slate-900">{pm}</option>)}
-                    </select>
+                      {formData.paymentMethod ? (
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div className={cn(
+                            "w-8 h-8 rounded-lg flex items-center justify-center shrink-0 border",
+                            formData.paymentMethod === 'Cartão' ? "bg-blue-500/10 text-blue-400 border-blue-500/20" :
+                            formData.paymentMethod === 'doação' ? "bg-purple-500/10 text-purple-400 border-purple-500/20" :
+                            formData.paymentMethod === 'Caixa' ? "bg-amber-500/10 text-amber-400 border-amber-500/20" :
+                            "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                          )}>
+                            {formData.paymentMethod === 'Cartão' ? <CreditCard size={16} /> :
+                             formData.paymentMethod === 'doação' ? <User size={16} /> :
+                             <Wallet size={16} />}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <span className="font-bold text-white text-sm block leading-tight">
+                              {formData.paymentMethod === 'doação' ? 'Doação' : formData.paymentMethod}
+                            </span>
+                            <div className="flex items-center gap-1.5 mt-0.5">
+                              <span className={cn(
+                                "text-[10px] font-bold px-1.5 py-0.2 rounded border inline-flex items-center gap-1",
+                                formData.rateioType === 'Parc. Fixa Saulo'
+                                  ? "bg-amber-500/15 text-amber-300 border-amber-500/30"
+                                  : "bg-emerald-500/15 text-emerald-300 border-emerald-500/30"
+                              )}>
+                                <Users size={10} />
+                                {formData.rateioType === 'Parc. Fixa Saulo' 
+                                  ? 'Parc. Fixa Saulo (3 Sócios)' 
+                                  : 'Rateio Normal (4 Sócios)'}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2 text-slate-400 text-sm">
+                          <Users size={16} className="text-emerald-400 shrink-0" />
+                          <span className="truncate">Selecione a forma de pagamento e rateio...</span>
+                        </div>
+                      )}
+
+                      <div className="shrink-0 text-slate-500 group-hover:text-slate-300 transition-colors">
+                        <ChevronRight size={18} />
+                      </div>
+                    </button>
                   </div>
 
                   {formData.paymentMethod === 'Cartão' && (
@@ -608,7 +749,18 @@ export function ExpensesTab({
                 <div className="space-y-4 p-4 bg-slate-950/50 rounded-xl border border-slate-700/50">
                   {/* Pagamento 1 */}
                   <div className="space-y-3">
-                    <h4 className="text-sm font-bold text-white border-b border-slate-800 pb-1.5">Pagamento 01</h4>
+                    <div className="flex items-center justify-between border-b border-slate-800 pb-1.5">
+                      <h4 className="text-sm font-bold text-white">Pagamento 01</h4>
+                      {splitData.paymentMethod1 && (
+                        <button
+                          type="button"
+                          onClick={() => openRateioModal('split1')}
+                          className="text-[10px] font-bold text-emerald-400 hover:text-emerald-300 flex items-center gap-1 transition-colors cursor-pointer"
+                        >
+                          <Edit2 size={10} /> Alterar
+                        </button>
+                      )}
+                    </div>
                     <input 
                       type="number" 
                       step="0.01"
@@ -619,16 +771,38 @@ export function ExpensesTab({
                       onChange={e => setSplitData({ ...splitData, value1: e.target.value })}
                       className="w-full bg-slate-900/50 border border-slate-700/50 text-white rounded-xl px-4 py-2.5 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500/50 outline-none transition-all placeholder:text-slate-600 disabled:opacity-50 font-mono text-sm"
                     />
-                    <select 
-                      required
+
+                    <button
+                      type="button"
                       disabled={isSubmitting}
-                      value={splitData.paymentMethod1}
-                      onChange={e => setSplitData({ ...splitData, paymentMethod1: e.target.value as PaymentMethod })}
-                      className="w-full bg-slate-900/50 border border-slate-700/50 text-white rounded-xl px-4 py-2.5 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500/50 outline-none transition-all appearance-none disabled:opacity-50"
+                      onClick={() => openRateioModal('split1')}
+                      className={cn(
+                        "w-full text-left rounded-xl px-4 py-2.5 border outline-none transition-all flex items-center justify-between gap-2 cursor-pointer group active:scale-[0.99]",
+                        splitData.paymentMethod1 
+                          ? "bg-slate-900/60 border-slate-700/60 hover:border-slate-600" 
+                          : "bg-slate-900/40 border-slate-700/50 hover:border-emerald-500/40 text-slate-400"
+                      )}
                     >
-                      <option value="" disabled className="text-slate-500">Forma de Pagamento 01...</option>
-                      {PAYMENT_METHODS.map(pm => <option key={pm} value={pm} className="bg-slate-900">{pm}</option>)}
-                    </select>
+                      {splitData.paymentMethod1 ? (
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="font-bold text-white text-xs">
+                            {splitData.paymentMethod1 === 'doação' ? 'Doação' : splitData.paymentMethod1}
+                          </span>
+                          <span className={cn(
+                            "text-[9px] font-bold px-1.5 py-0.2 rounded border inline-flex items-center gap-1",
+                            splitData.rateioType1 === 'Parc. Fixa Saulo'
+                              ? "bg-amber-500/15 text-amber-300 border-amber-500/30"
+                              : "bg-emerald-500/15 text-emerald-300 border-emerald-500/30"
+                          )}>
+                            <Users size={9} />
+                            {splitData.rateioType1 === 'Parc. Fixa Saulo' ? '3 Sócios' : '4 Sócios'}
+                          </span>
+                        </div>
+                      ) : (
+                        <span className="text-xs text-slate-400">Forma de Pagamento 01...</span>
+                      )}
+                      <ChevronRight size={15} className="text-slate-500 group-hover:text-slate-300" />
+                    </button>
                     
                     {splitData.paymentMethod1 === 'Cartão' && (
                       <select 
@@ -657,7 +831,18 @@ export function ExpensesTab({
 
                   {/* Pagamento 2 */}
                   <div className="space-y-3 pt-2">
-                    <h4 className="text-sm font-bold text-white border-b border-slate-800 pb-1.5">Pagamento 02</h4>
+                    <div className="flex items-center justify-between border-b border-slate-800 pb-1.5">
+                      <h4 className="text-sm font-bold text-white">Pagamento 02</h4>
+                      {splitData.paymentMethod2 && (
+                        <button
+                          type="button"
+                          onClick={() => openRateioModal('split2')}
+                          className="text-[10px] font-bold text-emerald-400 hover:text-emerald-300 flex items-center gap-1 transition-colors cursor-pointer"
+                        >
+                          <Edit2 size={10} /> Alterar
+                        </button>
+                      )}
+                    </div>
                     <input 
                       type="number" 
                       step="0.01"
@@ -668,16 +853,38 @@ export function ExpensesTab({
                       onChange={e => setSplitData({ ...splitData, value2: e.target.value })}
                       className="w-full bg-slate-900/50 border border-slate-700/50 text-white rounded-xl px-4 py-2.5 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500/50 outline-none transition-all placeholder:text-slate-600 disabled:opacity-50 font-mono text-sm"
                     />
-                    <select 
-                      required
+
+                    <button
+                      type="button"
                       disabled={isSubmitting}
-                      value={splitData.paymentMethod2}
-                      onChange={e => setSplitData({ ...splitData, paymentMethod2: e.target.value as PaymentMethod })}
-                      className="w-full bg-slate-900/50 border border-slate-700/50 text-white rounded-xl px-4 py-2.5 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500/50 outline-none transition-all appearance-none disabled:opacity-50"
+                      onClick={() => openRateioModal('split2')}
+                      className={cn(
+                        "w-full text-left rounded-xl px-4 py-2.5 border outline-none transition-all flex items-center justify-between gap-2 cursor-pointer group active:scale-[0.99]",
+                        splitData.paymentMethod2 
+                          ? "bg-slate-900/60 border-slate-700/60 hover:border-slate-600" 
+                          : "bg-slate-900/40 border-slate-700/50 hover:border-emerald-500/40 text-slate-400"
+                      )}
                     >
-                      <option value="" disabled className="text-slate-500">Forma de Pagamento 02...</option>
-                      {PAYMENT_METHODS.map(pm => <option key={pm} value={pm} className="bg-slate-900">{pm}</option>)}
-                    </select>
+                      {splitData.paymentMethod2 ? (
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="font-bold text-white text-xs">
+                            {splitData.paymentMethod2 === 'doação' ? 'Doação' : splitData.paymentMethod2}
+                          </span>
+                          <span className={cn(
+                            "text-[9px] font-bold px-1.5 py-0.2 rounded border inline-flex items-center gap-1",
+                            splitData.rateioType2 === 'Parc. Fixa Saulo'
+                              ? "bg-amber-500/15 text-amber-300 border-amber-500/30"
+                              : "bg-emerald-500/15 text-emerald-300 border-emerald-500/30"
+                          )}>
+                            <Users size={9} />
+                            {splitData.rateioType2 === 'Parc. Fixa Saulo' ? '3 Sócios' : '4 Sócios'}
+                          </span>
+                        </div>
+                      ) : (
+                        <span className="text-xs text-slate-400">Forma de Pagamento 02...</span>
+                      )}
+                      <ChevronRight size={15} className="text-slate-500 group-hover:text-slate-300" />
+                    </button>
                     
                     {splitData.paymentMethod2 === 'Cartão' && (
                       <select 
@@ -961,6 +1168,16 @@ export function ExpensesTab({
                           {exp.paymentMethod === 'Caixa' && (
                             <span className="text-amber-400">Caixa</span>
                           )}
+                          <span className="text-slate-600">•</span>
+                          {exp.rateioType === 'Parc. Fixa Saulo' || (exp.observation && exp.observation.includes('Parc. Fixa Saulo')) ? (
+                            <span className="text-[9px] font-bold text-amber-300 bg-amber-500/15 border border-amber-500/30 px-1.5 py-0.2 rounded inline-flex items-center gap-1" title="Rateio em partes iguais para Mccley, Jan e Jorge">
+                              <Users size={10} /> Parc. Saulo (3)
+                            </span>
+                          ) : (
+                            <span className="text-[9px] font-semibold text-slate-400 bg-slate-800/80 border border-slate-700/60 px-1.5 py-0.2 rounded inline-flex items-center gap-1 hidden xs:inline-flex" title="Rateio normal entre 4 sócios">
+                              <Users size={10} /> 4 Sócios
+                            </span>
+                          )}
                           {exp.observation && (
                             <>
                               <span className="text-slate-600">•</span>
@@ -1016,6 +1233,26 @@ export function ExpensesTab({
         }}
         confirmText="Salvar"
         confirmStyle="primary"
+      />
+      <RateioPaymentModal 
+        isOpen={isRateioModalOpen}
+        onClose={() => setIsRateioModalOpen(false)}
+        initialRateio={
+          rateioModalTarget === 'single' ? formData.rateioType :
+          rateioModalTarget === 'split1' ? splitData.rateioType1 :
+          splitData.rateioType2
+        }
+        initialPaymentMethod={
+          rateioModalTarget === 'single' ? (formData.paymentMethod || undefined) :
+          rateioModalTarget === 'split1' ? (splitData.paymentMethod1 || undefined) :
+          (splitData.paymentMethod2 || undefined)
+        }
+        onSelect={handleRateioPaymentSelect}
+        title={
+          rateioModalTarget === 'split1' ? "Pagamento 01: Rateio & Forma" :
+          rateioModalTarget === 'split2' ? "Pagamento 02: Rateio & Forma" :
+          "Definir Rateio & Forma de Pagamento"
+        }
       />
     </div>
   );

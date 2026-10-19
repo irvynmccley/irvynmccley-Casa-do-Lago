@@ -187,6 +187,35 @@ export async function ensureTerrenoInstallmentsSchema(): Promise<void> {
 }
 
 /**
+ * Garante defensivamente que o esquema da coleção 'expenses' no PocketBase
+ * possui o campo 'rateioType' (Parc. Fixa Saulo vs Rateio Normal)
+ */
+export async function ensureExpensesSchema(): Promise<void> {
+  try {
+    if (!pb.authStore.isValid) return;
+
+    const col = await pb.collections.getOne('expenses').catch(() => null);
+    if (!col) return;
+
+    const existingFields = (col.fields || (col as any).schema || []).map((f: any) => f.name);
+    const newFields = [...(col.fields || [])];
+    let needsUpdate = false;
+
+    if (!existingFields.includes('rateioType')) {
+      newFields.push({ name: 'rateioType', type: 'text', required: false });
+      needsUpdate = true;
+    }
+
+    if (needsUpdate) {
+      await pb.collections.update('expenses', { fields: newFields });
+      console.log('✓ PocketBase: coleção expenses atualizada com rateioType');
+    }
+  } catch (err) {
+    // Ignora silenciosamente se usuário não tiver permissão de admin
+  }
+}
+
+/**
  * Retorna a URL pública completa para visualização/download do comprovante no PocketBase
  */
 export function getTerrenoReceiptFileUrl(record: { id?: string; receipt_file?: string; receipt_url?: string }): string {

@@ -1904,28 +1904,63 @@ export function ReportsTab({
             {allCardInstallments.length > 0 ? (
               allCardInstallments.map((item) => {
                 const fixedPerPersonThisMonth = calculateFixedPerPersonForMonth(item.month, currentSettings);
-                const cardPerPerson = item.total / PEOPLE_COUNT;
-                const totalPerPerson = cardPerPerson + fixedPerPersonThisMonth;
+                let cardNormalTotal = 0;
+                let cardSauloTotal = 0;
+                (item.items || []).forEach(it => {
+                  const isSaulo = it.originalExp?.rateioType === 'Parc. Fixa Saulo' || 
+                    it.originalExp?.observation?.includes('[Parc. Fixa Saulo]');
+                  if (isSaulo) cardSauloTotal += Number(it.value) || 0;
+                  else cardNormalTotal += Number(it.value) || 0;
+                });
+                if (!item.items || item.items.length === 0) {
+                  cardNormalTotal = item.total;
+                }
+                const hasSauloSplit = cardSauloTotal > 0.001;
+                const cardPerPersonNormal = cardNormalTotal / PEOPLE_COUNT;
+                const cardPerPersonSauloSplit = cardSauloTotal / 3;
+                const valMccleyJanJorge = cardPerPersonNormal + cardPerPersonSauloSplit + fixedPerPersonThisMonth;
+                const valSaulo = cardPerPersonNormal + fixedPerPersonThisMonth;
+                const standardTotal = (item.total / PEOPLE_COUNT) + fixedPerPersonThisMonth;
                 
                 return (
                   <div key={item.month} className="flex flex-col sm:flex-row sm:items-center justify-between px-4 py-3 bg-slate-950/50 rounded-xl border border-slate-800/80 hover:bg-slate-800/40 transition-colors gap-3">
                     <div>
-                      <div className="text-base font-bold text-slate-100 capitalize">
-                        {format(new Date(parseInt(item.month.split('-')[0]), parseInt(item.month.split('-')[1]) - 1, 1), 'MMMM yyyy', { locale: ptBR })}
+                      <div className="flex items-center gap-2">
+                        <span className="text-base font-bold text-slate-100 capitalize">
+                          {format(new Date(parseInt(item.month.split('-')[0]), parseInt(item.month.split('-')[1]) - 1, 1), 'MMMM yyyy', { locale: ptBR })}
+                        </span>
+                        {hasSauloSplit && (
+                          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30">
+                            Parc. Saulo Diferenciada
+                          </span>
+                        )}
                       </div>
-                      <div className="text-[11px] text-slate-400 font-semibold tracking-wide uppercase mt-1 flex items-center gap-2">
-                        <span>Cartão: <span className="text-slate-200 font-mono">{formatCurrency(cardPerPerson)}</span></span>
-                        <span className="text-slate-600">+</span>
+                      <div className="text-[11px] text-slate-400 font-semibold tracking-wide uppercase mt-1 flex flex-wrap items-center gap-2">
                         <span>Fixo Terreno/Cond.: <span className="text-slate-200 font-mono">{formatCurrency(fixedPerPersonThisMonth)}</span></span>
+                        <span className="text-slate-600">•</span>
+                        <span>Total Fatura: <span className="text-slate-200 font-mono">{formatCurrency(item.total)}</span></span>
                       </div>
                     </div>
                     <div className="flex items-center gap-3">
-                      <div className="text-right">
-                        <span className="text-[10px] uppercase font-bold text-slate-400 block">Total por Pessoa</span>
-                        <span className="text-lg sm:text-xl font-mono font-bold text-emerald-400">
-                          {formatCurrency(totalPerPerson)}
-                        </span>
-                      </div>
+                      {hasSauloSplit ? (
+                        <div className="flex flex-col sm:flex-row sm:items-center gap-2 text-right">
+                          <div className="bg-slate-900/80 px-2.5 py-1 rounded-lg border border-slate-700/60">
+                            <span className="text-[9px] uppercase font-bold text-slate-400 block">Mccley, Jan, Jorge (1/3)</span>
+                            <span className="text-base font-mono font-bold text-amber-300">{formatCurrency(valMccleyJanJorge)}</span>
+                          </div>
+                          <div className="bg-slate-900/50 px-2.5 py-1 rounded-lg border border-slate-800">
+                            <span className="text-[9px] uppercase font-bold text-slate-400 block">Saulo</span>
+                            <span className="text-base font-mono font-bold text-slate-300">{formatCurrency(valSaulo)}</span>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="text-right">
+                          <span className="text-[10px] uppercase font-bold text-slate-400 block">Total por Pessoa</span>
+                          <span className="text-lg sm:text-xl font-mono font-bold text-emerald-400">
+                            {formatCurrency(standardTotal)}
+                          </span>
+                        </div>
+                      )}
                     </div>
                   </div>
                 );
@@ -1989,33 +2024,49 @@ export function ReportsTab({
                                 <th className="px-4 py-2.5">Data Compra</th>
                                 <th className="px-4 py-2.5">Local</th>
                                 <th className="px-4 py-2.5 text-center">Parcela</th>
+                                <th className="px-4 py-2.5 text-center">Rateio</th>
                                 <th className="px-4 py-2.5 text-right">Valor Parcela</th>
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-800/60 text-xs">
-                              {item.items.sort((a, b) => (b.date || '').localeCompare(a.date || '')).map((detail, idx) => (
-                                <tr key={`${detail.id}-${idx}`} className="hover:bg-slate-800/30 transition-colors">
-                                  <td className="px-4 py-2.5 text-slate-400 whitespace-nowrap font-mono">
-                                    {detail.date ? detail.date.split('-').reverse().join('/') : '-'}
-                                  </td>
-                                  <td className="px-4 py-2.5 font-medium text-slate-200">
-                                    {detail.local}
-                                    {detail.originalExp?.observation && (
-                                      <div className="text-[10px] text-slate-500 italic mt-0.5 truncate max-w-[240px]" title={detail.originalExp.observation}>
-                                        {detail.originalExp.observation}
-                                      </div>
-                                    )}
-                                  </td>
-                                  <td className="px-4 py-2.5 text-center text-slate-400">
-                                    <span className="bg-slate-800 px-2 py-0.5 rounded text-[11px] font-mono border border-slate-700/60">
-                                      {detail.installment}
-                                    </span>
-                                  </td>
-                                  <td className="px-4 py-2.5 font-mono font-bold text-slate-200 text-right whitespace-nowrap">
-                                    {formatCurrency(detail.value)}
-                                  </td>
-                                </tr>
-                              ))}
+                              {item.items.sort((a, b) => (b.date || '').localeCompare(a.date || '')).map((detail, idx) => {
+                                const isSauloSplit = detail.originalExp?.rateioType === 'Parc. Fixa Saulo' || 
+                                  detail.originalExp?.observation?.includes('[Parc. Fixa Saulo]');
+                                return (
+                                  <tr key={`${detail.id}-${idx}`} className="hover:bg-slate-800/30 transition-colors">
+                                    <td className="px-4 py-2.5 text-slate-400 whitespace-nowrap font-mono">
+                                      {detail.date ? detail.date.split('-').reverse().join('/') : '-'}
+                                    </td>
+                                    <td className="px-4 py-2.5 font-medium text-slate-200">
+                                      {detail.local}
+                                      {detail.originalExp?.observation && (
+                                        <div className="text-[10px] text-slate-500 italic mt-0.5 truncate max-w-[240px]" title={detail.originalExp.observation}>
+                                          {detail.originalExp.observation}
+                                        </div>
+                                      )}
+                                    </td>
+                                    <td className="px-4 py-2.5 text-center text-slate-400">
+                                      <span className="bg-slate-800 px-2 py-0.5 rounded text-[11px] font-mono border border-slate-700/60">
+                                        {detail.installment}
+                                      </span>
+                                    </td>
+                                    <td className="px-4 py-2.5 text-center whitespace-nowrap">
+                                      {isSauloSplit ? (
+                                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30">
+                                          Parc. Saulo (3)
+                                        </span>
+                                      ) : (
+                                        <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700/60">
+                                          4 Sócios
+                                        </span>
+                                      )}
+                                    </td>
+                                    <td className="px-4 py-2.5 font-mono font-bold text-slate-200 text-right whitespace-nowrap">
+                                      {formatCurrency(detail.value)}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
                             </tbody>
                           </table>
                         </div>

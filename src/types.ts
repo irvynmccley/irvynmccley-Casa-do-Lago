@@ -3,6 +3,7 @@ export type PaymentMethod = 'Pix' | 'Cartão' | 'doação' | 'Caixa';
 export type Donor = 'Jorge' | 'Jane' | 'Saulo' | 'Mccley' | 'Jan';
 export type Person = 'Mccley' | 'Jan' | 'Saulo' | 'Jorge';
 export type RefundStatus = 'Pendente' | 'Devolvido';
+export type RateioType = 'Parc. Fixa Saulo' | 'Rateio Normal';
 
 export interface Expense {
   id: string;
@@ -20,6 +21,8 @@ export interface Expense {
   reimburseTo?: Person;
   refundStatus?: RefundStatus;
   status?: string;
+  rateioType?: RateioType;
+  splitPartners?: Person[];
 }
 
 export interface Income {

@@ -267,10 +267,31 @@ export function Dashboard({
     const prevFixedPerPerson = calculateFixedPerPersonForMonth(prevMonthKey, activeSettings);
     
     if (prevMonthData) {
-      const cardPerPerson = prevMonthData.total / PEOPLE_COUNT;
-      return cardPerPerson + prevFixedPerPerson;
+      let cardNormalTotal = 0;
+      let cardSauloTotal = 0;
+      (prevMonthData.items || []).forEach(it => {
+        const isSaulo = it.originalExp?.rateioType === 'Parc. Fixa Saulo' || 
+          it.originalExp?.observation?.includes('[Parc. Fixa Saulo]');
+        if (isSaulo) cardSauloTotal += Number(it.value) || 0;
+        else cardNormalTotal += Number(it.value) || 0;
+      });
+      if (!prevMonthData.items || prevMonthData.items.length === 0) {
+        cardNormalTotal = prevMonthData.total;
+      }
+      const hasSaulo = cardSauloTotal > 0.001;
+      return {
+        hasSaulo,
+        mccleyJanJorge: (cardNormalTotal / PEOPLE_COUNT) + (cardSauloTotal / 3) + prevFixedPerPerson,
+        saulo: (cardNormalTotal / PEOPLE_COUNT) + prevFixedPerPerson,
+        standard: (prevMonthData.total / PEOPLE_COUNT) + prevFixedPerPerson
+      };
     }
-    return prevFixedPerPerson;
+    return {
+      hasSaulo: false,
+      mccleyJanJorge: prevFixedPerPerson,
+      saulo: prevFixedPerPerson,
+      standard: prevFixedPerPerson
+    };
   }, [allCardInstallments, previousMonthInfo, activeSettings, PEOPLE_COUNT]);
 
   const previousMonthInvoiceTotal = React.useMemo(() => {
@@ -637,8 +658,19 @@ export function Dashboard({
                 Jorge, Mccley, Jan, Saulo
               </div>
               {previousMonthValue !== null && (
-                <div className="text-xs font-bold text-red-400 bg-red-500/10 px-3 py-1.5 rounded-xl border border-red-500/20 shadow-sm">
-                  {previousMonthInfo.name}: {formatCurrency(previousMonthValue)}
+                <div 
+                  className="text-xs font-bold text-red-400 bg-red-500/10 px-3 py-1.5 rounded-xl border border-red-500/20 shadow-sm"
+                  title={previousMonthValue.hasSaulo ? `Mccley, Jan, Jorge: ${formatCurrency(previousMonthValue.mccleyJanJorge)} | Saulo: ${formatCurrency(previousMonthValue.saulo)}` : undefined}
+                >
+                  {previousMonthInfo.name}: {previousMonthValue.hasSaulo ? (
+                    <span className="flex items-center gap-1">
+                      <span>3 Sócios: <strong className="text-white font-mono">{formatCurrency(previousMonthValue.mccleyJanJorge)}</strong></span>
+                      <span className="text-red-300">/</span>
+                      <span>Saulo: <strong className="text-red-200 font-mono">{formatCurrency(previousMonthValue.saulo)}</strong></span>
+                    </span>
+                  ) : (
+                    <span>{formatCurrency(previousMonthValue.standard)}</span>
+                  )}
                 </div>
               )}
             </div>
@@ -649,8 +681,27 @@ export function Dashboard({
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
                 {cardInstallments.map((item) => {
                   const fixedPerPersonThisMonth = calculateFixedPerPersonForMonth(item.month, activeSettings);
-                  const cardPerPerson = item.total / PEOPLE_COUNT;
-                  const totalPerPerson = cardPerPerson + fixedPerPersonThisMonth;
+                  const monthData = allCardInstallments?.find(m => m.month === item.month);
+                  const monthItems = monthData?.items || [];
+                  
+                  let cardNormalTotal = 0;
+                  let cardSauloTotal = 0;
+                  monthItems.forEach(it => {
+                    const isSaulo = it.originalExp?.rateioType === 'Parc. Fixa Saulo' || 
+                      it.originalExp?.observation?.includes('[Parc. Fixa Saulo]');
+                    if (isSaulo) cardSauloTotal += Number(it.value) || 0;
+                    else cardNormalTotal += Number(it.value) || 0;
+                  });
+                  if (monthItems.length === 0) {
+                    cardNormalTotal = item.total;
+                  }
+                  
+                  const hasSauloSplit = cardSauloTotal > 0.001;
+                  const cardPerPersonNormal = cardNormalTotal / PEOPLE_COUNT;
+                  const cardPerPersonSauloSplit = cardSauloTotal / 3;
+                  const valMccleyJanJorge = cardPerPersonNormal + cardPerPersonSauloSplit + fixedPerPersonThisMonth;
+                  const valSaulo = cardPerPersonNormal + fixedPerPersonThisMonth;
+                  const standardTotal = (item.total / PEOPLE_COUNT) + fixedPerPersonThisMonth;
                   
                   return (
                     <div key={item.month} className="flex flex-col justify-between p-3.5 sm:p-4 bg-slate-800/40 rounded-2xl border border-slate-700/50 hover:bg-slate-800/60 hover:border-slate-600 transition-colors">
@@ -658,15 +709,48 @@ export function Dashboard({
                         <div className="text-sm font-bold text-slate-200 capitalize">
                           {format(new Date(parseInt(item.month.split('-')[0]), parseInt(item.month.split('-')[1]) - 1, 1), 'MMMM yyyy', { locale: ptBR })}
                         </div>
+                        {hasSauloSplit && (
+                          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30">
+                            Parc. Saulo Diferenciada
+                          </span>
+                        )}
                       </div>
-                      <div className="flex items-end justify-between gap-2 mt-auto pt-1">
-                        <div className="text-[10px] text-slate-400 font-semibold uppercase tracking-tighter">
-                          Cartão: {formatCurrency(cardPerPerson)} <br/> Fixo: {formatCurrency(fixedPerPersonThisMonth)}
+
+                      {hasSauloSplit ? (
+                        <div className="flex flex-col gap-1.5 w-full mt-auto pt-1">
+                          <div className="flex items-center justify-between text-[11px] bg-slate-900/70 px-2.5 py-1.5 rounded-xl border border-slate-700/60">
+                            <div>
+                              <span className="font-bold text-slate-200">Mccley, Jan, Jorge</span>
+                              <span className="text-[9px] text-slate-400 block font-mono">
+                                Cartão {formatCurrency(cardPerPersonNormal + cardPerPersonSauloSplit)} + Fixo
+                              </span>
+                            </div>
+                            <span className="text-sm font-mono font-extrabold text-amber-300">
+                              {formatCurrency(valMccleyJanJorge)}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between text-[11px] bg-slate-900/40 px-2.5 py-1 rounded-xl border border-slate-800">
+                            <div>
+                              <span className="font-semibold text-slate-300">Saulo</span>
+                              <span className="text-[9px] text-slate-500 block font-mono">
+                                Cartão {formatCurrency(cardPerPersonNormal)} + Fixo
+                              </span>
+                            </div>
+                            <span className="text-sm font-mono font-bold text-slate-300">
+                              {formatCurrency(valSaulo)}
+                            </span>
+                          </div>
                         </div>
-                        <div className="text-base sm:text-lg font-mono font-bold text-white bg-slate-900/60 px-3 py-1.5 rounded-xl shadow-inner border border-slate-700/60 shrink-0">
-                          {formatCurrency(totalPerPerson)}
+                      ) : (
+                        <div className="flex items-end justify-between gap-2 mt-auto pt-1">
+                          <div className="text-[10px] text-slate-400 font-semibold uppercase tracking-tighter">
+                            Cartão: {formatCurrency(cardPerPersonNormal)} <br/> Fixo: {formatCurrency(fixedPerPersonThisMonth)}
+                          </div>
+                          <div className="text-base sm:text-lg font-mono font-bold text-white bg-slate-900/60 px-3 py-1.5 rounded-xl shadow-inner border border-slate-700/60 shrink-0">
+                            {formatCurrency(standardTotal)}
+                          </div>
                         </div>
-                      </div>
+                      )}
                     </div>
                   );
                 })}
@@ -1075,12 +1159,15 @@ export function Dashboard({
                             <th className="px-3 sm:px-4 py-2 text-[10px] font-bold uppercase text-slate-400">Data</th>
                             <th className="px-3 sm:px-4 py-2 text-[10px] font-bold uppercase text-slate-400">Local</th>
                             <th className="px-3 sm:px-4 py-2 text-[10px] font-bold uppercase text-slate-400 text-center">Parcela</th>
+                            <th className="px-3 sm:px-4 py-2 text-[10px] font-bold uppercase text-slate-400 text-center">Rateio</th>
                             <th className="px-3 sm:px-4 py-2 text-[10px] font-bold uppercase text-slate-400 text-right">Valor</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-700/50">
                           {selectedInvoiceData.items.sort((a, b) => (b.date || '').localeCompare(a.date || '')).map((detail, idx) => {
                             const auditId = formatAuditId('EXP', detail.id);
+                            const isSauloSplit = detail.originalExp?.rateioType === 'Parc. Fixa Saulo' || 
+                              detail.originalExp?.observation?.includes('[Parc. Fixa Saulo]');
                             return (
                               <tr key={`${detail.id}-${idx}`} className="hover:bg-slate-800/50 transition-colors">
                                 <td className="px-3 sm:px-4 py-2 text-xs whitespace-nowrap">
@@ -1106,6 +1193,17 @@ export function Dashboard({
                                 </td>
                                 <td className="px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium text-center text-slate-400">
                                   {detail.installment}
+                                </td>
+                                <td className="px-3 sm:px-4 py-2 text-xs sm:text-sm text-center whitespace-nowrap">
+                                  {isSauloSplit ? (
+                                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30">
+                                      Parc. Saulo (3)
+                                    </span>
+                                  ) : (
+                                    <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700/60">
+                                      4 Sócios
+                                    </span>
+                                  )}
                                 </td>
                                 <td className="px-3 sm:px-4 py-2 text-xs sm:text-sm font-mono font-bold text-slate-200 text-right whitespace-nowrap">
                                   {formatCurrency(detail.value)}
@@ -1188,12 +1286,15 @@ export function Dashboard({
                                     <th className="px-3 py-2">Data</th>
                                     <th className="px-3 py-2">Local</th>
                                     <th className="px-3 py-2 text-center">Parcela</th>
+                                    <th className="px-3 py-2 text-center">Rateio</th>
                                     <th className="px-3 py-2 text-right">Valor</th>
                                   </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-700/50 text-xs">
                                   {item.items.sort((a, b) => (b.date || '').localeCompare(a.date || '')).map((detail, idx) => {
                                     const auditId = formatAuditId('EXP', detail.id);
+                                    const isSauloSplit = detail.originalExp?.rateioType === 'Parc. Fixa Saulo' || 
+                                      detail.originalExp?.observation?.includes('[Parc. Fixa Saulo]');
                                     return (
                                       <tr key={`acc-item-${detail.id}-${idx}`} className="hover:bg-slate-800/40">
                                         <td className="px-3 py-1.5">
@@ -1213,6 +1314,17 @@ export function Dashboard({
                                         </td>
                                         <td className="px-3 py-1.5 text-center text-slate-400">
                                           {detail.installment}
+                                        </td>
+                                        <td className="px-3 py-1.5 text-center whitespace-nowrap">
+                                          {isSauloSplit ? (
+                                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30">
+                                              Parc. Saulo (3)
+                                            </span>
+                                          ) : (
+                                            <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700/60">
+                                              4 Sócios
+                                            </span>
+                                          )}
                                         </td>
                                         <td className="px-3 py-1.5 text-right font-mono font-bold text-slate-200">
                                           {formatCurrency(detail.value)}

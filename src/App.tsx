@@ -12,12 +12,13 @@ import {
 import { 
   format
 } from 'date-fns';
-import { AppState, Expense, Income, Payment, Category, Person, RefundStatus, TerrenoInstallmentRecord } from './types';
+import { AppState, Expense, Income, Payment, Category, Person, RefundStatus, RateioType, TerrenoInstallmentRecord } from './types';
 import { 
   getStoredTerrenoReceipts, 
   saveStoredTerrenoReceipt, 
   deleteStoredTerrenoReceipt, 
   ensureTerrenoInstallmentsSchema,
+  ensureExpensesSchema,
   getTerrenoReceiptFileUrl
 } from './utils/terrenoStorage';
 import { NavItem } from './components/ui/NavItem';
@@ -178,8 +179,9 @@ function App() {
     // Check if PocketBase has a valid logged in session (user or superuser)
     if (pb.authStore.isValid && pb.authStore.record) {
       setUser(pb.authStore.record);
-      // Garante esquema defensivamente em segundo plano se for superuser
+      // Garante esquemas defensivamente em segundo plano se for superuser
       ensureTerrenoInstallmentsSchema().catch(() => {});
+      ensureExpensesSchema().catch(() => {});
     } else {
       setUser(null);
     }
@@ -189,6 +191,7 @@ function App() {
       setUser(model);
       if (model && pb.authStore.isValid) {
         ensureTerrenoInstallmentsSchema().catch(() => {});
+        ensureExpensesSchema().catch(() => {});
       }
       if (!model && !shared && !vendor) {
         setUser(null);
@@ -303,6 +306,12 @@ function App() {
         );
         const refStatus = (e.refundStatus || (e.status === 'DEVOLVIDO' ? 'Devolvido' : 'Pendente')) as RefundStatus;
         const reimbTo = (e.reimburseTo || (e.paymentMethod !== 'doação' && e.donor ? e.donor : undefined)) as Person | undefined;
+        const isSauloExcluded = Boolean(
+          e.rateioType === 'Parc. Fixa Saulo' || 
+          (e.observation && e.observation.includes('Parc. Fixa Saulo'))
+        );
+        const rateioType: RateioType = isSauloExcluded ? 'Parc. Fixa Saulo' : 'Rateio Normal';
+        const splitPartners: Person[] = isSauloExcluded ? ['Mccley', 'Jan', 'Jorge'] : ['Mccley', 'Jan', 'Saulo', 'Jorge'];
 
         return {
           ...e,
@@ -312,6 +321,8 @@ function App() {
           isReimbursement: isReimb,
           reimburseTo: reimbTo,
           refundStatus: isReimb ? refStatus : undefined,
+          rateioType,
+          splitPartners,
           status: e.status
         };
       });
@@ -438,6 +449,12 @@ function App() {
             );
             const refStatus = (item.refundStatus || (item.status === 'DEVOLVIDO' ? 'Devolvido' : 'Pendente')) as RefundStatus;
             const reimbTo = (item.reimburseTo || (item.paymentMethod !== 'doação' && item.donor ? item.donor : undefined)) as Person | undefined;
+            const isSauloExcluded = Boolean(
+              item.rateioType === 'Parc. Fixa Saulo' || 
+              (item.observation && item.observation.includes('Parc. Fixa Saulo'))
+            );
+            const rateioType: RateioType = isSauloExcluded ? 'Parc. Fixa Saulo' : 'Rateio Normal';
+            const splitPartners: Person[] = isSauloExcluded ? ['Mccley', 'Jan', 'Jorge'] : ['Mccley', 'Jan', 'Saulo', 'Jorge'];
 
             return {
               ...item,
@@ -446,6 +463,8 @@ function App() {
               isReimbursement: isReimb,
               reimburseTo: reimbTo,
               refundStatus: isReimb ? refStatus : undefined,
+              rateioType,
+              splitPartners,
               status: item.status
             };
           });
@@ -779,6 +798,9 @@ function App() {
     if (next.observation !== undefined && next.observation !== previous.observation) {
       changes.push(`Obs: "${previous.observation || ''}" → "${next.observation || ''}"`);
     }
+    if (next.rateioType !== undefined && next.rateioType !== previous.rateioType) {
+      changes.push(`Rateio: ${previous.rateioType || 'Rateio Normal'} → ${next.rateioType}`);
+    }
 
     const localName = next.local || previous.local;
     const details = changes.length > 0 
@@ -897,6 +919,8 @@ function App() {
          isReimbursement: isReimb,
          reimburseTo: isReimb ? expense.reimburseTo : undefined,
          refundStatus: isReimb ? refundStatus : undefined,
+         rateioType: expense.rateioType || 'Rateio Normal',
+         splitPartners: expense.splitPartners || (expense.rateioType === 'Parc. Fixa Saulo' ? ['Mccley', 'Jan', 'Jorge'] : ['Mccley', 'Jan', 'Saulo', 'Jorge']),
          status: pbStatus
        };
        setState(prev => ({ ...prev, expenses: [localExpense, ...prev.expenses] }));
@@ -907,14 +931,25 @@ function App() {
          recordId: tempId,
          auditId: formatAuditId('EXP', tempId),
          user: getUserName(),
-         details: `${expense.local} - R$ ${expense.value.toFixed(2)} (${expense.paymentMethod})${isReimb ? ` [A Devolver p/ ${expense.reimburseTo}]` : ''}`
+         details: `${expense.local} - R$ ${expense.value.toFixed(2)} (${expense.paymentMethod})${expense.rateioType === 'Parc. Fixa Saulo' ? ' [Parc. Saulo (3)]' : ''}${isReimb ? ` [A Devolver p/ ${expense.reimburseTo}]` : ''}`
        });
        toast.success("Salvo offline. Rastreando até reconectar.");
        return;
     }
 
     try {
-      const record = await pb.collection('expenses').create(payload);
+      let record: any;
+      try {
+        record = await pb.collection('expenses').create(payload);
+      } catch (err: any) {
+        if (payload.rateioType) {
+          delete payload.rateioType;
+          delete payload.splitPartners;
+          record = await pb.collection('expenses').create(payload);
+        } else {
+          throw err;
+        }
+      }
       await fetchAllData();
       auditLogger.log({
         action: 'CREATE',
@@ -923,7 +958,7 @@ function App() {
         recordId: record.id,
         auditId: formatAuditId('EXP', record.id),
         user: getUserName(),
-        details: `${expense.local} - R$ ${expense.value.toFixed(2)} (${expense.paymentMethod})${isReimb ? ` [A Devolver p/ ${expense.reimburseTo}]` : ''}`
+        details: `${expense.local} - R$ ${expense.value.toFixed(2)} (${expense.paymentMethod})${expense.rateioType === 'Parc. Fixa Saulo' ? ' [Parc. Saulo (3)]' : ''}${isReimb ? ` [A Devolver p/ ${expense.reimburseTo}]` : ''}`
       });
       toast.success("Lançamento com Sucesso");
     } catch (error: any) {
@@ -1000,6 +1035,19 @@ function App() {
     if (pbStatus !== undefined) cleanExpense.status = pbStatus;
     if (donorVal !== undefined) cleanExpense.donor = donorVal;
 
+    // Tag na observação para resiliência contábil universal
+    if (cleanExpense.rateioType === 'Parc. Fixa Saulo') {
+      const currentObs = String(cleanExpense.observation !== undefined ? cleanExpense.observation : (previous?.observation || ''));
+      if (!currentObs.includes('[Parc. Fixa Saulo]')) {
+        cleanExpense.observation = currentObs ? `${currentObs} [Parc. Fixa Saulo]` : '[Parc. Fixa Saulo]';
+      }
+    } else if (cleanExpense.rateioType === 'Rateio Normal') {
+      const currentObs = String(cleanExpense.observation !== undefined ? cleanExpense.observation : (previous?.observation || ''));
+      if (currentObs.includes('[Parc. Fixa Saulo]')) {
+        cleanExpense.observation = currentObs.replace(/\s*\[Parc\. Fixa Saulo\]/g, '').trim();
+      }
+    }
+
     if (isOffline) {
        saveToOfflineQueue('EDIT_EXPENSE', cleanExpense, id);
        setState(prev => ({ 
@@ -1007,6 +1055,8 @@ function App() {
          expenses: prev.expenses.map(e => e.id === id ? { 
            ...e, 
            ...expense, 
+           rateioType: expense.rateioType || (expense.observation?.includes('[Parc. Fixa Saulo]') ? 'Parc. Fixa Saulo' : e.rateioType || 'Rateio Normal'),
+           splitPartners: expense.splitPartners || ((expense.rateioType === 'Parc. Fixa Saulo' || expense.observation?.includes('[Parc. Fixa Saulo]')) ? ['Mccley', 'Jan', 'Jorge'] : (e.splitPartners || ['Mccley', 'Jan', 'Saulo', 'Jorge'])),
            status: pbStatus !== undefined ? pbStatus : e.status 
          } as Expense : e) 
        }));
@@ -1025,7 +1075,17 @@ function App() {
     }
 
     try {
-      await pb.collection('expenses').update(id, cleanExpense);
+      try {
+        await pb.collection('expenses').update(id, cleanExpense);
+      } catch (err: any) {
+        if (cleanExpense.rateioType) {
+          delete cleanExpense.rateioType;
+          delete cleanExpense.splitPartners;
+          await pb.collection('expenses').update(id, cleanExpense);
+        } else {
+          throw err;
+        }
+      }
       await fetchAllData();
       auditLogger.logUpdate({
         entity: 'Saída',
@@ -1047,6 +1107,8 @@ function App() {
            expenses: prev.expenses.map(e => e.id === id ? { 
              ...e, 
              ...expense, 
+             rateioType: expense.rateioType || (expense.observation?.includes('[Parc. Fixa Saulo]') ? 'Parc. Fixa Saulo' : e.rateioType || 'Rateio Normal'),
+             splitPartners: expense.splitPartners || ((expense.rateioType === 'Parc. Fixa Saulo' || expense.observation?.includes('[Parc. Fixa Saulo]')) ? ['Mccley', 'Jan', 'Jorge'] : (e.splitPartners || ['Mccley', 'Jan', 'Saulo', 'Jorge'])),
              status: pbStatus !== undefined ? pbStatus : e.status 
            } as Expense : e) 
          }));
