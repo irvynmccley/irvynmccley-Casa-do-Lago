@@ -362,9 +362,6 @@ export function Dashboard({
     return curr ? curr.total : 0;
   }, [twelveMonthsInvoices]);
 
-  const totalTwelveMonthsInvoices = React.useMemo(() => {
-    return twelveMonthsInvoices.reduce((sum, m) => sum + m.total, 0);
-  }, [twelveMonthsInvoices]);
 
   // Mês selecionado interativamente no gráfico (padrão: mês atual)
   const [selectedInvoiceMonthKey, setSelectedInvoiceMonthKey] = React.useState<string>(() => {
@@ -774,49 +771,6 @@ export function Dashboard({
                   <span>{currentMonthInfo.name} (Atual):</span>
                   <span className="font-mono text-white font-extrabold">{formatCurrency(currentMonthInvoiceTotal || 0)}</span>
                 </div>
-
-                {/* Total 12 Meses */}
-                <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-500/10 border border-indigo-500/25 text-indigo-300 text-xs font-bold shadow-sm">
-                  <span>Total Ano:</span>
-                  <span className="font-mono font-extrabold text-white">{formatCurrency(totalTwelveMonthsInvoices)}</span>
-                </div>
-
-                {/* Botão de Exportar Card em Imagem */}
-                <button
-                  type="button"
-                  onClick={(e) => exportAsImage('card-faturas-12-meses', `Faturas-12-Meses-${currentMonthKey}`, e)}
-                  className="export-btn p-2 bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white rounded-xl transition-all border border-slate-700 shrink-0 cursor-pointer active:scale-95 shadow-sm"
-                  title="Exportar gráfico de faturas como imagem PNG"
-                >
-                  <Download size={16} />
-                </button>
-              </div>
-            </div>
-
-            {/* Aviso de rolagem touch para telas menores (Smartphones) */}
-            <div className="md:hidden flex items-center justify-between px-3 py-1.5 mb-3 rounded-xl bg-slate-800/50 border border-slate-700/60 text-[11px] text-slate-400">
-              <span className="flex items-center gap-1.5">
-                <ArrowLeftRight size={13} className="text-purple-400 shrink-0" />
-                Deslize para ver todos os 12 meses
-              </span>
-              <span className="text-[10px] text-sky-400 font-bold bg-sky-500/10 px-2 py-0.5 rounded border border-sky-500/20">
-                Toque na coluna para detalhar
-              </span>
-            </div>
-
-            {/* Legenda Explicativa das Cores */}
-            <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-slate-400 mb-4 px-1">
-              <div className="flex items-center gap-1.5">
-                <span className="w-3 h-3 rounded-sm bg-red-500 shadow-[0_0_6px_rgba(239,68,68,0.7)]"></span>
-                <span className="text-red-300 font-medium">1ª Coluna: Mês Anterior (Fechada)</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <span className="w-3 h-3 rounded-sm bg-sky-400 shadow-[0_0_8px_rgba(56,189,248,0.9)] border border-white/60"></span>
-                <span className="text-sky-300 font-bold">2ª Coluna: Mês Atual (Em Evidência)</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <span className="w-3 h-3 rounded-sm bg-indigo-500/80"></span>
-                <span className="text-indigo-200 font-medium">Demais 10 Colunas: Próximos Meses (Projeção)</span>
               </div>
             </div>
 
