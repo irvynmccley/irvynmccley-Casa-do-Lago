@@ -67,21 +67,6 @@ interface DashboardProps {
   onNavigateToReports?: (subTab?: 'geral' | 'extrato' | 'doacoes' | 'apagar' | 'faturas') => void;
 }
 
-const TriangleBar = (props: any) => {
-  const { fill, x, y, width, height } = props;
-  const depth = 10;
-  
-  return (
-    <g>
-      {/* Front face */}
-      <path d={`M${x},${y} L${x + width},${y} L${x + width},${y + height} L${x},${y + height} Z`} fill={fill} />
-      {/* Top face */}
-      <path d={`M${x},${y} L${x + depth},${y - depth} L${x + width + depth},${y - depth} L${x + width},${y} Z`} fill={fill} opacity={0.8} />
-      {/* Right face */}
-      <path d={`M${x + width},${y} L${x + width + depth},${y - depth} L${x + width + depth},${y + height - depth} L${x + width},${y + height} Z`} fill={fill} opacity={0.6} />
-    </g>
-  );
-};
 
 export function Dashboard({ 
   totalSpent, 
@@ -377,6 +362,50 @@ export function Dashboard({
 
   const [showAllInvoicesAccordion, setShowAllInvoicesAccordion] = React.useState(false);
 
+  // Renderizador do Rótulo em Alta Definição para Gastos por Categoria
+  const renderCategoryValueLabel = (props: any) => {
+    const { x, y, width, value } = props;
+    if (value === undefined || value === null || Number(value) <= 0) return null;
+
+    const formatted = formatCurrency(value);
+    const percentage = totalSpent > 0 ? ((value / totalSpent) * 100).toFixed(1).replace('.', ',') : '0';
+
+    return (
+      <g>
+        {/* Valor da categoria em destaque de alta definição */}
+        <text
+          x={x + width / 2}
+          y={y - 14}
+          fill="#ffffff"
+          textAnchor="middle"
+          fontSize={11.5}
+          fontWeight="800"
+          className="font-mono select-none"
+          style={{
+            filter: 'drop-shadow(0px 2px 4px rgba(0,0,0,0.95))'
+          }}
+        >
+          {formatted}
+        </text>
+        {/* Percentual em relação ao total da obra */}
+        <text
+          x={x + width / 2}
+          y={y - 2}
+          fill="#94a3b8"
+          textAnchor="middle"
+          fontSize={9.5}
+          fontWeight="700"
+          className="font-mono select-none"
+          style={{
+            filter: 'drop-shadow(0px 1px 2px rgba(0,0,0,0.9))'
+          }}
+        >
+          {percentage}%
+        </text>
+      </g>
+    );
+  };
+
   // Renderizador do Rótulo de Valor em cada coluna (Bem Visível e sem cortes)
   const renderInvoiceBarLabel = (props: any) => {
     const { x, y, width, value, index } = props;
@@ -584,48 +613,64 @@ export function Dashboard({
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-8 items-stretch">
-        <Card className="bg-slate-900/60 backdrop-blur-xl border border-blue-500/20 ring-1 ring-white/5 shadow-xl p-4 sm:p-8 flex flex-col h-full hover:shadow-blue-500/10 transition-all">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-4 mb-2">
-            <h3 className="text-base sm:text-lg font-bold flex items-center gap-3 text-white">
-              <div className="p-2 bg-blue-500/10 rounded-xl ring-1 ring-blue-500/20">
-                <Wallet size={20} className="text-blue-400" />
+        {/* ======================================================== */}
+        {/* CARD 1: A PAGAR (MENSAL POR PESSOA) - HORIZONTAL         */}
+        {/* ======================================================== */}
+        <Card className="bg-slate-900/60 backdrop-blur-xl border border-blue-500/20 ring-1 ring-white/5 shadow-xl p-4 sm:p-8 flex flex-col hover:shadow-blue-500/10 transition-all lg:col-span-2">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 bg-blue-500/10 rounded-2xl ring-1 ring-blue-500/20 shadow-inner">
+                <Wallet size={22} className="text-blue-400" />
               </div>
-              A Pagar (Mensal por Pessoa)
-            </h3>
-            <div className="text-[10px] text-blue-300 font-bold uppercase tracking-wider bg-blue-500/10 px-3 py-1.5 rounded-full ring-1 ring-blue-500/20">
-              Jorge, Mccley, Jan, Saulo
+              <div>
+                <h3 className="text-base sm:text-lg font-bold flex items-center gap-2 text-white">
+                  A Pagar (Mensal por Pessoa)
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Projeção de rateio mensal dividido entre os sócios + custos fixos
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="text-[10px] text-blue-300 font-bold uppercase tracking-wider bg-blue-500/10 border border-blue-500/20 px-3 py-1.5 rounded-full">
+                Jorge, Mccley, Jan, Saulo
+              </div>
+              {previousMonthValue !== null && (
+                <div className="text-xs font-bold text-red-400 bg-red-500/10 px-3 py-1.5 rounded-xl border border-red-500/20 shadow-sm">
+                  {previousMonthInfo.name}: {formatCurrency(previousMonthValue)}
+                </div>
+              )}
             </div>
           </div>
           
-          {previousMonthValue !== null && (
-            <div className="mb-4 text-xs font-bold text-red-400 bg-red-500/10 px-3 py-1.5 rounded-lg inline-block self-start ring-1 ring-red-500/20">
-              {previousMonthInfo.name}: {formatCurrency(previousMonthValue)}
-            </div>
-          )}
-          
-          <div className="space-y-2 sm:space-y-4 overflow-y-auto max-h-[350px] pr-2 custom-scrollbar flex-grow">
+          <div className="overflow-y-auto max-h-[350px] pr-2 custom-scrollbar">
             {cardInstallments.length > 0 ? (
-              cardInstallments.map((item) => {
-                const fixedPerPersonThisMonth = calculateFixedPerPersonForMonth(item.month, activeSettings);
-                const cardPerPerson = item.total / PEOPLE_COUNT;
-                const totalPerPerson = cardPerPerson + fixedPerPersonThisMonth;
-                
-                return (
-                  <div key={item.month} className="flex flex-col sm:flex-row sm:items-center justify-between p-3 sm:p-4 bg-slate-800/40 rounded-2xl border border-slate-700/50 hover:bg-slate-800/60 hover:border-slate-600 transition-colors">
-                    <div className="mb-2 sm:mb-0">
-                      <div className="text-sm font-bold text-slate-200 capitalize">
-                        {format(new Date(parseInt(item.month.split('-')[0]), parseInt(item.month.split('-')[1]) - 1, 1), 'MMMM yyyy', { locale: ptBR })}
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                {cardInstallments.map((item) => {
+                  const fixedPerPersonThisMonth = calculateFixedPerPersonForMonth(item.month, activeSettings);
+                  const cardPerPerson = item.total / PEOPLE_COUNT;
+                  const totalPerPerson = cardPerPerson + fixedPerPersonThisMonth;
+                  
+                  return (
+                    <div key={item.month} className="flex flex-col justify-between p-3.5 sm:p-4 bg-slate-800/40 rounded-2xl border border-slate-700/50 hover:bg-slate-800/60 hover:border-slate-600 transition-colors">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="text-sm font-bold text-slate-200 capitalize">
+                          {format(new Date(parseInt(item.month.split('-')[0]), parseInt(item.month.split('-')[1]) - 1, 1), 'MMMM yyyy', { locale: ptBR })}
+                        </div>
                       </div>
-                      <div className="text-[10px] text-slate-400 font-semibold uppercase tracking-tighter mt-1">
-                        Cartão: {formatCurrency(cardPerPerson)} + Fixo: {formatCurrency(fixedPerPersonThisMonth)}
+                      <div className="flex items-end justify-between gap-2 mt-auto pt-1">
+                        <div className="text-[10px] text-slate-400 font-semibold uppercase tracking-tighter">
+                          Cartão: {formatCurrency(cardPerPerson)} <br/> Fixo: {formatCurrency(fixedPerPersonThisMonth)}
+                        </div>
+                        <div className="text-base sm:text-lg font-mono font-bold text-white bg-slate-900/60 px-3 py-1.5 rounded-xl shadow-inner border border-slate-700/60 shrink-0">
+                          {formatCurrency(totalPerPerson)}
+                        </div>
                       </div>
                     </div>
-                    <div className="text-lg sm:text-xl font-mono font-bold text-white bg-slate-900/50 px-4 py-2 rounded-xl shadow-inner border border-slate-700/50">
-                      {formatCurrency(totalPerPerson)}
-                    </div>
-                  </div>
-                );
-              })
+                  );
+                })}
+              </div>
             ) : (
               <div className="flex flex-col items-center justify-center py-12 text-slate-400 italic text-sm bg-slate-800/30 rounded-2xl border border-dashed border-slate-700">
                 <p className="font-medium">Nenhum gasto fixo ou parcelado identificado.</p>
@@ -634,7 +679,7 @@ export function Dashboard({
             )}
           </div>
 
-          <div className="mt-8 pt-6 border-t border-slate-700/50 flex flex-wrap gap-x-8 gap-y-3">
+          <div className="mt-6 pt-4 border-t border-slate-700/50 flex flex-wrap gap-x-6 gap-y-3">
             <div className="flex items-center gap-2 bg-emerald-500/10 px-3 py-1.5 rounded-lg border border-emerald-500/20">
               <div className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)]"></div>
               <span className="text-xs text-emerald-300 font-medium">Terreno: <span className="font-bold text-emerald-200">{formatCurrency(activeTerrenoCost)}</span></span>
@@ -671,48 +716,140 @@ export function Dashboard({
           </div>
         </Card>
 
-        <Card className="bg-slate-900/60 backdrop-blur-xl border border-emerald-500/20 ring-1 ring-white/5 shadow-xl p-4 sm:p-8 flex flex-col h-full hover:shadow-emerald-500/10 transition-all">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-4 mb-6">
-            <h3 className="text-base sm:text-lg font-bold flex items-center gap-3 text-white">
-              <div className="p-2 bg-emerald-500/10 rounded-xl ring-1 ring-emerald-500/20">
-                <BarChartIcon size={20} className="text-emerald-400" />
+        {/* ======================================================== */}
+        {/* CARD 2: GASTOS POR CATEGORIA - HORIZONTAL EM ALTA DEF.   */}
+        {/* Alocado entre o card "A Pagar" e "Faturas do Cartão"     */}
+        {/* ======================================================== */}
+        <Card className="bg-slate-900/60 backdrop-blur-xl border border-emerald-500/20 ring-1 ring-white/5 shadow-xl p-4 sm:p-8 flex flex-col hover:shadow-emerald-500/10 transition-all lg:col-span-2">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 bg-emerald-500/10 rounded-2xl ring-1 ring-emerald-500/20 shadow-inner">
+                <BarChartIcon size={22} className="text-emerald-400" />
               </div>
-              Gastos por Categoria
-            </h3>
-            <div className="text-[10px] text-slate-400 font-medium italic bg-slate-800/50 px-3 py-1.5 rounded-full ring-1 ring-slate-700/50">
-              * Inclui pagamentos (Pix, Cartão, Doações)
+              <div>
+                <h3 className="text-base sm:text-lg font-bold flex items-center gap-2 text-white">
+                  Gastos por Categoria
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-emerald-300 bg-emerald-500/15 border border-emerald-500/30 px-2 py-0.5 rounded-full">
+                    Geral
+                  </span>
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Distribuição financeira dos custos da obra (Pix, Cartão e Doações)
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/25 text-emerald-300 text-xs font-bold shadow-sm">
+                <span>Total da Obra:</span>
+                <span className="font-mono text-white font-extrabold">{formatCurrency(totalSpent)}</span>
+              </div>
+              {categoryTotals[0] && (
+                <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800/80 border border-slate-700 text-slate-300 text-xs font-medium">
+                  <span>Maior Custo:</span>
+                  <span className="font-bold text-emerald-400">{categoryTotals[0].name} ({formatCurrency(categoryTotals[0].value)})</span>
+                </div>
+              )}
             </div>
           </div>
-          <div className="h-[400px] w-full mt-auto">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={categoryTotals} margin={{ top: 40, right: 30, left: 20, bottom: 60 }}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#334155" />
-                <XAxis 
-                  dataKey="name" 
-                  axisLine={false} 
-                  tickLine={false} 
-                  tick={{ fontSize: 10, fill: '#94a3b8' }} 
-                  interval={0} 
-                  angle={-45} 
-                  textAnchor="end" 
-                  height={60} 
-                />
-                <YAxis hide />
-                <Tooltip cursor={{ fill: '#1e293b' }} contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: '8px', color: '#f1f5f9' }} formatter={(value: number) => formatCurrency(value)} />
-                <Bar dataKey="value" shape={<TriangleBar />}>
-                  {categoryTotals.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                  ))}
-                  <LabelList 
-                    dataKey="value" 
-                    position="top" 
-                    formatter={(v: number) => formatCurrency(v)}
-                    style={{ fontSize: '9px', fontWeight: 'bold', fill: '#cbd5e1' }}
-                    offset={15}
-                  />
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
+
+          {/* Aviso de rolagem touch para telas menores (Smartphones) */}
+          <div className="sm:hidden flex items-center justify-between px-3 py-1.5 mb-3 rounded-xl bg-slate-800/50 border border-slate-700/60 text-[11px] text-slate-400">
+            <span className="flex items-center gap-1.5">
+              <ArrowLeftRight size={13} className="text-emerald-400 shrink-0" />
+              Deslize para ver todas as categorias
+            </span>
+            <span className="text-[10px] text-emerald-400 font-bold bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+              Alta Definição
+            </span>
+          </div>
+
+          {/* Container do Gráfico de Colunas Refinado em Alta Definição */}
+          <div className="rounded-2xl p-2 sm:p-4 bg-slate-950/40 border border-slate-800/80 shadow-inner">
+            <div className="overflow-x-auto pb-2 custom-scrollbar">
+              <div className="min-w-[620px] sm:min-w-0 h-[380px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={categoryTotals} margin={{ top: 40, right: 25, left: 15, bottom: 35 }}>
+                    <defs>
+                      {categoryTotals.map((entry, index) => {
+                        const color = COLORS[index % COLORS.length];
+                        return (
+                          <linearGradient key={`cat-grad-${index}`} id={`cat-grad-${index}`} x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor={color} stopOpacity={1} />
+                            <stop offset="100%" stopColor={color} stopOpacity={0.65} />
+                          </linearGradient>
+                        );
+                      })}
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#334155" opacity={0.5} />
+                    <XAxis 
+                      dataKey="name" 
+                      axisLine={false} 
+                      tickLine={false} 
+                      interval={0} 
+                      height={45}
+                      tick={(props: any) => {
+                        const { x, y, payload } = props;
+                        return (
+                          <g transform={`translate(${x},${y})`}>
+                            <text
+                              x={0}
+                              y={14}
+                              textAnchor="middle"
+                              fill="#cbd5e1"
+                              fontSize={11}
+                              fontWeight="700"
+                              className="select-none"
+                            >
+                              {payload.value}
+                            </text>
+                          </g>
+                        );
+                      }}
+                    />
+                    <YAxis hide domain={[0, (dataMax: number) => Math.max(100, Math.ceil(dataMax * 1.28))]} />
+                    <Tooltip 
+                      cursor={{ fill: 'rgba(51, 65, 85, 0.35)', radius: 6 }}
+                      contentStyle={{ 
+                        backgroundColor: '#0f172a', 
+                        borderColor: '#334155', 
+                        borderRadius: '12px', 
+                        color: '#f1f5f9',
+                        boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.6)'
+                      }} 
+                      formatter={(val: number) => {
+                        const pct = totalSpent > 0 ? ((val / totalSpent) * 100).toFixed(1).replace('.', ',') : '0';
+                        return [
+                          `${formatCurrency(val)} (${pct}% do total)`,
+                          'Total da Categoria'
+                        ];
+                      }}
+                      labelStyle={{ fontWeight: 'bold', color: '#10b981' }}
+                    />
+                    <Bar dataKey="value" radius={[8, 8, 0, 0]}>
+                      {categoryTotals.map((entry, index) => {
+                        const color = COLORS[index % COLORS.length];
+                        return (
+                          <Cell 
+                            key={`cell-cat-${index}`} 
+                            fill={`url(#cat-grad-${index})`}
+                            stroke={color}
+                            strokeWidth={1.5}
+                            style={{
+                              filter: 'drop-shadow(0 4px 8px rgba(0,0,0,0.35))'
+                            }}
+                          />
+                        );
+                      })}
+                      <LabelList 
+                        dataKey="value" 
+                        content={renderCategoryValueLabel}
+                      />
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
           </div>
         </Card>
 
