@@ -10,9 +10,7 @@ import {
   Trash2, 
   ExternalLink, 
   AlertCircle,
-  Eye,
-  RefreshCw,
-  Image as ImageIcon
+  RefreshCw
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { 
@@ -233,52 +231,6 @@ export function TerrenoReceiptModal({
             <div className="space-y-4">
               {currentReceiptUrl ? (
                 <div className="space-y-4">
-                  {/* Card do Comprovante - Otimizado para visualização em alta resolução no smartphone */}
-                  <div 
-                    onClick={handleOpenInDevice}
-                    className="relative rounded-2xl border border-slate-800 bg-slate-950/70 p-3.5 sm:p-4 cursor-pointer hover:border-blue-500/50 transition-all group overflow-hidden"
-                  >
-                    <div className="flex items-center justify-between gap-3 mb-3">
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 shrink-0">
-                          {isPdf ? <FileText size={20} /> : <ImageIcon size={20} />}
-                        </div>
-                        <div className="min-w-0">
-                          <p className="text-sm font-semibold text-slate-200 truncate">{currentReceiptName}</p>
-                          <p className="text-xs text-slate-400 flex items-center gap-1.5">
-                            <span className="inline-block w-2 h-2 rounded-full bg-emerald-400"></span>
-                            {isPdf ? 'Documento PDF' : 'Comprovante em Alta Resolução'}
-                          </p>
-                        </div>
-                      </div>
-                      <span className="text-[11px] font-medium text-blue-400 bg-blue-500/10 border border-blue-500/20 px-2.5 py-1 rounded-lg group-hover:bg-blue-500/20 transition-colors shrink-0 flex items-center gap-1">
-                        <ExternalLink size={12} />
-                        Abrir
-                      </span>
-                    </div>
-
-                    {/* Preview interativo com aviso de toque para tela cheia */}
-                    {!isPdf ? (
-                      <div className="relative rounded-xl overflow-hidden bg-black/60 border border-slate-800/80 max-h-56 sm:max-h-64 flex items-center justify-center">
-                        <img
-                          src={currentReceiptUrl}
-                          alt="Prévia do Comprovante"
-                          className="w-full object-contain max-h-56 sm:max-h-64 opacity-90 group-hover:opacity-100 transition-opacity"
-                        />
-                        <div className="absolute inset-0 bg-gradient-to-t from-slate-950/90 via-transparent to-transparent flex items-end justify-center p-3">
-                          <span className="text-xs text-slate-200 font-medium flex items-center gap-1.5 bg-slate-900/90 px-3 py-1.5 rounded-xl border border-slate-700/80 backdrop-blur-md shadow-lg">
-                            <Eye size={13} className="text-blue-400" />
-                            Toque para abrir com zoom nativo
-                          </span>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="py-6 flex flex-col items-center justify-center text-center space-y-2 bg-slate-900/40 rounded-xl border border-slate-800/60">
-                        <FileText size={36} className="text-red-400" />
-                        <p className="text-xs text-slate-400">Documento em formato PDF pronto para visualização e download</p>
-                      </div>
-                    )}
-                  </div>
 
                   {/* Informações complementares */}
                   {(receiptData?.notes || receiptData?.paid_at) && (
