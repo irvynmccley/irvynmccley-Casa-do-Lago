@@ -20,7 +20,8 @@ import {
   FinancialSettings, 
   getStoredFinancialSettings,
   calculateFixedPerPersonForMonth,
-  getCondominioCostForMonth
+  getCondominioCostForMonth,
+  calculateMonthlyPartnerDues
 } from '../utils/financialSettings';
 
 function cn(...inputs: ClassValue[]) {
@@ -1903,34 +1904,11 @@ export function ReportsTab({
           <div className="space-y-2.5">
             {allCardInstallments.length > 0 ? (
               allCardInstallments.map((item) => {
-                const fixedPerPersonThisMonth = calculateFixedPerPersonForMonth(item.month, currentSettings);
-                let cardNormalTotal = 0;
-                let cardSauloTotal = 0;
-                (item.items || []).forEach(it => {
-                  const isSaulo = it.originalExp?.rateioType === 'Parc. Fixa Saulo' || 
-                    it.originalExp?.observation?.includes('[Parc. Fixa Saulo]');
-                  if (isSaulo) cardSauloTotal += Number(it.value) || 0;
-                  else cardNormalTotal += Number(it.value) || 0;
-                });
-                if (!item.items || item.items.length === 0) {
-                  cardNormalTotal = item.total;
-                }
-                const hasSauloSplit = cardSauloTotal > 0.001;
-                const cardPerPersonNormal = cardNormalTotal / PEOPLE_COUNT;
-                const cardPerPersonSauloSplit = cardSauloTotal / 3;
-                
-                const pFixed = currentSettings.partnerFixedInstallments;
-                const hasAnyPartnerFixed = Boolean(
-                  pFixed && Object.values(pFixed).some(p => p.enabled && p.value > 0)
-                );
-
-                const valJorge = cardPerPersonNormal + (hasSauloSplit ? cardPerPersonSauloSplit : 0) + fixedPerPersonThisMonth + (pFixed?.Jorge?.enabled ? (Number(pFixed.Jorge.value) || 0) : 0);
-                const valMccley = cardPerPersonNormal + (hasSauloSplit ? cardPerPersonSauloSplit : 0) + fixedPerPersonThisMonth + (pFixed?.Mccley?.enabled ? (Number(pFixed.Mccley.value) || 0) : 0);
-                const valJan = cardPerPersonNormal + (hasSauloSplit ? cardPerPersonSauloSplit : 0) + fixedPerPersonThisMonth + (pFixed?.Jan?.enabled ? (Number(pFixed.Jan.value) || 0) : 0);
-                const valSaulo = cardPerPersonNormal + fixedPerPersonThisMonth + (pFixed?.Saulo?.enabled ? (Number(pFixed.Saulo.value) || 0) : 0);
-
-                const valMccleyJanJorge = cardPerPersonNormal + cardPerPersonSauloSplit + fixedPerPersonThisMonth;
-                const standardTotal = (item.total / PEOPLE_COUNT) + fixedPerPersonThisMonth;
+                const duesResult = calculateMonthlyPartnerDues(item.month, item.total, currentSettings, item.items);
+                const { hasActivePartnerFixed, hasSauloSplitExpense, dues } = duesResult;
+                const fixedPerPersonThisMonth = duesResult.fixedCostPerPerson;
+                const cardPerPersonNormal = item.total / PEOPLE_COUNT;
+                const standardTotal = cardPerPersonNormal + fixedPerPersonThisMonth;
                 
                 return (
                   <div key={item.month} className="flex flex-col sm:flex-row sm:items-center justify-between px-4 py-3 bg-slate-950/50 rounded-xl border border-slate-800/80 hover:bg-slate-800/40 transition-colors gap-3">
@@ -1940,12 +1918,15 @@ export function ReportsTab({
                           {format(new Date(parseInt(item.month.split('-')[0]), parseInt(item.month.split('-')[1]) - 1, 1), 'MMMM yyyy', { locale: ptBR })}
                         </span>
                         <div className="flex items-center gap-1">
-                          {hasAnyPartnerFixed && (
-                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">
+                          {hasActivePartnerFixed && (
+                            <span 
+                              className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-cyan-500/15 text-cyan-300 border border-cyan-500/30"
+                              title="Parcela fixa com abatimento do saldo na fatura dos demais sócios"
+                            >
                               Parcelas Fixas
                             </span>
                           )}
-                          {hasSauloSplit && (
+                          {hasSauloSplitExpense && !hasActivePartnerFixed && (
                             <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30">
                               Parc. Saulo
                             </span>
@@ -1959,31 +1940,40 @@ export function ReportsTab({
                       </div>
                     </div>
                     <div className="flex items-center gap-3">
-                      {hasAnyPartnerFixed ? (
+                      {hasActivePartnerFixed ? (
                         <div className="flex flex-wrap items-center gap-2 text-right">
                           {(['Jorge', 'Mccley', 'Jan', 'Saulo'] as Person[]).map((p) => {
-                            const pVal = p === 'Saulo' ? valSaulo : (p === 'Jorge' ? valJorge : (p === 'Mccley' ? valMccley : valJan));
-                            const partnerFixedVal = pFixed?.[p]?.enabled ? Number(pFixed[p].value) || 0 : 0;
+                            const due = dues[p];
                             return (
-                              <div key={p} className="bg-slate-900/80 px-2.5 py-1 rounded-lg border border-slate-700/60">
+                              <div key={p} className="bg-slate-900/80 px-2.5 py-1.5 rounded-lg border border-slate-700/60 text-left sm:text-right">
                                 <span className="text-[9px] uppercase font-bold text-slate-400 block">{p}</span>
-                                <span className="text-sm font-mono font-bold text-white">{formatCurrency(pVal)}</span>
-                                {partnerFixedVal > 0 && (
-                                  <span className="text-[8px] text-cyan-300 font-mono block">+{formatCurrency(partnerFixedVal)} fixa</span>
+                                <span className={`text-sm font-mono font-bold block ${due.isFixed ? 'text-cyan-300' : 'text-white'}`}>
+                                  {formatCurrency(due.totalDue)}
+                                </span>
+                                {due.isFixed ? (
+                                  <span className="text-[8px] text-cyan-300 font-medium block">
+                                    Parcela Fixa
+                                  </span>
+                                ) : (
+                                  <span className="text-[8px] text-slate-400 font-mono block">
+                                    {due.cardShare < 0 
+                                      ? `Abat. -${formatCurrency(Math.abs(due.cardShare))}`
+                                      : `Cartão +${formatCurrency(due.cardShare)}`}
+                                  </span>
                                 )}
                               </div>
                             );
                           })}
                         </div>
-                      ) : hasSauloSplit ? (
+                      ) : hasSauloSplitExpense ? (
                         <div className="flex flex-col sm:flex-row sm:items-center gap-2 text-right">
                           <div className="bg-slate-900/80 px-2.5 py-1 rounded-lg border border-slate-700/60">
                             <span className="text-[9px] uppercase font-bold text-slate-400 block">Mccley, Jan, Jorge (1/3)</span>
-                            <span className="text-base font-mono font-bold text-amber-300">{formatCurrency(valMccleyJanJorge)}</span>
+                            <span className="text-base font-mono font-bold text-amber-300">{formatCurrency(dues.Jorge.totalDue)}</span>
                           </div>
                           <div className="bg-slate-900/50 px-2.5 py-1 rounded-lg border border-slate-800">
                             <span className="text-[9px] uppercase font-bold text-slate-400 block">Saulo</span>
-                            <span className="text-base font-mono font-bold text-slate-300">{formatCurrency(valSaulo)}</span>
+                            <span className="text-base font-mono font-bold text-slate-300">{formatCurrency(dues.Saulo.totalDue)}</span>
                           </div>
                         </div>
                       ) : (

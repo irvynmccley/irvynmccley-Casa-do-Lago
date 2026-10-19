@@ -27,7 +27,8 @@ import {
   saveStoredFinancialSettings,
   calculateFixedPerPersonForMonth,
   getCondominioCostForMonth,
-  applyCondominioAdjustment 
+  applyCondominioAdjustment,
+  calculateMonthlyPartnerDues
 } from '../utils/financialSettings';
 import { toast } from 'sonner';
 
@@ -264,35 +265,9 @@ export function Dashboard({
     if (!allCardInstallments) return null;
     const prevMonthKey = format(previousMonthInfo.date, 'yyyy-MM');
     const prevMonthData = allCardInstallments.find(item => item.month === prevMonthKey);
-    const prevFixedPerPerson = calculateFixedPerPersonForMonth(prevMonthKey, activeSettings);
-    
-    if (prevMonthData) {
-      let cardNormalTotal = 0;
-      let cardSauloTotal = 0;
-      (prevMonthData.items || []).forEach(it => {
-        const isSaulo = it.originalExp?.rateioType === 'Parc. Fixa Saulo' || 
-          it.originalExp?.observation?.includes('[Parc. Fixa Saulo]');
-        if (isSaulo) cardSauloTotal += Number(it.value) || 0;
-        else cardNormalTotal += Number(it.value) || 0;
-      });
-      if (!prevMonthData.items || prevMonthData.items.length === 0) {
-        cardNormalTotal = prevMonthData.total;
-      }
-      const hasSaulo = cardSauloTotal > 0.001;
-      return {
-        hasSaulo,
-        mccleyJanJorge: (cardNormalTotal / PEOPLE_COUNT) + (cardSauloTotal / 3) + prevFixedPerPerson,
-        saulo: (cardNormalTotal / PEOPLE_COUNT) + prevFixedPerPerson,
-        standard: (prevMonthData.total / PEOPLE_COUNT) + prevFixedPerPerson
-      };
-    }
-    return {
-      hasSaulo: false,
-      mccleyJanJorge: prevFixedPerPerson,
-      saulo: prevFixedPerPerson,
-      standard: prevFixedPerPerson
-    };
-  }, [allCardInstallments, previousMonthInfo, activeSettings, PEOPLE_COUNT]);
+    const invoiceTotal = prevMonthData ? prevMonthData.total : 0;
+    return calculateMonthlyPartnerDues(prevMonthKey, invoiceTotal, activeSettings, prevMonthData?.items);
+  }, [allCardInstallments, previousMonthInfo, activeSettings]);
 
   const previousMonthInvoiceTotal = React.useMemo(() => {
     if (!allCardInstallments) return null;
@@ -660,16 +635,26 @@ export function Dashboard({
               {previousMonthValue !== null && (
                 <div 
                   className="text-xs font-bold text-red-400 bg-red-500/10 px-3 py-1.5 rounded-xl border border-red-500/20 shadow-sm"
-                  title={previousMonthValue.hasSaulo ? `Mccley, Jan, Jorge: ${formatCurrency(previousMonthValue.mccleyJanJorge)} | Saulo: ${formatCurrency(previousMonthValue.saulo)}` : undefined}
+                  title={previousMonthValue.hasActivePartnerFixed
+                    ? `Parcelas Fixas ativas | Total Fatura: ${formatCurrency(previousMonthValue.totalInvoice)}`
+                    : (previousMonthValue.hasSauloSplitExpense 
+                      ? `Jorge, Mccley, Jan: ${formatCurrency(previousMonthValue.dues?.Jorge?.totalDue || 0)} | Saulo: ${formatCurrency(previousMonthValue.dues?.Saulo?.totalDue || 0)}`
+                      : `Total por pessoa: ${formatCurrency(previousMonthValue.dues?.Jorge?.totalDue || 0)}`)}
                 >
-                  {previousMonthInfo.name}: {previousMonthValue.hasSaulo ? (
+                  {previousMonthInfo.name}: {previousMonthValue.hasActivePartnerFixed ? (
                     <span className="flex items-center gap-1">
-                      <span>3 Sócios: <strong className="text-white font-mono">{formatCurrency(previousMonthValue.mccleyJanJorge)}</strong></span>
+                      <span>Demais: <strong className="text-white font-mono">{formatCurrency(previousMonthValue.dues?.Jorge?.totalDue || 0)}</strong></span>
                       <span className="text-red-300">/</span>
-                      <span>Saulo: <strong className="text-red-200 font-mono">{formatCurrency(previousMonthValue.saulo)}</strong></span>
+                      <span>Fixa: <strong className="text-cyan-300 font-mono">{formatCurrency(previousMonthValue.dues?.Saulo?.totalDue || 0)}</strong></span>
+                    </span>
+                  ) : previousMonthValue.hasSauloSplitExpense ? (
+                    <span className="flex items-center gap-1">
+                      <span>3 Sócios: <strong className="text-white font-mono">{formatCurrency(previousMonthValue.dues?.Jorge?.totalDue || 0)}</strong></span>
+                      <span className="text-red-300">/</span>
+                      <span>Saulo: <strong className="text-red-200 font-mono">{formatCurrency(previousMonthValue.dues?.Saulo?.totalDue || 0)}</strong></span>
                     </span>
                   ) : (
-                    <span>{formatCurrency(previousMonthValue.standard)}</span>
+                    <span>{formatCurrency(previousMonthValue.dues?.Jorge?.totalDue || 0)}</span>
                   )}
                 </div>
               )}
@@ -680,39 +665,14 @@ export function Dashboard({
             {cardInstallments.length > 0 ? (
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
                 {cardInstallments.map((item) => {
-                  const fixedPerPersonThisMonth = calculateFixedPerPersonForMonth(item.month, activeSettings);
                   const monthData = allCardInstallments?.find(m => m.month === item.month);
                   const monthItems = monthData?.items || [];
-                  
-                  let cardNormalTotal = 0;
-                  let cardSauloTotal = 0;
-                  monthItems.forEach(it => {
-                    const isSaulo = it.originalExp?.rateioType === 'Parc. Fixa Saulo' || 
-                      it.originalExp?.observation?.includes('[Parc. Fixa Saulo]');
-                    if (isSaulo) cardSauloTotal += Number(it.value) || 0;
-                    else cardNormalTotal += Number(it.value) || 0;
-                  });
-                  if (monthItems.length === 0) {
-                    cardNormalTotal = item.total;
-                  }
-                  
-                  const hasSauloSplit = cardSauloTotal > 0.001;
-                  const cardPerPersonNormal = cardNormalTotal / PEOPLE_COUNT;
-                  const cardPerPersonSauloSplit = cardSauloTotal / 3;
-                  
-                  const pFixed = activeSettings.partnerFixedInstallments;
-                  const hasAnyPartnerFixed = Boolean(
-                    pFixed && Object.values(pFixed).some(p => p.enabled && p.value > 0)
-                  );
+                  const duesResult = calculateMonthlyPartnerDues(item.month, item.total, activeSettings, monthItems);
+                  const { hasActivePartnerFixed, hasSauloSplitExpense, dues } = duesResult;
+                  const fixedPerPersonThisMonth = duesResult.fixedCostPerPerson;
+                  const cardPerPersonNormal = item.total / PEOPLE_COUNT;
+                  const standardTotal = cardPerPersonNormal + fixedPerPersonThisMonth;
 
-                  const valJorge = cardPerPersonNormal + (hasSauloSplit ? cardPerPersonSauloSplit : 0) + fixedPerPersonThisMonth + (pFixed?.Jorge?.enabled ? (Number(pFixed.Jorge.value) || 0) : 0);
-                  const valMccley = cardPerPersonNormal + (hasSauloSplit ? cardPerPersonSauloSplit : 0) + fixedPerPersonThisMonth + (pFixed?.Mccley?.enabled ? (Number(pFixed.Mccley.value) || 0) : 0);
-                  const valJan = cardPerPersonNormal + (hasSauloSplit ? cardPerPersonSauloSplit : 0) + fixedPerPersonThisMonth + (pFixed?.Jan?.enabled ? (Number(pFixed.Jan.value) || 0) : 0);
-                  const valSaulo = cardPerPersonNormal + fixedPerPersonThisMonth + (pFixed?.Saulo?.enabled ? (Number(pFixed.Saulo.value) || 0) : 0);
-
-                  const valMccleyJanJorge = cardPerPersonNormal + cardPerPersonSauloSplit + fixedPerPersonThisMonth;
-                  const standardTotal = (item.total / PEOPLE_COUNT) + fixedPerPersonThisMonth;
-                  
                   return (
                     <div key={item.month} className="flex flex-col justify-between p-3.5 sm:p-4 bg-slate-800/40 rounded-2xl border border-slate-700/50 hover:bg-slate-800/60 hover:border-slate-600 transition-colors">
                       <div className="flex items-center justify-between mb-2">
@@ -720,12 +680,15 @@ export function Dashboard({
                           {format(new Date(parseInt(item.month.split('-')[0]), parseInt(item.month.split('-')[1]) - 1, 1), 'MMMM yyyy', { locale: ptBR })}
                         </div>
                         <div className="flex items-center gap-1">
-                          {hasAnyPartnerFixed && (
-                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">
+                          {hasActivePartnerFixed && (
+                            <span 
+                              className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-cyan-500/15 text-cyan-300 border border-cyan-500/30"
+                              title="Parcela fixa com abatimento do saldo na fatura dos demais sócios"
+                            >
                               Parcelas Fixas
                             </span>
                           )}
-                          {hasSauloSplit && (
+                          {hasSauloSplitExpense && !hasActivePartnerFixed && (
                             <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30">
                               Parc. Saulo
                             </span>
@@ -733,50 +696,58 @@ export function Dashboard({
                         </div>
                       </div>
 
-                      {hasAnyPartnerFixed ? (
+                      {hasActivePartnerFixed ? (
                         <div className="flex flex-col gap-1.5 w-full mt-auto pt-1">
                           {(['Jorge', 'Mccley', 'Jan', 'Saulo'] as Person[]).map((p) => {
-                            const pVal = p === 'Saulo' ? valSaulo : (p === 'Jorge' ? valJorge : (p === 'Mccley' ? valMccley : valJan));
-                            const partnerFixedVal = pFixed?.[p]?.enabled ? Number(pFixed[p].value) || 0 : 0;
+                            const due = dues[p];
                             return (
                               <div key={p} className="flex items-center justify-between text-[11px] bg-slate-900/70 px-2.5 py-1.5 rounded-xl border border-slate-800">
                                 <div>
                                   <span className="font-bold text-slate-200">{p}</span>
-                                  {partnerFixedVal > 0 && (
-                                    <span className="text-[9px] text-cyan-300 block font-mono">
-                                      + {formatCurrency(partnerFixedVal)} fixa
+                                  {due.isFixed ? (
+                                    <span 
+                                      className="text-[9px] text-cyan-300 block font-medium"
+                                      title={`Parcela Fixa: ${formatCurrency(due.totalDue)}. Cobre ${formatCurrency(due.fixedCostShare)} de fixos e abate ${formatCurrency(due.surplus || 0)} da fatura dos demais.`}
+                                    >
+                                      Parcela Fixa Mensal
+                                    </span>
+                                  ) : (
+                                    <span className="text-[9px] text-slate-400 block font-mono">
+                                      {due.cardShare < 0 
+                                        ? `Fixo ${formatCurrency(due.fixedCostShare)} - Abat. ${formatCurrency(Math.abs(due.cardShare))}`
+                                        : `Fixo ${formatCurrency(due.fixedCostShare)} + Cartão ${formatCurrency(due.cardShare)}`}
                                     </span>
                                   )}
                                 </div>
-                                <span className="text-sm font-mono font-extrabold text-white">
-                                  {formatCurrency(pVal)}
+                                <span className={`text-sm font-mono font-extrabold ${due.isFixed ? 'text-cyan-300' : 'text-white'}`}>
+                                  {formatCurrency(due.totalDue)}
                                 </span>
                               </div>
                             );
                           })}
                         </div>
-                      ) : hasSauloSplit ? (
+                      ) : hasSauloSplitExpense ? (
                         <div className="flex flex-col gap-1.5 w-full mt-auto pt-1">
                           <div className="flex items-center justify-between text-[11px] bg-slate-900/70 px-2.5 py-1.5 rounded-xl border border-slate-700/60">
                             <div>
                               <span className="font-bold text-slate-200">Mccley, Jan, Jorge</span>
                               <span className="text-[9px] text-slate-400 block font-mono">
-                                Cartão {formatCurrency(cardPerPersonNormal + cardPerPersonSauloSplit)} + Fixo
+                                Cartão {formatCurrency(dues.Jorge.cardShare)} + Fixo
                               </span>
                             </div>
                             <span className="text-sm font-mono font-extrabold text-amber-300">
-                              {formatCurrency(valMccleyJanJorge)}
+                              {formatCurrency(dues.Jorge.totalDue)}
                             </span>
                           </div>
                           <div className="flex items-center justify-between text-[11px] bg-slate-900/40 px-2.5 py-1 rounded-xl border border-slate-800">
                             <div>
                               <span className="font-semibold text-slate-300">Saulo</span>
                               <span className="text-[9px] text-slate-500 block font-mono">
-                                Cartão {formatCurrency(cardPerPersonNormal)} + Fixo
+                                Cartão {formatCurrency(dues.Saulo.cardShare)} + Fixo
                               </span>
                             </div>
                             <span className="text-sm font-mono font-bold text-slate-300">
-                              {formatCurrency(valSaulo)}
+                              {formatCurrency(dues.Saulo.totalDue)}
                             </span>
                           </div>
                         </div>

@@ -480,5 +480,185 @@ export async function updateSinglePartnerFixedInstallment(
     updatedBy: userName
   };
 
-  return savePartnerFixedInstallments(currentMap, userName);
 }
+ 
+/**
+ * Item discriminado de valores devidos por sócio no mês
+ */
+export interface MonthlyPartnerDueItem {
+  partner: Person;
+  totalDue: number;          // Valor final devido por este sócio no mês
+  isFixed: boolean;          // true se este sócio estiver sob regime de Parcela Fixa
+  fixedValue?: number;       // Valor da parcela fixa configurada (ex: R$ 300,00)
+  surplus?: number;          // Saldo gerado = parcela fixa - custo fixo individual
+  cardShare: number;         // Cota atribuída da fatura de cartão (após abatimento do saldo)
+  fixedCostShare: number;    // Parcela individual de custos fixos (Terreno + Condomínio)
+}
+
+/**
+ * Resultado completo do rateio mensal por pessoa
+ */
+export interface MonthlyPartnerDuesResult {
+  monthKey: string;
+  totalInvoice: number;
+  fixedCostsTotal: number;
+  fixedCostPerPerson: number;
+  hasActivePartnerFixed: boolean;
+  hasSauloSplitExpense: boolean;
+  dues: Record<Person, MonthlyPartnerDueItem>;
+}
+
+/**
+ * Calcula o rateio mensal a pagar por cada sócio para um determinado mês (competência).
+ * 
+ * Regra de Negócio Específica (Casa do Lago):
+ * 1. A parcela fixa não deve ser somada (adicionada ao valor).
+ * 2. Quando um dos sócios tiver a parcela fixa ativada, no mês vigente em diante ela deve ser
+ *    estritamente fixa, desconsiderando os demais valores lançados.
+ * 3. Lógica de cálculo com parcela fixa ativada:
+ *    - saldo = parcela fixa - custo fixo (terreno + condomínio)
+ *    - Este saldo é abatido do total da fatura de cartão daquele mês:
+ *      faturaRestante = totalFatura - soma(saldos)
+ *    - A faturaRestante é rateada igualmente entre os demais sócios que NÃO possuem parcela fixa ativada:
+ *      valorDevidoDemais = custoFixoIndividual + (faturaRestante / totalDemaisSocios)
+ * 4. Batimento contábil:
+ *    soma(todos os sócios) == Total Fatura de Cartão + Custos Fixos Totais (exato ao centavo).
+ */
+export function calculateMonthlyPartnerDues(
+  monthKey: string,
+  cardInvoiceTotal: number,
+  settings?: FinancialSettings,
+  monthItems?: any[]
+): MonthlyPartnerDuesResult {
+  const s = settings || getStoredFinancialSettings();
+  const currentMonthKey = format(new Date(), 'yyyy-MM');
+  const partners: Person[] = ['Jorge', 'Mccley', 'Jan', 'Saulo'];
+  const peopleCount = s.peopleCount > 0 ? s.peopleCount : 4;
+
+  const fixedCostPerPerson = calculateFixedPerPersonForMonth(monthKey, s);
+  const fixedCostsTotal = calculateFixedCostsForMonth(monthKey, s);
+
+  const pFixed = s.partnerFixedInstallments;
+  // A regra de parcela fixa é aplicada no mês vigente em diante (ou em qualquer mês configurado explicitamente)
+  const isCurrentOrFuture = monthKey >= currentMonthKey;
+
+  const activeFixedPartners = isCurrentOrFuture && pFixed
+    ? partners.filter(p => pFixed[p]?.enabled && Number(pFixed[p].value) > 0)
+    : [];
+
+  const hasActivePartnerFixed = activeFixedPartners.length > 0;
+
+  // Verifica se há despesas específicas com split isolado (ex: lançadas especificamente sem o Saulo)
+  let cardSauloSplitExpenseTotal = 0;
+  let cardNormalExpenseTotal = 0;
+  if (monthItems && monthItems.length > 0) {
+    monthItems.forEach(it => {
+      const isSauloSplit = it.originalExp?.rateioType === 'Parc. Fixa Saulo' || 
+        it.originalExp?.observation?.includes('[Parc. Fixa Saulo]');
+      if (isSauloSplit) {
+        cardSauloSplitExpenseTotal += Number(it.value) || 0;
+      } else {
+        cardNormalExpenseTotal += Number(it.value) || 0;
+      }
+    });
+  } else {
+    cardNormalExpenseTotal = cardInvoiceTotal;
+  }
+  const hasSauloSplitExpense = cardSauloSplitExpenseTotal > 0.001;
+
+  const dues: Partial<Record<Person, MonthlyPartnerDueItem>> = {};
+
+  if (hasActivePartnerFixed) {
+    // -------------------------------------------------------------------------
+    // REGRA DE PARCELA FIXA COM ABATIMENTO DO SALDO NA FATURA DOS DEMAIS
+    // -------------------------------------------------------------------------
+    let totalSurplus = 0;
+
+    // 1. Processa os sócios que possuem parcela fixa ativada
+    activeFixedPartners.forEach(p => {
+      const fixedVal = Number(pFixed![p].value) || 0;
+      const surplus = fixedVal - fixedCostPerPerson;
+      totalSurplus += surplus;
+
+      dues[p] = {
+        partner: p,
+        totalDue: fixedVal,
+        isFixed: true,
+        fixedValue: fixedVal,
+        surplus,
+        cardShare: Math.max(0, surplus),
+        fixedCostShare: fixedCostPerPerson
+      };
+    });
+
+    // 2. Processa os demais sócios (sem parcela fixa)
+    const remainingPartners = partners.filter(p => !activeFixedPartners.includes(p));
+
+    if (remainingPartners.length > 0) {
+      // O saldo é abatido do total da fatura
+      const netInvoiceForRemaining = cardInvoiceTotal - totalSurplus;
+      const cardSharePerRemaining = netInvoiceForRemaining / remainingPartners.length;
+
+      remainingPartners.forEach(p => {
+        const totalDue = fixedCostPerPerson + cardSharePerRemaining;
+        dues[p] = {
+          partner: p,
+          totalDue,
+          isFixed: false,
+          cardShare: cardSharePerRemaining,
+          fixedCostShare: fixedCostPerPerson
+        };
+      });
+    }
+  } else if (hasSauloSplitExpense) {
+    // Caso legado ou sem parcela fixa geral ativada, respeita despesas lançadas com flag individual
+    const cardPerPersonNormal = cardNormalExpenseTotal / peopleCount;
+    const cardPerPersonSauloSplit = cardSauloSplitExpenseTotal / 3;
+
+    partners.forEach(p => {
+      if (p === 'Saulo') {
+        const totalDue = cardPerPersonNormal + fixedCostPerPerson;
+        dues[p] = {
+          partner: p,
+          totalDue,
+          isFixed: false,
+          cardShare: cardPerPersonNormal,
+          fixedCostShare: fixedCostPerPerson
+        };
+      } else {
+        const totalDue = cardPerPersonNormal + cardPerPersonSauloSplit + fixedCostPerPerson;
+        dues[p] = {
+          partner: p,
+          totalDue,
+          isFixed: false,
+          cardShare: cardPerPersonNormal + cardPerPersonSauloSplit,
+          fixedCostShare: fixedCostPerPerson
+        };
+      }
+    });
+  } else {
+    // Rateio padrão: divisão igual entre todos os 4 sócios
+    const cardPerPerson = cardInvoiceTotal / peopleCount;
+    partners.forEach(p => {
+      const totalDue = cardPerPerson + fixedCostPerPerson;
+      dues[p] = {
+        partner: p,
+        totalDue,
+        isFixed: false,
+        cardShare: cardPerPerson,
+        fixedCostShare: fixedCostPerPerson
+      };
+    });
+  }
+
+  return {
+    monthKey,
+    totalInvoice: cardInvoiceTotal,
+    fixedCostsTotal,
+    fixedCostPerPerson,
+    hasActivePartnerFixed,
+    hasSauloSplitExpense,
+    dues: dues as Record<Person, MonthlyPartnerDueItem>
+  };
+}
+
