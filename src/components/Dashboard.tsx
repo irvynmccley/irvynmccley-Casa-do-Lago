@@ -1153,7 +1153,7 @@ export function Dashboard({
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-700/50">
-                          {selectedInvoiceData.items.sort((a, b) => (b.date || '').localeCompare(a.date || '')).map((detail, idx) => {
+                          {[...(selectedInvoiceData.items || [])].sort((a, b) => (b.date || '').localeCompare(a.date || '')).map((detail, idx) => {
                             const auditId = formatAuditId('EXP', detail.id);
                             const isSauloSplit = detail.originalExp?.rateioType === 'Parc. Fixa Saulo' || 
                               detail.originalExp?.observation?.includes('[Parc. Fixa Saulo]');
@@ -1280,7 +1280,7 @@ export function Dashboard({
                                   </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-700/50 text-xs">
-                                  {item.items.sort((a, b) => (b.date || '').localeCompare(a.date || '')).map((detail, idx) => {
+                                  {[...(item.items || [])].sort((a, b) => (b.date || '').localeCompare(a.date || '')).map((detail, idx) => {
                                     const auditId = formatAuditId('EXP', detail.id);
                                     const isSauloSplit = detail.originalExp?.rateioType === 'Parc. Fixa Saulo' || 
                                       detail.originalExp?.observation?.includes('[Parc. Fixa Saulo]');

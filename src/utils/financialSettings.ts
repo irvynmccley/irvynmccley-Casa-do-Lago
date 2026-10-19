@@ -100,12 +100,12 @@ export function sanitizeFinancialSettings(parsed: any): FinancialSettings {
     });
   }
 
-  // Ordena histórico por effectiveFrom ascendente
-  history.sort((a, b) => a.effectiveFrom.localeCompare(b.effectiveFrom));
+  // Ordena histórico por effectiveFrom ascendente de forma imutável
+  const sortedHistory = [...history].sort((a, b) => a.effectiveFrom.localeCompare(b.effectiveFrom));
 
   // O valor atual do condomínio corresponde ao mais recente ou ao valor explícito
   const currentMonthKey = format(new Date(), 'yyyy-MM');
-  const activeCost = getCondominioCostForMonth(currentMonthKey, { condominioCost: 50, terrenoCost, peopleCount, history });
+  const activeCost = getCondominioCostForMonth(currentMonthKey, { condominioCost: 50, terrenoCost, peopleCount, history: sortedHistory });
 
   // Normalização das parcelas fixas por sócio
   const partnerFixedInstallments: Record<Person, PartnerFixedInstallment> = {
@@ -135,7 +135,7 @@ export function sanitizeFinancialSettings(parsed: any): FinancialSettings {
     condominioCost: activeCost,
     terrenoCost,
     peopleCount,
-    history,
+    history: sortedHistory,
     partnerFixedInstallments
   };
 }
@@ -221,19 +221,25 @@ export function calculateFixedPerPerson(settings: FinancialSettings): number {
 
 /**
  * Localiza com segurança máxima o registro de configurações no PocketBase.
- * Utiliza busca por filtro correto e fallback de busca em memória para garantir
- * que o registro existente seja sempre encontrado e nunca ocorram erros de duplicidade ou filtro inválido.
  */
 export async function findFinancialSettingsRecord() {
   try {
-    // 1. Tenta buscar com filtro correto em aspas simples (formato expr do PocketBase)
+    // 1. Tenta buscar pelo ID direto conhecido s7hk3g9prdclwxp
+    try {
+      const direct = await pb.collection('terreno_installments').getOne('s7hk3g9prdclwxp', { requestKey: null });
+      if (direct) return direct;
+    } catch {
+      // continua para fallback
+    }
+
+    // 2. Tenta buscar com filtro correto em aspas simples (formato expr do PocketBase)
     const record = await pb.collection('terreno_installments')
-      .getFirstListItem("month_id = 'cfg_financial_settings' || original_id = 'cfg_financial_settings' || id = 's7hk3g9prdclwxp'", { requestKey: null })
+      .getFirstListItem("month_id = 'cfg_financial_settings' || original_id = 'cfg_financial_settings'", { requestKey: null })
       .catch(() => null);
 
     if (record) return record;
 
-    // 2. Fallback resiliente: busca a lista completa e filtra em memória (100% à prova de falhas de filtro da API)
+    // 3. Fallback resiliente: busca a lista completa e filtra em memória
     const all = await pb.collection('terreno_installments').getFullList({ requestKey: null }).catch(() => []);
     return all.find((r: any) => 
       r.month_id === PB_SETTINGS_RECORD_KEY || 
@@ -247,28 +253,51 @@ export async function findFinancialSettingsRecord() {
 }
 
 /**
- * Salva as configurações financeiras no PocketBase (na nuvem)
+ * Salva as configurações financeiras no PocketBase (na nuvem) de forma ultrarrápida com timeout defensivo
  */
 export async function saveFinancialSettingsToPocketBase(settings: FinancialSettings): Promise<boolean> {
   const payload = JSON.stringify(settings);
-  const existing = await findFinancialSettingsRecord();
 
-  if (existing) {
-    await pb.collection('terreno_installments').update(existing.id, {
-      month_id: PB_SETTINGS_RECORD_KEY,
-      original_id: PB_SETTINGS_RECORD_KEY,
-      notes: payload,
-      paid_at: new Date().toISOString()
-    });
-  } else {
-    await pb.collection('terreno_installments').create({
-      month_id: PB_SETTINGS_RECORD_KEY,
-      original_id: PB_SETTINGS_RECORD_KEY,
-      notes: payload,
-      paid_at: new Date().toISOString()
-    });
-  }
-  return true;
+  const savePromise = (async () => {
+    // 1. Tentativa prioritária direta pelo ID conhecido (executa em ~30ms)
+    try {
+      await pb.collection('terreno_installments').update('s7hk3g9prdclwxp', {
+        month_id: PB_SETTINGS_RECORD_KEY,
+        original_id: PB_SETTINGS_RECORD_KEY,
+        notes: payload,
+        paid_at: new Date().toISOString()
+      }, { requestKey: null });
+      return true;
+    } catch {
+      // 2. Se o ID direto falhar, busca defensiva por registro existente
+      const existing = await findFinancialSettingsRecord();
+      if (existing) {
+        await pb.collection('terreno_installments').update(existing.id, {
+          month_id: PB_SETTINGS_RECORD_KEY,
+          original_id: PB_SETTINGS_RECORD_KEY,
+          notes: payload,
+          paid_at: new Date().toISOString()
+        }, { requestKey: null });
+      } else {
+        await pb.collection('terreno_installments').create({
+          month_id: PB_SETTINGS_RECORD_KEY,
+          original_id: PB_SETTINGS_RECORD_KEY,
+          notes: payload,
+          paid_at: new Date().toISOString()
+        }, { requestKey: null });
+      }
+      return true;
+    }
+  })();
+
+  const timeoutPromise = new Promise<boolean>((resolve) => 
+    setTimeout(() => {
+      console.warn('[FinancialSettings] Timeout defensivo na sincronização PocketBase');
+      resolve(false);
+    }, 4000)
+  );
+
+  return Promise.race([savePromise, timeoutPromise]);
 }
 
 /**
@@ -298,21 +327,7 @@ export async function applyCondominioAdjustment(
   userName: string = 'Administrador',
   notes?: string
 ): Promise<FinancialSettings> {
-  let current = getStoredFinancialSettings();
-  try {
-    const cloudSettings = await loadFinancialSettingsFromPocketBase();
-    if (cloudSettings) {
-      current = {
-        ...current,
-        ...cloudSettings,
-        history: cloudSettings.history && cloudSettings.history.length > 0 ? cloudSettings.history : (current.history || []),
-        partnerFixedInstallments: cloudSettings.partnerFixedInstallments || current.partnerFixedInstallments
-      };
-    }
-  } catch {
-    // Se offline, prossegue com o cache local
-  }
-
+  const current = getStoredFinancialSettings();
   const currentHistory = [...(current.history || [])];
 
   const nowIso = new Date().toISOString();
@@ -340,12 +355,12 @@ export async function applyCondominioAdjustment(
     });
   }
 
-  // Ordena cronologicamente
-  currentHistory.sort((a, b) => a.effectiveFrom.localeCompare(b.effectiveFrom));
+  // Ordena cronologicamente criando nova instância (imutável)
+  const sortedHistory = [...currentHistory].sort((a, b) => a.effectiveFrom.localeCompare(b.effectiveFrom));
 
   const updated: FinancialSettings = {
     ...current,
-    history: currentHistory,
+    history: sortedHistory,
     condominioCost: newCost
   };
 
@@ -376,16 +391,21 @@ export async function applyCondominioAdjustment(
     console.warn('Erro ao registrar log de auditoria:', e);
   }
 
-  // 3. Dispara evento no navegador para atualizar abas
+  // 3. Dispara evento no navegador para atualizar abas instantaneamente
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('financialSettingsUpdated', { detail: updated }));
   }
 
-  // 4. Salva no PocketBase (na nuvem)
-  await saveFinancialSettingsToPocketBase(updated);
+  // 4. Salva no PocketBase na nuvem com timeout rápido
+  try {
+    await saveFinancialSettingsToPocketBase(updated);
+  } catch (err: any) {
+    console.warn('Aviso ao sincronizar condomínio com PocketBase:', err);
+  }
 
   return updated;
 }
+
 
 /**
  * Salva as configurações financeiras no localStorage e dispara sincronização com PocketBase

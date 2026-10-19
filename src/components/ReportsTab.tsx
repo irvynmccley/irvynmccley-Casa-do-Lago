@@ -2052,7 +2052,7 @@ export function ReportsTab({
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-800/60 text-xs">
-                              {item.items.sort((a, b) => (b.date || '').localeCompare(a.date || '')).map((detail, idx) => {
+                              {[...(item.items || [])].sort((a, b) => (b.date || '').localeCompare(a.date || '')).map((detail, idx) => {
                                 const isSauloSplit = detail.originalExp?.rateioType === 'Parc. Fixa Saulo' || 
                                   detail.originalExp?.observation?.includes('[Parc. Fixa Saulo]');
                                 return (
