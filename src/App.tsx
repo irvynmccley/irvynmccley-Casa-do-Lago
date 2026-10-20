@@ -2285,13 +2285,49 @@ function App() {
           </>
         ) : (
           <>
-            <NavItem icon={<LayoutDashboard size={20} />} label="Início" active={activeTab === 'inicio'} onClick={() => setActiveTab('inicio')} />
-            <NavItem icon={<ArrowDownCircle size={20} />} label="Saídas" active={activeTab === 'saidas'} onClick={() => setActiveTab('saidas')} />
-            <NavItem icon={<MapIcon size={20} />} label="Terreno" active={activeTab === 'terreno'} onClick={() => setActiveTab('terreno')} />
+            <NavItem 
+              icon={<LayoutDashboard size={20} />} 
+              label="Início" 
+              active={activeTab === 'inicio'} 
+              onClick={() => {
+                setActiveTab('inicio');
+                setIsReportsMenuExpanded(false);
+                setIsConfigMenuExpanded(false);
+              }} 
+            />
+            <NavItem 
+              icon={<ArrowDownCircle size={20} />} 
+              label="Saídas" 
+              active={activeTab === 'saidas'} 
+              onClick={() => {
+                setActiveTab('saidas');
+                setIsReportsMenuExpanded(false);
+                setIsConfigMenuExpanded(false);
+              }} 
+            />
+            <NavItem 
+              icon={<MapIcon size={20} />} 
+              label="Terreno" 
+              active={activeTab === 'terreno'} 
+              onClick={() => {
+                setActiveTab('terreno');
+                setIsReportsMenuExpanded(false);
+                setIsConfigMenuExpanded(false);
+              }} 
+            />
             
             {!isSharedMode ? (
               <>
-                <NavItem icon={<ArrowUpCircle size={20} />} label="Entradas" active={activeTab === 'entradas'} onClick={() => setActiveTab('entradas')} />
+                <NavItem 
+                  icon={<ArrowUpCircle size={20} />} 
+                  label="Entradas" 
+                  active={activeTab === 'entradas'} 
+                  onClick={() => {
+                    setActiveTab('entradas');
+                    setIsReportsMenuExpanded(false);
+                    setIsConfigMenuExpanded(false);
+                  }} 
+                />
                 {/* Item Relatórios no Smartphone (Mobile Bottom Bar) com Submenu Suspenso */}
                 <div className="md:hidden relative" ref={mobileReportsMenuRef}>
                   <NavItem 
@@ -2333,7 +2369,7 @@ function App() {
                             : "text-slate-300 hover:text-white hover:bg-slate-800/60"
                         )}
                       >
-                        <FileText size={15} className="text-blue-400 shrink-0" />
+                        <FileText size={15} className="text-slate-300 shrink-0" />
                         <span>Geral</span>
                       </button>
 
@@ -2378,7 +2414,7 @@ function App() {
                       >
                         <div className="flex items-center gap-2.5">
                           <Heart size={15} className="text-purple-400 shrink-0" />
-                          <span>Extrato de Doações</span>
+                          <span>Extrato Doações</span>
                         </div>
                         {reportsDonationsCount > 0 && (
                           <span className="px-1.5 py-0.2 rounded-full text-[9px] font-bold bg-purple-500/30 text-purple-300 border border-purple-500/40">
@@ -2435,6 +2471,7 @@ function App() {
                         if (activeTab !== 'relatorios') {
                           setActiveTab('relatorios');
                           setIsReportsMenuExpanded(true);
+                          setIsConfigMenuExpanded(false);
                         } else {
                           setIsReportsMenuExpanded(prev => !prev);
                         }
@@ -2454,18 +2491,34 @@ function App() {
                         {reportsPendingRefundsCount > 0 && (
                           <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" title="Pendências ativas" />
                         )}
-                        <ChevronDown 
-                          size={16} 
-                          className={cn(
-                            "transition-transform duration-200 text-slate-400 group-hover:text-white",
-                            (isReportsMenuExpanded || activeTab === 'relatorios') && "rotate-180"
-                          )} 
-                        />
+                        <span
+                          role="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (activeTab !== 'relatorios') {
+                              setActiveTab('relatorios');
+                              setIsReportsMenuExpanded(true);
+                              setIsConfigMenuExpanded(false);
+                            } else {
+                              setIsReportsMenuExpanded(prev => !prev);
+                            }
+                          }}
+                          className="p-1 -mr-1 rounded-lg hover:bg-white/15 transition-colors cursor-pointer"
+                          title={isReportsMenuExpanded && activeTab === 'relatorios' ? "Recolher submenu" : "Expandir submenu"}
+                        >
+                          <ChevronDown 
+                            size={16} 
+                            className={cn(
+                              "transition-transform duration-200 text-slate-400 group-hover:text-white",
+                              (isReportsMenuExpanded && activeTab === 'relatorios') && "rotate-180"
+                            )} 
+                          />
+                        </span>
                       </div>
                     </button>
 
                     {/* Submenu Suspenso / Expansível de Relatórios no Desktop */}
-                    {(isReportsMenuExpanded || activeTab === 'relatorios') && (
+                    {(isReportsMenuExpanded && activeTab === 'relatorios') && (
                       <div className="flex flex-col gap-0.5 mt-1.5 pl-3 py-1 border-l-2 border-slate-700/60 ml-5 space-y-0.5 animate-in fade-in slide-in-from-top-2 duration-150">
                         <button
                           type="button"
@@ -2694,6 +2747,7 @@ function App() {
                         if (activeTab !== 'config') {
                           setActiveTab('config');
                           setIsConfigMenuExpanded(true);
+                          setIsReportsMenuExpanded(false);
                         } else {
                           setIsConfigMenuExpanded(prev => !prev);
                         }
@@ -2710,18 +2764,34 @@ function App() {
                         <span className="text-sm font-medium whitespace-nowrap">Config</span>
                       </div>
                       <div className="flex items-center gap-1.5">
-                        <ChevronDown 
-                          size={16} 
-                          className={cn(
-                            "transition-transform duration-200 text-slate-400 group-hover:text-white",
-                            (isConfigMenuExpanded || activeTab === 'config') && "rotate-180"
-                          )} 
-                        />
+                        <span
+                          role="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (activeTab !== 'config') {
+                              setActiveTab('config');
+                              setIsConfigMenuExpanded(true);
+                              setIsReportsMenuExpanded(false);
+                            } else {
+                              setIsConfigMenuExpanded(prev => !prev);
+                            }
+                          }}
+                          className="p-1 -mr-1 rounded-lg hover:bg-white/15 transition-colors cursor-pointer"
+                          title={(isConfigMenuExpanded && activeTab === 'config') ? "Recolher submenu" : "Expandir submenu"}
+                        >
+                          <ChevronDown 
+                            size={16} 
+                            className={cn(
+                              "transition-transform duration-200 text-slate-400 group-hover:text-white",
+                              (isConfigMenuExpanded && activeTab === 'config') && "rotate-180"
+                            )} 
+                          />
+                        </span>
                       </div>
                     </button>
 
                     {/* Submenu Suspenso / Expansível de Config no Desktop */}
-                    {(isConfigMenuExpanded || activeTab === 'config') && (
+                    {(isConfigMenuExpanded && activeTab === 'config') && (
                       <div className="flex flex-col gap-0.5 mt-1.5 pl-3 py-1 border-l-2 border-slate-700/60 ml-5 space-y-0.5 animate-in fade-in slide-in-from-top-2 duration-150">
                         <button
                           type="button"

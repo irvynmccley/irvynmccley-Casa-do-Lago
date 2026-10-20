@@ -80,8 +80,6 @@ export function ConfigTab({
   onSubTabChange
 }: ConfigTabProps) {
   const [activeSubTab, setActiveSubTab] = useState<ConfigSubTab>(initialSubTab || 'backup');
-  const [isConfigDropdownOpen, setIsConfigDropdownOpen] = useState(false);
-  const configDropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (initialSubTab) {
@@ -89,29 +87,9 @@ export function ConfigTab({
     }
   }, [initialSubTab]);
 
-  useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (configDropdownRef.current && !configDropdownRef.current.contains(event.target as Node)) {
-        setIsConfigDropdownOpen(false);
-      }
-    }
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === 'Escape') {
-        setIsConfigDropdownOpen(false);
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside);
-    document.addEventListener('keydown', handleKeyDown);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-      document.removeEventListener('keydown', handleKeyDown);
-    };
-  }, []);
-
   const handleSelectConfigTab = (tab: ConfigSubTab) => {
     setActiveSubTab(tab);
     onSubTabChange?.(tab);
-    setIsConfigDropdownOpen(false);
   };
 
   const [logs, setLogs] = useState<AuditLogEntry[]>([]);
@@ -687,146 +665,35 @@ export function ConfigTab({
           </p>
         </div>
 
-        {/* SUBMENU SUSPENSO DA PÁGINA "CONFIGURAÇÕES" */}
-        <div className="relative shrink-0" ref={configDropdownRef}>
-          <button
-            type="button"
-            onClick={() => setIsConfigDropdownOpen(prev => !prev)}
-            className="flex items-center gap-3 px-4 py-2.5 bg-slate-900/80 hover:bg-slate-800/90 border border-slate-700/70 hover:border-slate-600 rounded-2xl text-white font-semibold text-xs sm:text-sm shadow-xl ring-1 ring-white/10 transition-all cursor-pointer group w-full sm:w-auto justify-between"
-          >
-            <div className="flex items-center gap-2.5 min-w-0">
-              <div className="p-1.5 rounded-xl bg-blue-500/20 text-blue-400 border border-blue-500/30 shrink-0">
-                {activeSubTab === 'backup' && <Database size={16} />}
-                {activeSubTab === 'logs' && <Activity size={16} className="text-blue-400" />}
-                {activeSubTab === 'categories' && <Tags size={16} className="text-emerald-400" />}
-                {activeSubTab === 'custos_fixos' && <Building2 size={16} className="text-purple-400" />}
-              </div>
-              <div className="flex flex-col text-left truncate">
-                <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">Submenu Config</span>
-                <span className="text-white font-bold leading-tight flex items-center gap-2 truncate">
-                  {activeSubTab === 'backup' && 'Backups & Dados'}
-                  {activeSubTab === 'logs' && 'Logs de Alterações'}
-                  {activeSubTab === 'categories' && 'Categorias'}
-                  {activeSubTab === 'custos_fixos' && 'Custos Fixos'}
-
-                  {activeSubTab === 'logs' && logs.length > 0 && (
-                    <span className="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-blue-500/30 text-blue-300 border border-blue-500/40 shrink-0">
-                      {logs.length}
-                    </span>
-                  )}
-                  {activeSubTab === 'categories' && categoryStats.length > 0 && (
-                    <span className="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 shrink-0">
-                      {categoryStats.length}
-                    </span>
-                  )}
+        {/* INDICADOR ELEGANTE DA VISÃO ATIVA (SEM DROPDOWN REDUNDANTE) */}
+        <div className="inline-flex items-center gap-2.5 px-3.5 py-2 bg-slate-900/80 border border-slate-700/60 rounded-2xl text-white shadow-lg ring-1 ring-white/5 shrink-0 self-start sm:self-center">
+          <div className="p-1.5 rounded-xl bg-blue-500/20 text-blue-400 border border-blue-500/30 shrink-0">
+            {activeSubTab === 'backup' && <Database size={16} />}
+            {activeSubTab === 'logs' && <Activity size={16} className="text-blue-400" />}
+            {activeSubTab === 'categories' && <Tags size={16} className="text-emerald-400" />}
+            {activeSubTab === 'custos_fixos' && <Building2 size={16} className="text-purple-400" />}
+          </div>
+          <div className="flex flex-col text-left">
+            <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Visualizando</span>
+            <div className="flex items-center gap-2">
+              <span className="text-xs sm:text-sm font-bold text-white">
+                {activeSubTab === 'backup' && 'Backups & Dados'}
+                {activeSubTab === 'logs' && 'Logs de Alterações'}
+                {activeSubTab === 'categories' && 'Categorias'}
+                {activeSubTab === 'custos_fixos' && 'Custos Fixos'}
+              </span>
+              {activeSubTab === 'logs' && logs.length > 0 && (
+                <span className="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-blue-500/30 text-blue-300 border border-blue-500/40 shrink-0">
+                  {logs.length}
                 </span>
-              </div>
+              )}
+              {activeSubTab === 'categories' && categoryStats.length > 0 && (
+                <span className="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 shrink-0">
+                  {categoryStats.length}
+                </span>
+              )}
             </div>
-            <ChevronDown size={16} className={cn("text-slate-400 transition-transform duration-200 ml-2 group-hover:text-white shrink-0", isConfigDropdownOpen && "rotate-180 text-blue-400")} />
-          </button>
-
-          {/* Submenu Suspenso Flutuante */}
-          {isConfigDropdownOpen && (
-            <div className="absolute right-0 top-full mt-2 w-72 sm:w-80 max-w-[95vw] bg-slate-900/95 backdrop-blur-2xl border border-slate-700/80 rounded-2xl shadow-2xl p-2 z-50 animate-in fade-in zoom-in-95 duration-150 ring-1 ring-white/10 space-y-1">
-              <div className="px-3 py-1.5 border-b border-slate-800">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Navegar por Configurações</span>
-              </div>
-              
-              <button
-                type="button"
-                onClick={() => handleSelectConfigTab('backup')}
-                className={cn(
-                  "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all cursor-pointer group",
-                  activeSubTab === 'backup' 
-                    ? "bg-blue-600/20 text-white border border-blue-500/40 ring-1 ring-blue-500/30" 
-                    : "text-slate-300 hover:text-white hover:bg-slate-800/60"
-                )}
-              >
-                <div className={cn("p-2 rounded-xl transition-colors shrink-0", activeSubTab === 'backup' ? "bg-slate-700 text-white" : "bg-slate-800 text-slate-400 group-hover:text-white")}>
-                  <Database size={16} />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <span className="text-xs sm:text-sm font-bold text-white block">Backups & Dados</span>
-                  <p className="text-[10px] text-slate-400 truncate">Exportação JSON, CSV e planilhas Excel</p>
-                </div>
-                {activeSubTab === 'backup' && <Check size={14} className="text-blue-400 shrink-0" />}
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleSelectConfigTab('logs')}
-                className={cn(
-                  "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all cursor-pointer group",
-                  activeSubTab === 'logs' 
-                    ? "bg-blue-600/20 text-white border border-blue-500/40 ring-1 ring-blue-500/30" 
-                    : "text-slate-300 hover:text-white hover:bg-slate-800/60"
-                )}
-              >
-                <div className={cn("p-2 rounded-xl transition-colors shrink-0", activeSubTab === 'logs' ? "bg-blue-600 text-white" : "bg-slate-800 text-blue-400 group-hover:text-blue-300")}>
-                  <Activity size={16} />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between gap-1">
-                    <span className="text-xs sm:text-sm font-bold text-white block">Logs de Alterações</span>
-                    {logs.length > 0 && (
-                      <span className="px-1.5 py-0.2 rounded-full text-[9px] font-bold bg-blue-500/30 text-blue-300 border border-blue-500/40">
-                        {logs.length}
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-[10px] text-slate-400 truncate">Trilha de auditoria e histórico de mutações</p>
-                </div>
-                {activeSubTab === 'logs' && <Check size={14} className="text-blue-400 shrink-0" />}
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleSelectConfigTab('categories')}
-                className={cn(
-                  "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all cursor-pointer group",
-                  activeSubTab === 'categories' 
-                    ? "bg-emerald-500/20 text-white border border-emerald-500/40 ring-1 ring-emerald-500/30" 
-                    : "text-slate-300 hover:text-white hover:bg-slate-800/60"
-                )}
-              >
-                <div className={cn("p-2 rounded-xl transition-colors shrink-0", activeSubTab === 'categories' ? "bg-emerald-600 text-white" : "bg-slate-800 text-emerald-400 group-hover:text-emerald-300")}>
-                  <Tags size={16} />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between gap-1">
-                    <span className="text-xs sm:text-sm font-bold text-white block">Categorias</span>
-                    {categoryStats.length > 0 && (
-                      <span className="px-1.5 py-0.2 rounded-full text-[9px] font-bold bg-emerald-500/30 text-emerald-300 border border-emerald-500/40">
-                        {categoryStats.length}
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-[10px] text-slate-400 truncate">Gestão de categorias e contagem de despesas</p>
-                </div>
-                {activeSubTab === 'categories' && <Check size={14} className="text-emerald-400 shrink-0" />}
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleSelectConfigTab('custos_fixos')}
-                className={cn(
-                  "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all cursor-pointer group",
-                  activeSubTab === 'custos_fixos' 
-                    ? "bg-purple-500/20 text-white border border-purple-500/40 ring-1 ring-purple-500/30" 
-                    : "text-slate-300 hover:text-white hover:bg-slate-800/60"
-                )}
-              >
-                <div className={cn("p-2 rounded-xl transition-colors shrink-0", activeSubTab === 'custos_fixos' ? "bg-purple-600 text-white" : "bg-slate-800 text-purple-400 group-hover:text-purple-300")}>
-                  <Building2 size={16} />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <span className="text-xs sm:text-sm font-bold text-white block">Custos Fixos</span>
-                  <p className="text-[10px] text-slate-400 truncate">Condomínio, terreno e parcelas dos sócios</p>
-                </div>
-                {activeSubTab === 'custos_fixos' && <Check size={14} className="text-purple-400 shrink-0" />}
-              </button>
-            </div>
-          )}
+          </div>
         </div>
       </header>
 

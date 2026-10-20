@@ -64,9 +64,7 @@ export function ReportsTab({
   onSubTabChange
 }: ReportsTabProps) {
   const [activeReportTab, setActiveReportTab] = useState<ReportSubTab>(initialSubTab || 'geral');
-  const [isReportDropdownOpen, setIsReportDropdownOpen] = useState(false);
   const [isFilterDropdownOpen, setIsFilterDropdownOpen] = useState(false);
-  const reportDropdownRef = useRef<HTMLDivElement>(null);
   const filterDropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -77,16 +75,12 @@ export function ReportsTab({
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
-      if (reportDropdownRef.current && !reportDropdownRef.current.contains(event.target as Node)) {
-        setIsReportDropdownOpen(false);
-      }
       if (filterDropdownRef.current && !filterDropdownRef.current.contains(event.target as Node)) {
         setIsFilterDropdownOpen(false);
       }
     }
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === 'Escape') {
-        setIsReportDropdownOpen(false);
         setIsFilterDropdownOpen(false);
       }
     }
@@ -101,7 +95,6 @@ export function ReportsTab({
   const handleSelectReportTab = (tab: ReportSubTab) => {
     setActiveReportTab(tab);
     onSubTabChange?.(tab);
-    setIsReportDropdownOpen(false);
   };
   
   const availableCategories = useMemo(() => {
@@ -734,168 +727,37 @@ export function ReportsTab({
           </p>
         </div>
         
-        {/* SUBMENU SUSPENSO DA PÁGINA "RELATÓRIO" */}
-        <div className="relative shrink-0" ref={reportDropdownRef}>
-          <button
-            type="button"
-            onClick={() => setIsReportDropdownOpen(prev => !prev)}
-            className="flex items-center gap-3 px-4 py-2.5 bg-slate-900/80 hover:bg-slate-800/90 border border-slate-700/70 hover:border-slate-600 rounded-2xl text-white font-semibold text-xs sm:text-sm shadow-xl ring-1 ring-white/10 transition-all cursor-pointer group w-full sm:w-auto justify-between"
-          >
-            <div className="flex items-center gap-2.5 min-w-0">
-              <div className="p-1.5 rounded-xl bg-blue-500/20 text-blue-400 border border-blue-500/30 shrink-0">
-                {activeReportTab === 'geral' && <FileText size={16} />}
-                {activeReportTab === 'extrato' && <Landmark size={16} className="text-amber-400" />}
-                {activeReportTab === 'doacoes' && <Heart size={16} className="text-purple-400" />}
-                {activeReportTab === 'apagar' && <Users size={16} className="text-blue-400" />}
-                {activeReportTab === 'faturas' && <CreditCard size={16} className="text-blue-400" />}
-              </div>
-              <div className="flex flex-col text-left truncate">
-                <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">Submenu Relatório</span>
-                <span className="text-white font-bold leading-tight flex items-center gap-2 truncate">
-                  {activeReportTab === 'geral' && 'Geral'}
-                  {activeReportTab === 'extrato' && 'Extrato de Sócios'}
-                  {activeReportTab === 'doacoes' && 'Extrato de Doações'}
-                  {activeReportTab === 'apagar' && 'A Pagar'}
-                  {activeReportTab === 'faturas' && 'Faturas de Cartão'}
-
-                  {activeReportTab === 'extrato' && pendingRefundsCount > 0 && (
-                    <span className="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-amber-500/30 text-amber-300 border border-amber-500/40 shrink-0">
-                      {pendingRefundsCount}
-                    </span>
-                  )}
-                  {activeReportTab === 'doacoes' && donationExpenses.length > 0 && (
-                    <span className="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-purple-500/30 text-purple-300 border border-purple-500/40 shrink-0">
-                      {donationExpenses.length}
-                    </span>
-                  )}
+        {/* INDICADOR ELEGANTE DA VISÃO ATIVA (SEM DROPDOWN REDUNDANTE) */}
+        <div className="inline-flex items-center gap-2.5 px-3.5 py-2 bg-slate-900/80 border border-slate-700/60 rounded-2xl text-white shadow-lg ring-1 ring-white/5 shrink-0 self-start sm:self-center">
+          <div className="p-1.5 rounded-xl bg-blue-500/20 text-blue-400 border border-blue-500/30 shrink-0">
+            {activeReportTab === 'geral' && <FileText size={16} />}
+            {activeReportTab === 'extrato' && <Landmark size={16} className="text-amber-400" />}
+            {activeReportTab === 'doacoes' && <Heart size={16} className="text-purple-400" />}
+            {activeReportTab === 'apagar' && <Users size={16} className="text-blue-400" />}
+            {activeReportTab === 'faturas' && <CreditCard size={16} className="text-blue-400" />}
+          </div>
+          <div className="flex flex-col text-left">
+            <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Visualizando</span>
+            <div className="flex items-center gap-2">
+              <span className="text-xs sm:text-sm font-bold text-white">
+                {activeReportTab === 'geral' && 'Relatório Geral'}
+                {activeReportTab === 'extrato' && 'Extrato de Sócios'}
+                {activeReportTab === 'doacoes' && 'Extrato de Doações'}
+                {activeReportTab === 'apagar' && 'A Pagar'}
+                {activeReportTab === 'faturas' && 'Faturas de Cartão'}
+              </span>
+              {activeReportTab === 'extrato' && pendingRefundsCount > 0 && (
+                <span className="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-amber-500/30 text-amber-300 border border-amber-500/40 shrink-0">
+                  {pendingRefundsCount} {pendingRefundsCount === 1 ? 'pendência' : 'pendências'}
                 </span>
-              </div>
+              )}
+              {activeReportTab === 'doacoes' && donationExpenses.length > 0 && (
+                <span className="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-purple-500/30 text-purple-300 border border-purple-500/40 shrink-0">
+                  {donationExpenses.length} {donationExpenses.length === 1 ? 'doação' : 'doações'}
+                </span>
+              )}
             </div>
-            <ChevronDown size={16} className={cn("text-slate-400 transition-transform duration-200 ml-2 group-hover:text-white shrink-0", isReportDropdownOpen && "rotate-180 text-blue-400")} />
-          </button>
-
-          {/* Submenu Suspenso Flutuante */}
-          {isReportDropdownOpen && (
-            <div className="absolute right-0 top-full mt-2 w-72 sm:w-80 max-w-[95vw] bg-slate-900/95 backdrop-blur-2xl border border-slate-700/80 rounded-2xl shadow-2xl p-2 z-50 animate-in fade-in zoom-in-95 duration-150 ring-1 ring-white/10 space-y-1">
-              <div className="px-3 py-1.5 border-b border-slate-800">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Navegar pelos Relatórios</span>
-              </div>
-              
-              <button
-                type="button"
-                onClick={() => handleSelectReportTab('geral')}
-                className={cn(
-                  "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all cursor-pointer group",
-                  activeReportTab === 'geral' 
-                    ? "bg-blue-600/20 text-white border border-blue-500/40 ring-1 ring-blue-500/30" 
-                    : "text-slate-300 hover:text-white hover:bg-slate-800/60"
-                )}
-              >
-                <div className={cn("p-2 rounded-xl transition-colors shrink-0", activeReportTab === 'geral' ? "bg-blue-600 text-white" : "bg-slate-800 text-slate-400 group-hover:text-white")}>
-                  <FileText size={16} />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <span className="text-xs sm:text-sm font-bold text-white block">Geral</span>
-                  <p className="text-[10px] text-slate-400 truncate">Conferência contábil de todos os lançamentos</p>
-                </div>
-                {activeReportTab === 'geral' && <Check size={14} className="text-blue-400 shrink-0" />}
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleSelectReportTab('extrato')}
-                className={cn(
-                  "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all cursor-pointer group",
-                  activeReportTab === 'extrato' 
-                    ? "bg-amber-500/20 text-white border border-amber-500/40 ring-1 ring-amber-500/30" 
-                    : "text-slate-300 hover:text-white hover:bg-slate-800/60"
-                )}
-              >
-                <div className={cn("p-2 rounded-xl transition-colors shrink-0", activeReportTab === 'extrato' ? "bg-amber-500 text-slate-950 font-bold" : "bg-slate-800 text-amber-400 group-hover:text-amber-300")}>
-                  <Landmark size={16} />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between gap-1">
-                    <span className="text-xs sm:text-sm font-bold text-white block">Extrato de Sócios</span>
-                    {pendingRefundsCount > 0 && (
-                      <span className="px-1.5 py-0.2 rounded-full text-[9px] font-bold bg-amber-500/30 text-amber-300 border border-amber-500/40">
-                        {pendingRefundsCount} pendente{pendingRefundsCount > 1 ? 's' : ''}
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-[10px] text-slate-400 truncate">Extrato bancário de reembolsos de sócios</p>
-                </div>
-                {activeReportTab === 'extrato' && <Check size={14} className="text-amber-400 shrink-0" />}
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleSelectReportTab('doacoes')}
-                className={cn(
-                  "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all cursor-pointer group",
-                  activeReportTab === 'doacoes' 
-                    ? "bg-purple-500/20 text-white border border-purple-500/40 ring-1 ring-purple-500/30" 
-                    : "text-slate-300 hover:text-white hover:bg-slate-800/60"
-                )}
-              >
-                <div className={cn("p-2 rounded-xl transition-colors shrink-0", activeReportTab === 'doacoes' ? "bg-purple-600 text-white" : "bg-slate-800 text-purple-400 group-hover:text-purple-300")}>
-                  <Heart size={16} />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between gap-1">
-                    <span className="text-xs sm:text-sm font-bold text-white block">Extrato de Doações</span>
-                    {donationExpenses.length > 0 && (
-                      <span className="px-1.5 py-0.2 rounded-full text-[9px] font-bold bg-purple-500/30 text-purple-300 border border-purple-500/40">
-                        {donationExpenses.length} doações
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-[10px] text-slate-400 truncate">Auditoria contábil de aportes voluntários</p>
-                </div>
-                {activeReportTab === 'doacoes' && <Check size={14} className="text-purple-400 shrink-0" />}
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleSelectReportTab('apagar')}
-                className={cn(
-                  "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all cursor-pointer group",
-                  activeReportTab === 'apagar' 
-                    ? "bg-blue-600/20 text-white border border-blue-500/40 ring-1 ring-blue-500/30" 
-                    : "text-slate-300 hover:text-white hover:bg-slate-800/60"
-                )}
-              >
-                <div className={cn("p-2 rounded-xl transition-colors shrink-0", activeReportTab === 'apagar' ? "bg-blue-600 text-white" : "bg-slate-800 text-slate-400 group-hover:text-white")}>
-                  <Users size={16} />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <span className="text-xs sm:text-sm font-bold text-white block">A Pagar</span>
-                  <p className="text-[10px] text-slate-400 truncate">Rateio de custos fixos e saldos individuais</p>
-                </div>
-                {activeReportTab === 'apagar' && <Check size={14} className="text-blue-400 shrink-0" />}
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleSelectReportTab('faturas')}
-                className={cn(
-                  "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all cursor-pointer group",
-                  activeReportTab === 'faturas' 
-                    ? "bg-blue-600/20 text-white border border-blue-500/40 ring-1 ring-blue-500/30" 
-                    : "text-slate-300 hover:text-white hover:bg-slate-800/60"
-                )}
-              >
-                <div className={cn("p-2 rounded-xl transition-colors shrink-0", activeReportTab === 'faturas' ? "bg-blue-600 text-white" : "bg-slate-800 text-slate-400 group-hover:text-white")}>
-                  <CreditCard size={16} />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <span className="text-xs sm:text-sm font-bold text-white block">Faturas de Cartão</span>
-                  <p className="text-[10px] text-slate-400 truncate">Projeção mensal e faturas de cartão</p>
-                </div>
-                {activeReportTab === 'faturas' && <Check size={14} className="text-blue-400 shrink-0" />}
-              </button>
-            </div>
-          )}
+          </div>
         </div>
       </header>
 
@@ -961,8 +823,8 @@ export function ReportsTab({
       {/* ======================================================== */}
       {activeReportTab === 'geral' && (
         <div className="space-y-4">
-          {/* Barra de Filtros e Busca Limpa */}
-          <div className="bg-slate-900/60 backdrop-blur-xl border border-slate-700/50 rounded-2xl p-3.5 sm:p-4 ring-1 ring-white/5 space-y-3">
+          {/* Barra de Filtros e Busca Limpa com z-30 para nunca ficar atrás da tabela */}
+          <div className="bg-slate-900/60 backdrop-blur-xl border border-slate-700/50 rounded-2xl p-3.5 sm:p-4 ring-1 ring-white/5 space-y-3 relative z-30">
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
               {/* Campo de Busca */}
               <div className="relative flex-1 group">
@@ -989,7 +851,7 @@ export function ReportsTab({
               {/* Botões de Ação: Submenu Suspenso de Filtros + Exportação Excel */}
               <div className="flex items-center gap-2 shrink-0">
                 {/* SUBMENU SUSPENSO DE FILTROS DOS LANÇAMENTOS */}
-                <div className="relative" ref={filterDropdownRef}>
+                <div className="relative z-40" ref={filterDropdownRef}>
                   <button
                     type="button"
                     onClick={() => setIsFilterDropdownOpen(prev => !prev)}
@@ -1010,108 +872,231 @@ export function ReportsTab({
                     <ChevronDown size={14} className={cn("text-slate-400 transition-transform duration-200", isFilterDropdownOpen && "rotate-180 text-emerald-400")} />
                   </button>
 
-                  {/* Popover Suspenso dos Filtros */}
+                  {/* Popover Suspenso dos Filtros no Desktop e Mobile Sheet */}
                   {isFilterDropdownOpen && (
-                    <div className="absolute right-0 top-full mt-2 w-80 sm:w-96 max-w-[92vw] bg-slate-900/95 backdrop-blur-2xl border border-slate-700/80 rounded-2xl shadow-2xl p-4 z-50 animate-in fade-in zoom-in-95 duration-150 ring-1 ring-white/10 space-y-4">
-                      {/* Cabeçalho do Popover */}
-                      <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
-                        <div className="flex items-center gap-2">
-                          <Filter size={15} className="text-emerald-400" />
-                          <span className="text-xs font-bold text-white uppercase tracking-wider">Filtros de Lançamento</span>
+                    <>
+                      {/* 1. Modal Bottom Sheet Nativo no Smartphone (sm:hidden) */}
+                      <div className="sm:hidden fixed inset-0 z-50 flex flex-col justify-end bg-slate-950/80 backdrop-blur-sm animate-in fade-in duration-200">
+                        {/* Área externa para fechar ao clicar */}
+                        <div className="flex-1 w-full" onClick={() => setIsFilterDropdownOpen(false)} />
+                        
+                        <div className="bg-slate-900 border-t border-slate-700/80 rounded-t-3xl shadow-2xl max-h-[85vh] flex flex-col animate-in slide-in-from-bottom duration-250 ring-1 ring-white/10">
+                          {/* Puxador touch / drag handle */}
+                          <div className="w-12 h-1.5 bg-slate-700 rounded-full mx-auto mt-3 mb-1 shrink-0" />
+                          
+                          {/* Cabeçalho do modal mobile */}
+                          <div className="px-5 py-3 border-b border-slate-800 flex items-center justify-between shrink-0">
+                            <div className="flex items-center gap-2">
+                              <Filter size={18} className="text-emerald-400" />
+                              <span className="text-sm font-bold text-white uppercase tracking-wider">Filtros de Lançamento</span>
+                            </div>
+                            <div className="flex items-center gap-3">
+                              {(filter !== 'all' || paymentFilter !== 'all') && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setFilter('all');
+                                    setPaymentFilter('all');
+                                  }}
+                                  className="text-xs font-semibold text-amber-400 hover:text-amber-300 transition-colors cursor-pointer"
+                                >
+                                  Limpar
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => setIsFilterDropdownOpen(false)}
+                                className="w-8 h-8 rounded-full bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center text-sm font-bold cursor-pointer"
+                              >
+                                ✕
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Conteúdo com rolagem touch fluida */}
+                          <div className="p-5 overflow-y-auto space-y-5 custom-scrollbar">
+                            {/* Seção 1: Categorias */}
+                            <div className="space-y-2.5">
+                              <div className="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-slate-400">
+                                <span>Categoria</span>
+                                <span className="text-slate-500 font-mono">{filteredExpenses.length} itens</span>
+                              </div>
+                              <div className="flex flex-wrap gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => setFilter('all')}
+                                  className={cn(
+                                    "px-3 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-2 border",
+                                    filter === 'all'
+                                      ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/50 ring-1 ring-emerald-500/40 font-bold"
+                                      : "bg-slate-950/60 text-slate-400 border-slate-800 hover:bg-slate-800 hover:text-slate-200"
+                                  )}
+                                >
+                                  <span>Todas as Categorias</span>
+                                  <span className="text-[10px] bg-slate-800 px-1.5 py-0.5 rounded-full font-mono">
+                                    {expenses.length}
+                                  </span>
+                                </button>
+                                {availableCategories.map(cat => (
+                                  <button
+                                    key={cat}
+                                    type="button"
+                                    onClick={() => setFilter(cat)}
+                                    className={cn(
+                                      "px-3 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-2 border",
+                                      filter === cat
+                                        ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/50 ring-1 ring-emerald-500/40 font-bold"
+                                        : "bg-slate-950/60 text-slate-400 border-slate-800 hover:bg-slate-800 hover:text-slate-200"
+                                    )}
+                                  >
+                                    <span>{cat}</span>
+                                    <span className="text-[10px] bg-slate-800 px-1.5 py-0.5 rounded-full font-mono">
+                                      {categoryCounts[cat] || 0}
+                                    </span>
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+
+                            {/* Seção 2: Formas de Pagamento */}
+                            <div className="space-y-2.5 pt-3 border-t border-slate-800">
+                              <span className="text-xs font-bold uppercase tracking-wider text-slate-400 block">Forma de Pagamento</span>
+                              <div className="grid grid-cols-2 gap-2">
+                                {['all', 'Pix', 'Cartão', 'Caixa', 'doação'].map((pm) => (
+                                  <button
+                                    key={pm}
+                                    type="button"
+                                    onClick={() => setPaymentFilter(pm)}
+                                    className={cn(
+                                      "px-3 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer border text-center",
+                                      paymentFilter === pm
+                                        ? "bg-blue-500/20 text-blue-300 border-blue-500/50 ring-1 ring-blue-500/40 font-bold"
+                                        : "bg-slate-950/60 text-slate-400 border-slate-800 hover:bg-slate-800 hover:text-slate-200"
+                                    )}
+                                  >
+                                    {pm === 'all' ? 'Todos os Pagamentos' : pm}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Botão de Ação Sticky na Base do Mobile */}
+                          <div className="p-4 bg-slate-950/90 border-t border-slate-800 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => setIsFilterDropdownOpen(false)}
+                              className="w-full py-3.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold rounded-2xl text-sm shadow-xl shadow-emerald-900/30 flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-[0.99]"
+                            >
+                              <Filter size={16} />
+                              <span>Ver {filteredExpenses.length} {filteredExpenses.length === 1 ? 'Lançamento' : 'Lançamentos'}</span>
+                            </button>
+                          </div>
                         </div>
-                        {(filter !== 'all' || paymentFilter !== 'all') && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setFilter('all');
-                              setPaymentFilter('all');
-                            }}
-                            className="text-[11px] font-semibold text-amber-400 hover:text-amber-300 transition-colors cursor-pointer"
-                          >
-                            Limpar filtros
-                          </button>
-                        )}
                       </div>
 
-                      {/* Seção 1: Categorias */}
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                          <span>Categoria</span>
-                          <span className="text-slate-500">{filteredExpenses.length} itens</span>
-                        </div>
-                        <div className="flex flex-wrap gap-1.5 max-h-48 overflow-y-auto custom-scrollbar p-0.5">
-                          <button
-                            type="button"
-                            onClick={() => setFilter('all')}
-                            className={cn(
-                              "px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 border",
-                              filter === 'all'
-                                ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40 ring-1 ring-emerald-500/30 font-bold"
-                                : "bg-slate-950/40 text-slate-400 border-slate-800 hover:bg-slate-800/60 hover:text-slate-200"
-                            )}
-                          >
-                            <span>Todas as Categorias</span>
-                            <span className="text-[10px] bg-slate-800 px-1.5 py-0.2 rounded-full font-mono">
-                              {expenses.length}
-                            </span>
-                          </button>
-                          {availableCategories.map(cat => (
+                      {/* 2. Popover Flutuante no Desktop (hidden sm:block) */}
+                      <div className="hidden sm:block absolute right-0 top-full mt-2 w-96 max-w-[92vw] bg-slate-900/98 backdrop-blur-2xl border border-slate-700/90 rounded-2xl shadow-2xl p-4 z-50 animate-in fade-in zoom-in-95 duration-150 ring-1 ring-white/10 space-y-4">
+                        {/* Cabeçalho do Popover */}
+                        <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
+                          <div className="flex items-center gap-2">
+                            <Filter size={15} className="text-emerald-400" />
+                            <span className="text-xs font-bold text-white uppercase tracking-wider">Filtros de Lançamento</span>
+                          </div>
+                          {(filter !== 'all' || paymentFilter !== 'all') && (
                             <button
-                              key={cat}
                               type="button"
-                              onClick={() => setFilter(cat)}
+                              onClick={() => {
+                                setFilter('all');
+                                setPaymentFilter('all');
+                              }}
+                              className="text-[11px] font-semibold text-amber-400 hover:text-amber-300 transition-colors cursor-pointer"
+                            >
+                              Limpar filtros
+                            </button>
+                          )}
+                        </div>
+
+                        {/* Seção 1: Categorias */}
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                            <span>Categoria</span>
+                            <span className="text-slate-500">{filteredExpenses.length} itens</span>
+                          </div>
+                          <div className="flex flex-wrap gap-1.5 max-h-48 overflow-y-auto custom-scrollbar p-0.5">
+                            <button
+                              type="button"
+                              onClick={() => setFilter('all')}
                               className={cn(
                                 "px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 border",
-                                filter === cat
+                                filter === 'all'
                                   ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40 ring-1 ring-emerald-500/30 font-bold"
                                   : "bg-slate-950/40 text-slate-400 border-slate-800 hover:bg-slate-800/60 hover:text-slate-200"
                               )}
                             >
-                              <span>{cat}</span>
+                              <span>Todas as Categorias</span>
                               <span className="text-[10px] bg-slate-800 px-1.5 py-0.2 rounded-full font-mono">
-                                {categoryCounts[cat] || 0}
+                                {expenses.length}
                               </span>
                             </button>
-                          ))}
+                            {availableCategories.map(cat => (
+                              <button
+                                key={cat}
+                                type="button"
+                                onClick={() => setFilter(cat)}
+                                className={cn(
+                                  "px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 border",
+                                  filter === cat
+                                    ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40 ring-1 ring-emerald-500/30 font-bold"
+                                    : "bg-slate-950/40 text-slate-400 border-slate-800 hover:bg-slate-800/60 hover:text-slate-200"
+                                )}
+                              >
+                                <span>{cat}</span>
+                                <span className="text-[10px] bg-slate-800 px-1.5 py-0.2 rounded-full font-mono">
+                                  {categoryCounts[cat] || 0}
+                                </span>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Seção 2: Forma de Pagamento */}
+                        <div className="space-y-2 pt-2 border-t border-slate-800/80">
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Forma de Pagamento</span>
+                          <div className="flex flex-wrap gap-1.5">
+                            {['all', 'Pix', 'Cartão', 'Caixa', 'doação'].map((pm) => (
+                              <button
+                                key={pm}
+                                type="button"
+                                onClick={() => setPaymentFilter(pm)}
+                                className={cn(
+                                  "px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer border",
+                                  paymentFilter === pm
+                                    ? "bg-blue-500/20 text-blue-300 border-blue-500/40 ring-1 ring-blue-500/30 font-bold"
+                                    : "bg-slate-950/40 text-slate-400 border-slate-800 hover:bg-slate-800/60 hover:text-slate-200"
+                                )}
+                              >
+                                {pm === 'all' ? 'Todos os Pagamentos' : pm}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Rodapé do Popover */}
+                        <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between">
+                          <span className="text-[11px] text-slate-400">
+                            {filteredExpenses.length} {filteredExpenses.length === 1 ? 'lançamento encontrado' : 'lançamentos encontrados'}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setIsFilterDropdownOpen(false)}
+                            className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold transition-all cursor-pointer shadow-md"
+                          >
+                            Concluir
+                          </button>
                         </div>
                       </div>
-
-                      {/* Seção 2: Forma de Pagamento */}
-                      <div className="space-y-2 pt-2 border-t border-slate-800/80">
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Forma de Pagamento</span>
-                        <div className="flex flex-wrap gap-1.5">
-                          {['all', 'Pix', 'Cartão', 'Caixa', 'doação'].map((pm) => (
-                            <button
-                              key={pm}
-                              type="button"
-                              onClick={() => setPaymentFilter(pm)}
-                              className={cn(
-                                "px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer border",
-                                paymentFilter === pm
-                                  ? "bg-blue-500/20 text-blue-300 border-blue-500/40 ring-1 ring-blue-500/30 font-bold"
-                                  : "bg-slate-950/40 text-slate-400 border-slate-800 hover:bg-slate-800/60 hover:text-slate-200"
-                              )}
-                            >
-                              {pm === 'all' ? 'Todos os Pagamentos' : pm}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-
-                      {/* Rodapé do Popover */}
-                      <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between">
-                        <span className="text-[11px] text-slate-400">
-                          {filteredExpenses.length} {filteredExpenses.length === 1 ? 'lançamento encontrado' : 'lançamentos encontrados'}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => setIsFilterDropdownOpen(false)}
-                          className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold transition-all cursor-pointer shadow-md"
-                        >
-                          Concluir
-                        </button>
-                      </div>
-                    </div>
+                    </>
                   )}
                 </div>
 
