@@ -12,7 +12,11 @@ import {
   Landmark,
   Heart,
   Users,
-  CreditCard
+  CreditCard,
+  Database,
+  Activity,
+  Tags,
+  Building2
 } from 'lucide-react';
 import { 
   format
@@ -169,6 +173,7 @@ const INITIAL_PAID_TERRENO = [
 function App() {
   const [activeTab, setActiveTab] = useState('inicio');
   const [reportsSubTab, setReportsSubTab] = useState<'geral' | 'extrato' | 'doacoes' | 'apagar' | 'faturas'>('geral');
+  const [configSubTab, setConfigSubTab] = useState<'backup' | 'logs' | 'categories' | 'custos_fixos'>('backup');
   const [isSharedMode, setIsSharedMode] = useState(false);
   const [isVendorMode, setIsVendorMode] = useState(false);
   const [user, setUser] = useState<any>(null);
@@ -270,6 +275,28 @@ function App() {
   const reportsDonationsCount = useMemo(() => {
     return (state?.expenses || []).filter(e => e.paymentMethod === 'doação').length;
   }, [state?.expenses]);
+
+  const [isConfigMenuExpanded, setIsConfigMenuExpanded] = useState(false);
+  const [isMobileConfigOpen, setIsMobileConfigOpen] = useState(false);
+  const mobileConfigMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (mobileConfigMenuRef.current && !mobileConfigMenuRef.current.contains(event.target as Node)) {
+        setIsMobileConfigOpen(false);
+      }
+    }
+    if (isMobileConfigOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isMobileConfigOpen]);
+
+  const configLogsCount = useMemo(() => {
+    return auditLogger.getLogs().length;
+  }, []);
 
   useEffect(() => {
     const handleSettingsSync = (e: any) => {
@@ -2542,7 +2569,245 @@ function App() {
                     )}
                   </div>
                 </div>
-                <NavItem icon={<Settings size={20} />} label="Config" active={activeTab === 'config'} onClick={() => setActiveTab('config')} />
+                {/* Item Config no Smartphone (Mobile Bottom Bar) com Submenu Suspenso */}
+                <div className="md:hidden relative" ref={mobileConfigMenuRef}>
+                  <NavItem 
+                    icon={<Settings size={20} />} 
+                    label="Config" 
+                    active={activeTab === 'config'} 
+                    onClick={() => {
+                      if (activeTab !== 'config') {
+                        setActiveTab('config');
+                      }
+                      setIsMobileConfigOpen(prev => !prev);
+                    }} 
+                  />
+                  {/* Popover Flutuante no Mobile */}
+                  {isMobileConfigOpen && (
+                    <div className="fixed bottom-16 left-3 right-3 bg-slate-900/95 backdrop-blur-2xl border border-slate-700/80 rounded-2xl shadow-2xl p-2 z-50 animate-in fade-in slide-in-from-bottom-2 duration-150 ring-1 ring-white/10 space-y-1">
+                      <div className="px-3 py-1.5 border-b border-slate-800 flex items-center justify-between">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Submenu Config</span>
+                        <button
+                          type="button"
+                          onClick={() => setIsMobileConfigOpen(false)}
+                          className="text-xs text-slate-400 hover:text-white cursor-pointer px-1.5 py-0.5 rounded"
+                        >
+                          ✕
+                        </button>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActiveTab('config');
+                          setConfigSubTab('backup');
+                          setIsMobileConfigOpen(false);
+                        }}
+                        className={cn(
+                          "w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left text-xs font-semibold transition-all cursor-pointer",
+                          activeTab === 'config' && configSubTab === 'backup'
+                            ? "bg-blue-600/20 text-white border border-blue-500/40 font-bold"
+                            : "text-slate-300 hover:text-white hover:bg-slate-800/60"
+                        )}
+                      >
+                        <Database size={15} className="text-slate-300 shrink-0" />
+                        <span>Backups & Dados</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActiveTab('config');
+                          setConfigSubTab('logs');
+                          setIsMobileConfigOpen(false);
+                        }}
+                        className={cn(
+                          "w-full flex items-center justify-between px-3 py-2 rounded-xl text-left text-xs font-semibold transition-all cursor-pointer",
+                          activeTab === 'config' && configSubTab === 'logs'
+                            ? "bg-blue-600/20 text-blue-300 border border-blue-500/40 font-bold"
+                            : "text-slate-300 hover:text-white hover:bg-slate-800/60"
+                        )}
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <Activity size={15} className="text-blue-400 shrink-0" />
+                          <span>Logs de Alterações</span>
+                        </div>
+                        {configLogsCount > 0 && (
+                          <span className="px-1.5 py-0.2 rounded-full text-[9px] font-bold bg-blue-500/30 text-blue-300 border border-blue-500/40">
+                            {configLogsCount}
+                          </span>
+                        )}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActiveTab('config');
+                          setConfigSubTab('categories');
+                          setIsMobileConfigOpen(false);
+                        }}
+                        className={cn(
+                          "w-full flex items-center justify-between px-3 py-2 rounded-xl text-left text-xs font-semibold transition-all cursor-pointer",
+                          activeTab === 'config' && configSubTab === 'categories'
+                            ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-bold"
+                            : "text-slate-300 hover:text-white hover:bg-slate-800/60"
+                        )}
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <Tags size={15} className="text-emerald-400 shrink-0" />
+                          <span>Categorias</span>
+                        </div>
+                        {categories.length > 0 && (
+                          <span className="px-1.5 py-0.2 rounded-full text-[9px] font-bold bg-emerald-500/30 text-emerald-300 border border-emerald-500/40">
+                            {categories.length}
+                          </span>
+                        )}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActiveTab('config');
+                          setConfigSubTab('custos_fixos');
+                          setIsMobileConfigOpen(false);
+                        }}
+                        className={cn(
+                          "w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left text-xs font-semibold transition-all cursor-pointer",
+                          activeTab === 'config' && configSubTab === 'custos_fixos'
+                            ? "bg-purple-600/20 text-white border border-purple-500/40 font-bold"
+                            : "text-slate-300 hover:text-white hover:bg-slate-800/60"
+                        )}
+                      >
+                        <Building2 size={15} className="text-purple-400 shrink-0" />
+                        <span>Custos Fixos</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Item Config no Desktop (Sidebar) com Submenu Suspenso / Expansível */}
+                <div className="hidden md:block w-full">
+                  <div className="flex flex-col w-full">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (activeTab !== 'config') {
+                          setActiveTab('config');
+                          setIsConfigMenuExpanded(true);
+                        } else {
+                          setIsConfigMenuExpanded(prev => !prev);
+                        }
+                      }}
+                      className={cn(
+                        "flex items-center justify-between w-full px-4 py-3 rounded-xl transition-all duration-200 cursor-pointer group",
+                        activeTab === 'config'
+                          ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-500/20 ring-1 ring-white/10"
+                          : "text-slate-400 hover:text-white hover:bg-slate-800/50"
+                      )}
+                    >
+                      <div className="flex items-center gap-3">
+                        <Settings size={20} />
+                        <span className="text-sm font-medium whitespace-nowrap">Config</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <ChevronDown 
+                          size={16} 
+                          className={cn(
+                            "transition-transform duration-200 text-slate-400 group-hover:text-white",
+                            (isConfigMenuExpanded || activeTab === 'config') && "rotate-180"
+                          )} 
+                        />
+                      </div>
+                    </button>
+
+                    {/* Submenu Suspenso / Expansível de Config no Desktop */}
+                    {(isConfigMenuExpanded || activeTab === 'config') && (
+                      <div className="flex flex-col gap-0.5 mt-1.5 pl-3 py-1 border-l-2 border-slate-700/60 ml-5 space-y-0.5 animate-in fade-in slide-in-from-top-2 duration-150">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveTab('config');
+                            setConfigSubTab('backup');
+                          }}
+                          className={cn(
+                            "flex items-center gap-2.5 w-full px-3 py-2 rounded-lg text-xs transition-all cursor-pointer text-left",
+                            activeTab === 'config' && configSubTab === 'backup'
+                              ? "bg-blue-500/20 text-blue-300 font-bold border border-blue-500/30"
+                              : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/40 font-medium"
+                          )}
+                        >
+                          <Database size={14} className={activeTab === 'config' && configSubTab === 'backup' ? "text-blue-400" : "text-slate-500"} />
+                          <span>Backups & Dados</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveTab('config');
+                            setConfigSubTab('logs');
+                          }}
+                          className={cn(
+                            "flex items-center justify-between w-full px-3 py-2 rounded-lg text-xs transition-all cursor-pointer text-left",
+                            activeTab === 'config' && configSubTab === 'logs'
+                              ? "bg-blue-500/20 text-blue-300 font-bold border border-blue-500/30"
+                              : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/40 font-medium"
+                          )}
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <Activity size={14} className={activeTab === 'config' && configSubTab === 'logs' ? "text-blue-400" : "text-slate-500"} />
+                            <span>Logs</span>
+                          </div>
+                          {configLogsCount > 0 && (
+                            <span className="px-1.5 py-0.2 rounded-full text-[9px] font-bold bg-blue-500/30 text-blue-300 border border-blue-500/40">
+                              {configLogsCount}
+                            </span>
+                          )}
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveTab('config');
+                            setConfigSubTab('categories');
+                          }}
+                          className={cn(
+                            "flex items-center justify-between w-full px-3 py-2 rounded-lg text-xs transition-all cursor-pointer text-left",
+                            activeTab === 'config' && configSubTab === 'categories'
+                              ? "bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/30"
+                              : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/40 font-medium"
+                          )}
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <Tags size={14} className={activeTab === 'config' && configSubTab === 'categories' ? "text-emerald-400" : "text-slate-500"} />
+                            <span>Categorias</span>
+                          </div>
+                          {categories.length > 0 && (
+                            <span className="px-1.5 py-0.2 rounded-full text-[9px] font-bold bg-emerald-500/30 text-emerald-300 border border-emerald-500/40">
+                              {categories.length}
+                            </span>
+                          )}
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveTab('config');
+                            setConfigSubTab('custos_fixos');
+                          }}
+                          className={cn(
+                            "flex items-center gap-2.5 w-full px-3 py-2 rounded-lg text-xs transition-all cursor-pointer text-left",
+                            activeTab === 'config' && configSubTab === 'custos_fixos'
+                              ? "bg-purple-500/20 text-purple-300 font-bold border border-purple-500/30"
+                              : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/40 font-medium"
+                          )}
+                        >
+                          <Building2 size={14} className={activeTab === 'config' && configSubTab === 'custos_fixos' ? "text-purple-400" : "text-slate-500"} />
+                          <span>Custos Fixos</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
                 <div className="hidden md:block w-full">
                   <NavItem icon={<Info size={20} />} label="Sobre" active={activeTab === 'sobre'} onClick={() => setActiveTab('sobre')} />
                 </div>
@@ -2731,6 +2996,8 @@ function App() {
             formatCurrency={formatCurrency}
             financialSettings={financialSettings}
             onUpdateCondominio={handleUpdateCondominio}
+            initialSubTab={configSubTab}
+            onSubTabChange={(tab) => setConfigSubTab(tab)}
           />
         )}
         {activeTab === 'sobre' && <PlaceholderTab title="Sobre o Sistema" />}
