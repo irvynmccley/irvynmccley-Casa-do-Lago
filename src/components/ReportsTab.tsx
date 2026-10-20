@@ -51,6 +51,7 @@ interface ReportsTabProps {
   categories?: string[];
   financialSettings?: FinancialSettings;
   initialSubTab?: ReportSubTab;
+  onSubTabChange?: (tab: ReportSubTab) => void;
 }
 
 export function ReportsTab({ 
@@ -59,15 +60,49 @@ export function ReportsTab({
   allCardInstallments = [], 
   formatCurrency,
   financialSettings,
-  initialSubTab
+  initialSubTab,
+  onSubTabChange
 }: ReportsTabProps) {
   const [activeReportTab, setActiveReportTab] = useState<ReportSubTab>(initialSubTab || 'geral');
+  const [isReportDropdownOpen, setIsReportDropdownOpen] = useState(false);
+  const [isFilterDropdownOpen, setIsFilterDropdownOpen] = useState(false);
+  const reportDropdownRef = useRef<HTMLDivElement>(null);
+  const filterDropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (initialSubTab) {
       setActiveReportTab(initialSubTab);
     }
   }, [initialSubTab]);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (reportDropdownRef.current && !reportDropdownRef.current.contains(event.target as Node)) {
+        setIsReportDropdownOpen(false);
+      }
+      if (filterDropdownRef.current && !filterDropdownRef.current.contains(event.target as Node)) {
+        setIsFilterDropdownOpen(false);
+      }
+    }
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        setIsReportDropdownOpen(false);
+        setIsFilterDropdownOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, []);
+
+  const handleSelectReportTab = (tab: ReportSubTab) => {
+    setActiveReportTab(tab);
+    onSubTabChange?.(tab);
+    setIsReportDropdownOpen(false);
+  };
   
   const availableCategories = useMemo(() => {
     const list = categories && categories.length > 0 ? [...categories] : [...CATEGORIES];
@@ -684,7 +719,7 @@ export function ReportsTab({
       {/* ======================================================== */}
       {/* CABEÇALHO DO MÓDULO & NAVEGAÇÃO ENTRE ABAS               */}
       {/* ======================================================== */}
-      <header className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+      <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2.5">
             <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-white drop-shadow-sm">
@@ -699,90 +734,168 @@ export function ReportsTab({
           </p>
         </div>
         
-        {/* Navegação de Abas do Módulo */}
-        <div className="flex bg-slate-900/70 p-1.5 rounded-2xl border border-slate-700/60 ring-1 ring-white/5 overflow-x-auto custom-scrollbar">
+        {/* SUBMENU SUSPENSO DA PÁGINA "RELATÓRIO" */}
+        <div className="relative shrink-0" ref={reportDropdownRef}>
           <button
-            onClick={() => setActiveReportTab('geral')}
-            className={cn(
-              "px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer",
-              activeReportTab === 'geral' 
-                ? "bg-slate-700/90 text-white shadow-lg ring-1 ring-slate-600/60" 
-                : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/50"
-            )}
+            type="button"
+            onClick={() => setIsReportDropdownOpen(prev => !prev)}
+            className="flex items-center gap-3 px-4 py-2.5 bg-slate-900/80 hover:bg-slate-800/90 border border-slate-700/70 hover:border-slate-600 rounded-2xl text-white font-semibold text-xs sm:text-sm shadow-xl ring-1 ring-white/10 transition-all cursor-pointer group w-full sm:w-auto justify-between"
           >
-            <FileText size={15} />
-            <span>Geral</span>
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="p-1.5 rounded-xl bg-blue-500/20 text-blue-400 border border-blue-500/30 shrink-0">
+                {activeReportTab === 'geral' && <FileText size={16} />}
+                {activeReportTab === 'extrato' && <Landmark size={16} className="text-amber-400" />}
+                {activeReportTab === 'doacoes' && <Heart size={16} className="text-purple-400" />}
+                {activeReportTab === 'apagar' && <Users size={16} className="text-blue-400" />}
+                {activeReportTab === 'faturas' && <CreditCard size={16} className="text-blue-400" />}
+              </div>
+              <div className="flex flex-col text-left truncate">
+                <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">Submenu Relatório</span>
+                <span className="text-white font-bold leading-tight flex items-center gap-2 truncate">
+                  {activeReportTab === 'geral' && 'Geral'}
+                  {activeReportTab === 'extrato' && 'Extrato de Sócios'}
+                  {activeReportTab === 'doacoes' && 'Extrato de Doações'}
+                  {activeReportTab === 'apagar' && 'A Pagar'}
+                  {activeReportTab === 'faturas' && 'Faturas de Cartão'}
+
+                  {activeReportTab === 'extrato' && pendingRefundsCount > 0 && (
+                    <span className="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-amber-500/30 text-amber-300 border border-amber-500/40 shrink-0">
+                      {pendingRefundsCount}
+                    </span>
+                  )}
+                  {activeReportTab === 'doacoes' && donationExpenses.length > 0 && (
+                    <span className="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-purple-500/30 text-purple-300 border border-purple-500/40 shrink-0">
+                      {donationExpenses.length}
+                    </span>
+                  )}
+                </span>
+              </div>
+            </div>
+            <ChevronDown size={16} className={cn("text-slate-400 transition-transform duration-200 ml-2 group-hover:text-white shrink-0", isReportDropdownOpen && "rotate-180 text-blue-400")} />
           </button>
 
-          {/* NOVA ABA: EXTRATO DE SÓCIOS (MODELO EXTRATO BANCÁRIO) */}
-          <button
-            onClick={() => setActiveReportTab('extrato')}
-            className={cn(
-              "px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer relative",
-              activeReportTab === 'extrato' 
-                ? "bg-amber-500 text-slate-950 shadow-lg font-bold shadow-amber-500/20" 
-                : "text-amber-400 hover:text-amber-300 hover:bg-amber-500/10"
-            )}
-          >
-            <Landmark size={15} />
-            <span>Extrato de Sócios</span>
-            {pendingRefundsCount > 0 && (
-              <span className={cn(
-                "px-1.5 py-0.2 rounded-full text-[10px] font-bold",
-                activeReportTab === 'extrato' ? "bg-slate-950 text-amber-300" : "bg-amber-500/30 text-amber-300 border border-amber-500/40"
-              )}>
-                {pendingRefundsCount}
-              </span>
-            )}
-          </button>
+          {/* Submenu Suspenso Flutuante */}
+          {isReportDropdownOpen && (
+            <div className="absolute right-0 top-full mt-2 w-72 sm:w-80 max-w-[95vw] bg-slate-900/95 backdrop-blur-2xl border border-slate-700/80 rounded-2xl shadow-2xl p-2 z-50 animate-in fade-in zoom-in-95 duration-150 ring-1 ring-white/10 space-y-1">
+              <div className="px-3 py-1.5 border-b border-slate-800">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Navegar pelos Relatórios</span>
+              </div>
+              
+              <button
+                type="button"
+                onClick={() => handleSelectReportTab('geral')}
+                className={cn(
+                  "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all cursor-pointer group",
+                  activeReportTab === 'geral' 
+                    ? "bg-blue-600/20 text-white border border-blue-500/40 ring-1 ring-blue-500/30" 
+                    : "text-slate-300 hover:text-white hover:bg-slate-800/60"
+                )}
+              >
+                <div className={cn("p-2 rounded-xl transition-colors shrink-0", activeReportTab === 'geral' ? "bg-blue-600 text-white" : "bg-slate-800 text-slate-400 group-hover:text-white")}>
+                  <FileText size={16} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <span className="text-xs sm:text-sm font-bold text-white block">Geral</span>
+                  <p className="text-[10px] text-slate-400 truncate">Conferência contábil de todos os lançamentos</p>
+                </div>
+                {activeReportTab === 'geral' && <Check size={14} className="text-blue-400 shrink-0" />}
+              </button>
 
-          {/* NOVA ABA: EXTRATO DE DOAÇÕES (AUDITORIA DE APORTES VOLUNTÁRIOS) */}
-          <button
-            onClick={() => setActiveReportTab('doacoes')}
-            className={cn(
-              "px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer relative",
-              activeReportTab === 'doacoes' 
-                ? "bg-purple-600 text-white shadow-lg font-bold shadow-purple-600/30 ring-1 ring-purple-400/50" 
-                : "text-purple-400 hover:text-purple-300 hover:bg-purple-500/10"
-            )}
-          >
-            <Heart size={15} className={cn(activeReportTab === 'doacoes' ? "text-white fill-white" : "text-purple-400")} />
-            <span>Extrato de Doações</span>
-            {donationExpenses.length > 0 && (
-              <span className={cn(
-                "px-1.5 py-0.2 rounded-full text-[10px] font-bold",
-                activeReportTab === 'doacoes' ? "bg-purple-950 text-purple-200" : "bg-purple-500/30 text-purple-300 border border-purple-500/40"
-              )}>
-                {donationExpenses.length}
-              </span>
-            )}
-          </button>
+              <button
+                type="button"
+                onClick={() => handleSelectReportTab('extrato')}
+                className={cn(
+                  "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all cursor-pointer group",
+                  activeReportTab === 'extrato' 
+                    ? "bg-amber-500/20 text-white border border-amber-500/40 ring-1 ring-amber-500/30" 
+                    : "text-slate-300 hover:text-white hover:bg-slate-800/60"
+                )}
+              >
+                <div className={cn("p-2 rounded-xl transition-colors shrink-0", activeReportTab === 'extrato' ? "bg-amber-500 text-slate-950 font-bold" : "bg-slate-800 text-amber-400 group-hover:text-amber-300")}>
+                  <Landmark size={16} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between gap-1">
+                    <span className="text-xs sm:text-sm font-bold text-white block">Extrato de Sócios</span>
+                    {pendingRefundsCount > 0 && (
+                      <span className="px-1.5 py-0.2 rounded-full text-[9px] font-bold bg-amber-500/30 text-amber-300 border border-amber-500/40">
+                        {pendingRefundsCount} pendente{pendingRefundsCount > 1 ? 's' : ''}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[10px] text-slate-400 truncate">Extrato bancário de reembolsos de sócios</p>
+                </div>
+                {activeReportTab === 'extrato' && <Check size={14} className="text-amber-400 shrink-0" />}
+              </button>
 
-          <button
-            onClick={() => setActiveReportTab('apagar')}
-            className={cn(
-              "px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer",
-              activeReportTab === 'apagar' 
-                ? "bg-slate-700/90 text-white shadow-lg ring-1 ring-slate-600/60" 
-                : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/50"
-            )}
-          >
-            <Users size={15} />
-            <span>A Pagar</span>
-          </button>
+              <button
+                type="button"
+                onClick={() => handleSelectReportTab('doacoes')}
+                className={cn(
+                  "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all cursor-pointer group",
+                  activeReportTab === 'doacoes' 
+                    ? "bg-purple-500/20 text-white border border-purple-500/40 ring-1 ring-purple-500/30" 
+                    : "text-slate-300 hover:text-white hover:bg-slate-800/60"
+                )}
+              >
+                <div className={cn("p-2 rounded-xl transition-colors shrink-0", activeReportTab === 'doacoes' ? "bg-purple-600 text-white" : "bg-slate-800 text-purple-400 group-hover:text-purple-300")}>
+                  <Heart size={16} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between gap-1">
+                    <span className="text-xs sm:text-sm font-bold text-white block">Extrato de Doações</span>
+                    {donationExpenses.length > 0 && (
+                      <span className="px-1.5 py-0.2 rounded-full text-[9px] font-bold bg-purple-500/30 text-purple-300 border border-purple-500/40">
+                        {donationExpenses.length} doações
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[10px] text-slate-400 truncate">Auditoria contábil de aportes voluntários</p>
+                </div>
+                {activeReportTab === 'doacoes' && <Check size={14} className="text-purple-400 shrink-0" />}
+              </button>
 
-          <button
-            onClick={() => setActiveReportTab('faturas')}
-            className={cn(
-              "px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer",
-              activeReportTab === 'faturas' 
-                ? "bg-slate-700/90 text-white shadow-lg ring-1 ring-slate-600/60" 
-                : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/50"
-            )}
-          >
-            <CreditCard size={15} />
-            <span>Faturas de Cartão</span>
-          </button>
+              <button
+                type="button"
+                onClick={() => handleSelectReportTab('apagar')}
+                className={cn(
+                  "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all cursor-pointer group",
+                  activeReportTab === 'apagar' 
+                    ? "bg-blue-600/20 text-white border border-blue-500/40 ring-1 ring-blue-500/30" 
+                    : "text-slate-300 hover:text-white hover:bg-slate-800/60"
+                )}
+              >
+                <div className={cn("p-2 rounded-xl transition-colors shrink-0", activeReportTab === 'apagar' ? "bg-blue-600 text-white" : "bg-slate-800 text-slate-400 group-hover:text-white")}>
+                  <Users size={16} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <span className="text-xs sm:text-sm font-bold text-white block">A Pagar</span>
+                  <p className="text-[10px] text-slate-400 truncate">Rateio de custos fixos e saldos individuais</p>
+                </div>
+                {activeReportTab === 'apagar' && <Check size={14} className="text-blue-400 shrink-0" />}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleSelectReportTab('faturas')}
+                className={cn(
+                  "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all cursor-pointer group",
+                  activeReportTab === 'faturas' 
+                    ? "bg-blue-600/20 text-white border border-blue-500/40 ring-1 ring-blue-500/30" 
+                    : "text-slate-300 hover:text-white hover:bg-slate-800/60"
+                )}
+              >
+                <div className={cn("p-2 rounded-xl transition-colors shrink-0", activeReportTab === 'faturas' ? "bg-blue-600 text-white" : "bg-slate-800 text-slate-400 group-hover:text-white")}>
+                  <CreditCard size={16} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <span className="text-xs sm:text-sm font-bold text-white block">Faturas de Cartão</span>
+                  <p className="text-[10px] text-slate-400 truncate">Projeção mensal e faturas de cartão</p>
+                </div>
+                {activeReportTab === 'faturas' && <Check size={14} className="text-blue-400 shrink-0" />}
+              </button>
+            </div>
+          )}
         </div>
       </header>
 
@@ -848,9 +961,9 @@ export function ReportsTab({
       {/* ======================================================== */}
       {activeReportTab === 'geral' && (
         <div className="space-y-4">
-          {/* Barra de Filtros e Busca */}
-          <div className="bg-slate-900/60 backdrop-blur-xl border border-slate-700/50 rounded-2xl p-4 ring-1 ring-white/5 space-y-3">
-            <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+          {/* Barra de Filtros e Busca Limpa */}
+          <div className="bg-slate-900/60 backdrop-blur-xl border border-slate-700/50 rounded-2xl p-3.5 sm:p-4 ring-1 ring-white/5 space-y-3">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
               {/* Campo de Busca */}
               <div className="relative flex-1 group">
                 <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-emerald-400 transition-colors" />
@@ -859,80 +972,204 @@ export function ReportsTab({
                   placeholder="Buscar por local, categoria, ID #EXP, sócio, obs..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2 bg-slate-950/60 border border-slate-700/60 text-white rounded-xl text-xs sm:text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500/50 outline-none transition-all placeholder:text-slate-500"
+                  className="w-full pl-10 pr-8 py-2.5 bg-slate-950/60 border border-slate-700/60 text-white rounded-xl text-xs sm:text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500/50 outline-none transition-all placeholder:text-slate-500"
                 />
+                {searchTerm && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchTerm('')}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white text-xs cursor-pointer"
+                    title="Limpar busca"
+                  >
+                    ✕
+                  </button>
+                )}
               </div>
 
-              {/* Botão de Exportação Excel da Aba Geral */}
-              <div className="flex items-center gap-2">
+              {/* Botões de Ação: Submenu Suspenso de Filtros + Exportação Excel */}
+              <div className="flex items-center gap-2 shrink-0">
+                {/* SUBMENU SUSPENSO DE FILTROS DOS LANÇAMENTOS */}
+                <div className="relative" ref={filterDropdownRef}>
+                  <button
+                    type="button"
+                    onClick={() => setIsFilterDropdownOpen(prev => !prev)}
+                    className={cn(
+                      "px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer border shadow-sm",
+                      (filter !== 'all' || paymentFilter !== 'all')
+                        ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40 ring-1 ring-emerald-500/30"
+                        : "bg-slate-950/60 hover:bg-slate-800/80 text-slate-300 border-slate-700/60"
+                    )}
+                  >
+                    <Filter size={15} className={cn((filter !== 'all' || paymentFilter !== 'all') ? "text-emerald-400" : "text-slate-400")} />
+                    <span>Filtros</span>
+                    {(filter !== 'all' || paymentFilter !== 'all') && (
+                      <span className="w-5 h-5 rounded-full bg-emerald-500 text-slate-950 text-[10px] font-extrabold flex items-center justify-center">
+                        {(filter !== 'all' ? 1 : 0) + (paymentFilter !== 'all' ? 1 : 0)}
+                      </span>
+                    )}
+                    <ChevronDown size={14} className={cn("text-slate-400 transition-transform duration-200", isFilterDropdownOpen && "rotate-180 text-emerald-400")} />
+                  </button>
+
+                  {/* Popover Suspenso dos Filtros */}
+                  {isFilterDropdownOpen && (
+                    <div className="absolute right-0 top-full mt-2 w-80 sm:w-96 max-w-[92vw] bg-slate-900/95 backdrop-blur-2xl border border-slate-700/80 rounded-2xl shadow-2xl p-4 z-50 animate-in fade-in zoom-in-95 duration-150 ring-1 ring-white/10 space-y-4">
+                      {/* Cabeçalho do Popover */}
+                      <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
+                        <div className="flex items-center gap-2">
+                          <Filter size={15} className="text-emerald-400" />
+                          <span className="text-xs font-bold text-white uppercase tracking-wider">Filtros de Lançamento</span>
+                        </div>
+                        {(filter !== 'all' || paymentFilter !== 'all') && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setFilter('all');
+                              setPaymentFilter('all');
+                            }}
+                            className="text-[11px] font-semibold text-amber-400 hover:text-amber-300 transition-colors cursor-pointer"
+                          >
+                            Limpar filtros
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Seção 1: Categorias */}
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                          <span>Categoria</span>
+                          <span className="text-slate-500">{filteredExpenses.length} itens</span>
+                        </div>
+                        <div className="flex flex-wrap gap-1.5 max-h-48 overflow-y-auto custom-scrollbar p-0.5">
+                          <button
+                            type="button"
+                            onClick={() => setFilter('all')}
+                            className={cn(
+                              "px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 border",
+                              filter === 'all'
+                                ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40 ring-1 ring-emerald-500/30 font-bold"
+                                : "bg-slate-950/40 text-slate-400 border-slate-800 hover:bg-slate-800/60 hover:text-slate-200"
+                            )}
+                          >
+                            <span>Todas as Categorias</span>
+                            <span className="text-[10px] bg-slate-800 px-1.5 py-0.2 rounded-full font-mono">
+                              {expenses.length}
+                            </span>
+                          </button>
+                          {availableCategories.map(cat => (
+                            <button
+                              key={cat}
+                              type="button"
+                              onClick={() => setFilter(cat)}
+                              className={cn(
+                                "px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 border",
+                                filter === cat
+                                  ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40 ring-1 ring-emerald-500/30 font-bold"
+                                  : "bg-slate-950/40 text-slate-400 border-slate-800 hover:bg-slate-800/60 hover:text-slate-200"
+                              )}
+                            >
+                              <span>{cat}</span>
+                              <span className="text-[10px] bg-slate-800 px-1.5 py-0.2 rounded-full font-mono">
+                                {categoryCounts[cat] || 0}
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Seção 2: Forma de Pagamento */}
+                      <div className="space-y-2 pt-2 border-t border-slate-800/80">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Forma de Pagamento</span>
+                        <div className="flex flex-wrap gap-1.5">
+                          {['all', 'Pix', 'Cartão', 'Caixa', 'doação'].map((pm) => (
+                            <button
+                              key={pm}
+                              type="button"
+                              onClick={() => setPaymentFilter(pm)}
+                              className={cn(
+                                "px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer border",
+                                paymentFilter === pm
+                                  ? "bg-blue-500/20 text-blue-300 border-blue-500/40 ring-1 ring-blue-500/30 font-bold"
+                                  : "bg-slate-950/40 text-slate-400 border-slate-800 hover:bg-slate-800/60 hover:text-slate-200"
+                              )}
+                            >
+                              {pm === 'all' ? 'Todos os Pagamentos' : pm}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Rodapé do Popover */}
+                      <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between">
+                        <span className="text-[11px] text-slate-400">
+                          {filteredExpenses.length} {filteredExpenses.length === 1 ? 'lançamento encontrado' : 'lançamentos encontrados'}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setIsFilterDropdownOpen(false)}
+                          className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold transition-all cursor-pointer shadow-md"
+                        >
+                          Concluir
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Botão de Exportação Excel */}
                 <button
                   type="button"
                   onClick={exportGeneralToExcel}
-                  className="px-3.5 py-2 bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-300 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-sm shrink-0"
+                  className="px-3.5 py-2.5 bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-300 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-sm shrink-0"
                   title="Exportar dados filtrados para Excel"
                 >
                   <FileSpreadsheet size={15} />
-                  <span>Exportar Excel</span>
+                  <span className="hidden sm:inline">Exportar Excel</span>
                 </button>
               </div>
             </div>
 
-            {/* Categorias Pills com Contadores */}
-            <div className="flex items-center gap-1.5 overflow-x-auto custom-scrollbar pb-1 pt-1">
-              <button 
-                onClick={() => setFilter('all')}
-                className={cn(
-                  "px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap cursor-pointer flex items-center gap-1.5 border",
-                  filter === 'all' 
-                    ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40 ring-1 ring-emerald-500/30" 
-                    : "bg-slate-950/40 text-slate-400 border-slate-800 hover:bg-slate-800/60 hover:text-slate-200"
-                )}
-              >
-                <span>Todas as Categorias</span>
-                <span className="text-[10px] bg-slate-800 px-1.5 py-0.2 rounded-full font-mono">
-                  {expenses.length}
-                </span>
-              </button>
-              {availableCategories.map(cat => (
-                <button 
-                  key={cat}
-                  onClick={() => setFilter(cat)}
-                  className={cn(
-                    "px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap cursor-pointer flex items-center gap-1.5 border",
-                    filter === cat 
-                      ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40 ring-1 ring-emerald-500/30" 
-                      : "bg-slate-950/40 text-slate-400 border-slate-800 hover:bg-slate-800/60 hover:text-slate-200"
-                  )}
-                >
-                  <span>{cat}</span>
-                  <span className="text-[10px] bg-slate-800 px-1.5 py-0.2 rounded-full font-mono">
-                    {categoryCounts[cat] || 0}
+            {/* Chips de Filtros Ativos (aparecem de forma compacta quando ativos) */}
+            {(filter !== 'all' || paymentFilter !== 'all') && (
+              <div className="flex items-center gap-2 pt-2 border-t border-slate-800/60 flex-wrap animate-in fade-in duration-200">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Filtros Ativos:</span>
+                {filter !== 'all' && (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 rounded-lg text-xs font-medium">
+                    <span>Categoria: {filter} ({categoryCounts[filter] || 0})</span>
+                    <button
+                      type="button"
+                      onClick={() => setFilter('all')}
+                      className="hover:text-white transition-colors cursor-pointer text-xs"
+                      title="Remover filtro de categoria"
+                    >
+                      ✕
+                    </button>
                   </span>
+                )}
+                {paymentFilter !== 'all' && (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-blue-500/15 text-blue-300 border border-blue-500/30 rounded-lg text-xs font-medium">
+                    <span>Pagamento: {paymentFilter}</span>
+                    <button
+                      type="button"
+                      onClick={() => setPaymentFilter('all')}
+                      className="hover:text-white transition-colors cursor-pointer text-xs"
+                      title="Remover filtro de pagamento"
+                    >
+                      ✕
+                    </button>
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFilter('all');
+                    setPaymentFilter('all');
+                  }}
+                  className="text-[11px] text-slate-400 hover:text-white underline cursor-pointer ml-1"
+                >
+                  Limpar todos
                 </button>
-              ))}
-            </div>
-
-            {/* Filtro por Forma de Pagamento */}
-            <div className="flex items-center gap-2 pt-1 border-t border-slate-800/60">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Pagamento:</span>
-              <div className="flex items-center gap-1.5 overflow-x-auto custom-scrollbar">
-                {['all', 'Pix', 'Cartão', 'Caixa', 'doação'].map((pm) => (
-                  <button
-                    key={pm}
-                    type="button"
-                    onClick={() => setPaymentFilter(pm)}
-                    className={cn(
-                      "px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all cursor-pointer border",
-                      paymentFilter === pm
-                        ? "bg-blue-500/20 text-blue-300 border-blue-500/40"
-                        : "bg-slate-950/30 text-slate-400 border-slate-800 hover:bg-slate-800"
-                    )}
-                  >
-                    {pm === 'all' ? 'Todos' : pm}
-                  </button>
-                ))}
               </div>
-            </div>
+            )}
           </div>
 
           {/* Tabela Geral Aperfeiçoada */}

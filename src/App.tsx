@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback, ErrorInfo, ReactNode } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef, ErrorInfo, ReactNode } from 'react';
 import { 
   LayoutDashboard, 
   ArrowUpCircle, 
@@ -7,7 +7,12 @@ import {
   Settings, 
   Info,
   LogOut,
-  Map as MapIcon
+  Map as MapIcon,
+  ChevronDown,
+  Landmark,
+  Heart,
+  Users,
+  CreditCard
 } from 'lucide-react';
 import { 
   format
@@ -236,6 +241,35 @@ function App() {
   const [categories, setCategories] = useState<string[]>(() => getStoredCategories());
   const [financialSettings, setFinancialSettings] = useState<FinancialSettings>(() => getStoredFinancialSettings());
   const [syncStatus, setSyncStatus] = useState<'syncing' | 'local' | 'error'>(ENABLE_POCKETBASE_SYNC ? 'syncing' : 'local');
+
+  const [isReportsMenuExpanded, setIsReportsMenuExpanded] = useState(false);
+  const [isMobileReportsOpen, setIsMobileReportsOpen] = useState(false);
+  const mobileReportsMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (mobileReportsMenuRef.current && !mobileReportsMenuRef.current.contains(event.target as Node)) {
+        setIsMobileReportsOpen(false);
+      }
+    }
+    if (isMobileReportsOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isMobileReportsOpen]);
+
+  const reportsPendingRefundsCount = useMemo(() => {
+    return (state?.expenses || []).filter(e => 
+      Boolean(e.isReimbursement) && 
+      (e.refundStatus === 'Pendente' || (!e.refundStatus && e.status !== 'DEVOLVIDO'))
+    ).length;
+  }, [state?.expenses]);
+
+  const reportsDonationsCount = useMemo(() => {
+    return (state?.expenses || []).filter(e => e.paymentMethod === 'doação').length;
+  }, [state?.expenses]);
 
   useEffect(() => {
     const handleSettingsSync = (e: any) => {
@@ -2231,7 +2265,283 @@ function App() {
             {!isSharedMode ? (
               <>
                 <NavItem icon={<ArrowUpCircle size={20} />} label="Entradas" active={activeTab === 'entradas'} onClick={() => setActiveTab('entradas')} />
-                <NavItem icon={<FileText size={20} />} label="Relatórios" active={activeTab === 'relatorios'} onClick={() => setActiveTab('relatorios')} />
+                {/* Item Relatórios no Smartphone (Mobile Bottom Bar) com Submenu Suspenso */}
+                <div className="md:hidden relative" ref={mobileReportsMenuRef}>
+                  <NavItem 
+                    icon={<FileText size={20} />} 
+                    label="Relatórios" 
+                    active={activeTab === 'relatorios'} 
+                    onClick={() => {
+                      if (activeTab !== 'relatorios') {
+                        setActiveTab('relatorios');
+                      }
+                      setIsMobileReportsOpen(prev => !prev);
+                    }} 
+                  />
+                  {/* Popover Flutuante no Mobile */}
+                  {isMobileReportsOpen && (
+                    <div className="fixed bottom-16 left-3 right-3 bg-slate-900/95 backdrop-blur-2xl border border-slate-700/80 rounded-2xl shadow-2xl p-2 z-50 animate-in fade-in slide-in-from-bottom-2 duration-150 ring-1 ring-white/10 space-y-1">
+                      <div className="px-3 py-1.5 border-b border-slate-800 flex items-center justify-between">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Submenu Relatórios</span>
+                        <button
+                          type="button"
+                          onClick={() => setIsMobileReportsOpen(false)}
+                          className="text-xs text-slate-400 hover:text-white cursor-pointer px-1.5 py-0.5 rounded"
+                        >
+                          ✕
+                        </button>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActiveTab('relatorios');
+                          setReportsSubTab('geral');
+                          setIsMobileReportsOpen(false);
+                        }}
+                        className={cn(
+                          "w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left text-xs font-semibold transition-all cursor-pointer",
+                          activeTab === 'relatorios' && reportsSubTab === 'geral'
+                            ? "bg-blue-600/20 text-white border border-blue-500/40 font-bold"
+                            : "text-slate-300 hover:text-white hover:bg-slate-800/60"
+                        )}
+                      >
+                        <FileText size={15} className="text-blue-400 shrink-0" />
+                        <span>Geral</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActiveTab('relatorios');
+                          setReportsSubTab('extrato');
+                          setIsMobileReportsOpen(false);
+                        }}
+                        className={cn(
+                          "w-full flex items-center justify-between px-3 py-2 rounded-xl text-left text-xs font-semibold transition-all cursor-pointer",
+                          activeTab === 'relatorios' && reportsSubTab === 'extrato'
+                            ? "bg-amber-500/20 text-amber-300 border border-amber-500/40 font-bold"
+                            : "text-slate-300 hover:text-white hover:bg-slate-800/60"
+                        )}
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <Landmark size={15} className="text-amber-400 shrink-0" />
+                          <span>Extrato de Sócios</span>
+                        </div>
+                        {reportsPendingRefundsCount > 0 && (
+                          <span className="px-1.5 py-0.2 rounded-full text-[9px] font-bold bg-amber-500/30 text-amber-300 border border-amber-500/40">
+                            {reportsPendingRefundsCount}
+                          </span>
+                        )}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActiveTab('relatorios');
+                          setReportsSubTab('doacoes');
+                          setIsMobileReportsOpen(false);
+                        }}
+                        className={cn(
+                          "w-full flex items-center justify-between px-3 py-2 rounded-xl text-left text-xs font-semibold transition-all cursor-pointer",
+                          activeTab === 'relatorios' && reportsSubTab === 'doacoes'
+                            ? "bg-purple-500/20 text-purple-300 border border-purple-500/40 font-bold"
+                            : "text-slate-300 hover:text-white hover:bg-slate-800/60"
+                        )}
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <Heart size={15} className="text-purple-400 shrink-0" />
+                          <span>Extrato de Doações</span>
+                        </div>
+                        {reportsDonationsCount > 0 && (
+                          <span className="px-1.5 py-0.2 rounded-full text-[9px] font-bold bg-purple-500/30 text-purple-300 border border-purple-500/40">
+                            {reportsDonationsCount}
+                          </span>
+                        )}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActiveTab('relatorios');
+                          setReportsSubTab('apagar');
+                          setIsMobileReportsOpen(false);
+                        }}
+                        className={cn(
+                          "w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left text-xs font-semibold transition-all cursor-pointer",
+                          activeTab === 'relatorios' && reportsSubTab === 'apagar'
+                            ? "bg-blue-600/20 text-white border border-blue-500/40 font-bold"
+                            : "text-slate-300 hover:text-white hover:bg-slate-800/60"
+                        )}
+                      >
+                        <Users size={15} className="text-blue-400 shrink-0" />
+                        <span>A Pagar</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActiveTab('relatorios');
+                          setReportsSubTab('faturas');
+                          setIsMobileReportsOpen(false);
+                        }}
+                        className={cn(
+                          "w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left text-xs font-semibold transition-all cursor-pointer",
+                          activeTab === 'relatorios' && reportsSubTab === 'faturas'
+                            ? "bg-blue-600/20 text-white border border-blue-500/40 font-bold"
+                            : "text-slate-300 hover:text-white hover:bg-slate-800/60"
+                        )}
+                      >
+                        <CreditCard size={15} className="text-blue-400 shrink-0" />
+                        <span>Faturas de Cartão</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Item Relatórios no Desktop (Sidebar) com Submenu Suspenso / Expansível */}
+                <div className="hidden md:block w-full">
+                  <div className="flex flex-col w-full">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (activeTab !== 'relatorios') {
+                          setActiveTab('relatorios');
+                          setIsReportsMenuExpanded(true);
+                        } else {
+                          setIsReportsMenuExpanded(prev => !prev);
+                        }
+                      }}
+                      className={cn(
+                        "flex items-center justify-between w-full px-4 py-3 rounded-xl transition-all duration-200 cursor-pointer group",
+                        activeTab === 'relatorios'
+                          ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-500/20 ring-1 ring-white/10"
+                          : "text-slate-400 hover:text-white hover:bg-slate-800/50"
+                      )}
+                    >
+                      <div className="flex items-center gap-3">
+                        <FileText size={20} />
+                        <span className="text-sm font-medium whitespace-nowrap">Relatórios</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        {reportsPendingRefundsCount > 0 && (
+                          <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" title="Pendências ativas" />
+                        )}
+                        <ChevronDown 
+                          size={16} 
+                          className={cn(
+                            "transition-transform duration-200 text-slate-400 group-hover:text-white",
+                            (isReportsMenuExpanded || activeTab === 'relatorios') && "rotate-180"
+                          )} 
+                        />
+                      </div>
+                    </button>
+
+                    {/* Submenu Suspenso / Expansível de Relatórios no Desktop */}
+                    {(isReportsMenuExpanded || activeTab === 'relatorios') && (
+                      <div className="flex flex-col gap-0.5 mt-1.5 pl-3 py-1 border-l-2 border-slate-700/60 ml-5 space-y-0.5 animate-in fade-in slide-in-from-top-2 duration-150">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveTab('relatorios');
+                            setReportsSubTab('geral');
+                          }}
+                          className={cn(
+                            "flex items-center gap-2.5 w-full px-3 py-2 rounded-lg text-xs transition-all cursor-pointer text-left",
+                            activeTab === 'relatorios' && reportsSubTab === 'geral'
+                              ? "bg-blue-500/20 text-blue-300 font-bold border border-blue-500/30"
+                              : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/40 font-medium"
+                          )}
+                        >
+                          <FileText size={14} className={activeTab === 'relatorios' && reportsSubTab === 'geral' ? "text-blue-400" : "text-slate-500"} />
+                          <span>Geral</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveTab('relatorios');
+                            setReportsSubTab('extrato');
+                          }}
+                          className={cn(
+                            "flex items-center justify-between w-full px-3 py-2 rounded-lg text-xs transition-all cursor-pointer text-left",
+                            activeTab === 'relatorios' && reportsSubTab === 'extrato'
+                              ? "bg-amber-500/20 text-amber-300 font-bold border border-amber-500/30"
+                              : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/40 font-medium"
+                          )}
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <Landmark size={14} className={activeTab === 'relatorios' && reportsSubTab === 'extrato' ? "text-amber-400" : "text-slate-500"} />
+                            <span>Extrato de Sócios</span>
+                          </div>
+                          {reportsPendingRefundsCount > 0 && (
+                            <span className="px-1.5 py-0.2 rounded-full text-[9px] font-bold bg-amber-500/30 text-amber-300 border border-amber-500/40">
+                              {reportsPendingRefundsCount}
+                            </span>
+                          )}
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveTab('relatorios');
+                            setReportsSubTab('doacoes');
+                          }}
+                          className={cn(
+                            "flex items-center justify-between w-full px-3 py-2 rounded-lg text-xs transition-all cursor-pointer text-left",
+                            activeTab === 'relatorios' && reportsSubTab === 'doacoes'
+                              ? "bg-purple-500/20 text-purple-300 font-bold border border-purple-500/30"
+                              : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/40 font-medium"
+                          )}
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <Heart size={14} className={activeTab === 'relatorios' && reportsSubTab === 'doacoes' ? "text-purple-400" : "text-slate-500"} />
+                            <span>Extrato Doações</span>
+                          </div>
+                          {reportsDonationsCount > 0 && (
+                            <span className="px-1.5 py-0.2 rounded-full text-[9px] font-bold bg-purple-500/30 text-purple-300 border border-purple-500/40">
+                              {reportsDonationsCount}
+                            </span>
+                          )}
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveTab('relatorios');
+                            setReportsSubTab('apagar');
+                          }}
+                          className={cn(
+                            "flex items-center gap-2.5 w-full px-3 py-2 rounded-lg text-xs transition-all cursor-pointer text-left",
+                            activeTab === 'relatorios' && reportsSubTab === 'apagar'
+                              ? "bg-blue-500/20 text-blue-300 font-bold border border-blue-500/30"
+                              : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/40 font-medium"
+                          )}
+                        >
+                          <Users size={14} className={activeTab === 'relatorios' && reportsSubTab === 'apagar' ? "text-blue-400" : "text-slate-500"} />
+                          <span>A Pagar</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveTab('relatorios');
+                            setReportsSubTab('faturas');
+                          }}
+                          className={cn(
+                            "flex items-center gap-2.5 w-full px-3 py-2 rounded-lg text-xs transition-all cursor-pointer text-left",
+                            activeTab === 'relatorios' && reportsSubTab === 'faturas'
+                              ? "bg-blue-500/20 text-blue-300 font-bold border border-blue-500/30"
+                              : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/40 font-medium"
+                          )}
+                        >
+                          <CreditCard size={14} className={activeTab === 'relatorios' && reportsSubTab === 'faturas' ? "text-blue-400" : "text-slate-500"} />
+                          <span>Faturas Cartão</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
                 <NavItem icon={<Settings size={20} />} label="Config" active={activeTab === 'config'} onClick={() => setActiveTab('config')} />
                 <div className="hidden md:block w-full">
                   <NavItem icon={<Info size={20} />} label="Sobre" active={activeTab === 'sobre'} onClick={() => setActiveTab('sobre')} />
@@ -2397,6 +2707,7 @@ function App() {
             formatCurrency={formatCurrency} 
             financialSettings={financialSettings}
             initialSubTab={reportsSubTab}
+            onSubTabChange={(tab) => setReportsSubTab(tab)}
           />
         )}
         {activeTab === 'terreno' && (
