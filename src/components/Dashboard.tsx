@@ -11,15 +11,22 @@ import {
   Pie, 
   Cell,
   LabelList,
-  Legend
+  Legend,
+  ReferenceLine
 } from 'recharts';
-import { Banknote, TrendingUp, CreditCard, BarChart as BarChartIcon, User, RefreshCw, Wallet, ChevronDown, ChevronUp, Download, RotateCcw, CheckCircle2, Clock, ShieldCheck, Check, Pencil, Building2, Heart, Trophy, Sparkles, ArrowUpRight, FileText, ArrowLeftRight, Calendar } from 'lucide-react';
+import { 
+  Banknote, TrendingUp, CreditCard, BarChart as BarChartIcon, User, Users,
+  RefreshCw, Wallet, ChevronDown, ChevronUp, Download, RotateCcw, 
+  CheckCircle2, Clock, ShieldCheck, Check, Pencil, Building2, Heart, 
+  Trophy, Sparkles, ArrowUpRight, FileText, ArrowLeftRight, Calendar,
+  Crown, Award, Layers
+} from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { Card } from './ui/Card';
 import { toPng } from 'html-to-image';
 import { formatAuditId, copyAuditIdToClipboard } from '../utils/audit';
-import { Expense, Person } from '../types';
+import { Expense, Person, Payment, Income, Donor } from '../types';
 import { 
   FinancialSettings, 
   getStoredFinancialSettings, 
@@ -60,6 +67,8 @@ interface DashboardProps {
   onRefresh: () => Promise<void>;
   syncStatus?: 'syncing' | 'local' | 'error';
   expenses?: Expense[];
+  payments?: Payment[];
+  incomes?: Income[];
   onToggleRefund?: (id: string) => Promise<void>;
   isSharedMode?: boolean;
   financialSettings?: FinancialSettings;
@@ -80,6 +89,8 @@ export function Dashboard({
   onRefresh, 
   syncStatus,
   expenses = [],
+  payments = [],
+  incomes = [],
   onToggleRefund,
   isSharedMode = false,
   financialSettings,
@@ -186,6 +197,351 @@ export function Dashboard({
 
     return [...list].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
   }, [allReimbursements, pendingReimbursements, settledReimbursements, refundStatusFilter, refundPartnerFilter]);
+
+  // --- MÓDULO: CONTRIBUIÇÃO TOTAL DOS SÓCIOS PARA A OBRA (EM ALTA DEFINIÇÃO) ---
+  const [partnerViewMode, setPartnerViewMode] = React.useState<'consolidado' | 'aportes' | 'doacoes' | 'detalhado'>('consolidado');
+
+  const PARTNER_THEME: Record<string, {
+    color: string;
+    gradientId: string;
+    from: string;
+    to: string;
+    border: string;
+    bgLight: string;
+    badge: string;
+    avatarBg: string;
+    avatarText: string;
+    initials: string;
+  }> = {
+    Jorge: {
+      color: '#f59e0b',
+      gradientId: 'gradJorge',
+      from: '#fbbf24',
+      to: '#d97706',
+      border: 'border-amber-500/30',
+      bgLight: 'bg-amber-500/10',
+      badge: 'bg-amber-500/20 text-amber-300 border-amber-500/40',
+      avatarBg: 'bg-gradient-to-tr from-amber-600 to-yellow-500 shadow-amber-500/30',
+      avatarText: 'text-slate-950 font-black',
+      initials: 'JO'
+    },
+    Mccley: {
+      color: '#06b6d4',
+      gradientId: 'gradMccley',
+      from: '#22d3ee',
+      to: '#2563eb',
+      border: 'border-cyan-500/30',
+      bgLight: 'bg-cyan-500/10',
+      badge: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40',
+      avatarBg: 'bg-gradient-to-tr from-cyan-600 to-blue-600 shadow-cyan-500/30',
+      avatarText: 'text-white font-black',
+      initials: 'MC'
+    },
+    Jan: {
+      color: '#10b981',
+      gradientId: 'gradJan',
+      from: '#34d399',
+      to: '#059669',
+      border: 'border-emerald-500/30',
+      bgLight: 'bg-emerald-500/10',
+      badge: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40',
+      avatarBg: 'bg-gradient-to-tr from-emerald-600 to-teal-600 shadow-emerald-500/30',
+      avatarText: 'text-white font-black',
+      initials: 'JA'
+    },
+    Saulo: {
+      color: '#a855f7',
+      gradientId: 'gradSaulo',
+      from: '#c084fc',
+      to: '#7c3aed',
+      border: 'border-purple-500/30',
+      bgLight: 'bg-purple-500/10',
+      badge: 'bg-purple-500/20 text-purple-300 border-purple-500/40',
+      avatarBg: 'bg-gradient-to-tr from-purple-600 to-indigo-600 shadow-purple-500/30',
+      avatarText: 'text-white font-black',
+      initials: 'SA'
+    },
+    Jane: {
+      color: '#ec4899',
+      gradientId: 'gradJane',
+      from: '#f472b6',
+      to: '#db2777',
+      border: 'border-pink-500/30',
+      bgLight: 'bg-pink-500/10',
+      badge: 'bg-pink-500/20 text-pink-300 border-pink-500/40',
+      avatarBg: 'bg-gradient-to-tr from-pink-600 to-rose-600 shadow-pink-500/30',
+      avatarText: 'text-white font-black',
+      initials: 'JN'
+    }
+  };
+
+  const partnerContributionsData = React.useMemo(() => {
+    const defaultPartners: Person[] = ['Jorge', 'Mccley', 'Jan', 'Saulo'];
+
+    // Mapeia aportes/pagamentos financeiros
+    const paymentsMap: Record<string, number> = {};
+    (payments || []).forEach(p => {
+      const personKey = (p.person || '').trim();
+      if (personKey) {
+        const canonical = defaultPartners.find(dp => dp.toLowerCase() === personKey.toLowerCase()) || personKey;
+        paymentsMap[canonical] = (paymentsMap[canonical] || 0) + (Number(p.value) || 0);
+      }
+    });
+
+    // Mapeia doações voluntárias de materiais
+    const donationsMap: Record<string, number> = {};
+    (expenses || []).filter(e => e.paymentMethod === 'doação').forEach(e => {
+      const donorKey = (e.donor || '').trim();
+      if (donorKey) {
+        const canonical = defaultPartners.find(dp => dp.toLowerCase() === donorKey.toLowerCase()) || donorKey;
+        donationsMap[canonical] = (donationsMap[canonical] || 0) + (Number(e.value) || 0);
+      }
+    });
+
+    // Consolida para os 4 sócios principais
+    const partnerItems = defaultPartners.map(partner => {
+      const directPayments = paymentsMap[partner] || 0;
+      const donations = donationsMap[partner] || 0;
+      const total = directPayments + donations;
+      return {
+        name: partner,
+        directPayments,
+        donations,
+        total
+      };
+    });
+
+    // Se houver outros doadores voluntários (ex: Jane)
+    const extraDonors = Object.keys(donationsMap).filter(
+      d => !defaultPartners.some(p => p.toLowerCase() === d.toLowerCase())
+    );
+    extraDonors.forEach(extra => {
+      const donations = donationsMap[extra] || 0;
+      const directPayments = paymentsMap[extra] || 0;
+      const total = directPayments + donations;
+      if (total > 0) {
+        partnerItems.push({
+          name: extra as Person,
+          directPayments,
+          donations,
+          total
+        });
+      }
+    });
+
+    const grandTotal = partnerItems.reduce((acc, curr) => acc + curr.total, 0);
+    const totalPaymentsSum = partnerItems.reduce((acc, curr) => acc + curr.directPayments, 0);
+    const totalDonationsSum = partnerItems.reduce((acc, curr) => acc + curr.donations, 0);
+    const equalShare = grandTotal > 0 ? grandTotal / defaultPartners.length : 0;
+
+    // Identifica o sócio líder em contribuições
+    let maxVal = -1;
+    let leaderName = '';
+    partnerItems.forEach(item => {
+      const metric = partnerViewMode === 'aportes' 
+        ? item.directPayments 
+        : partnerViewMode === 'doacoes' 
+        ? item.donations 
+        : item.total;
+      if (metric > maxVal && metric > 0) {
+        maxVal = metric;
+        leaderName = item.name;
+      }
+    });
+
+    const enriched = partnerItems.map(item => {
+      const percentage = grandTotal > 0 ? (item.total / grandTotal) * 100 : 0;
+      const paymentsPercentage = grandTotal > 0 ? (item.directPayments / grandTotal) * 100 : 0;
+      const donationsPercentage = grandTotal > 0 ? (item.donations / grandTotal) * 100 : 0;
+      const diffFromAverage = item.total - equalShare;
+      const isLeader = item.name === leaderName;
+      
+      const chartValue = partnerViewMode === 'aportes' 
+        ? item.directPayments 
+        : partnerViewMode === 'doacoes' 
+        ? item.donations 
+        : item.total;
+
+      return {
+        ...item,
+        percentage,
+        paymentsPercentage,
+        donationsPercentage,
+        diffFromAverage,
+        isLeader,
+        chartValue
+      };
+    });
+
+    return {
+      items: enriched,
+      grandTotal,
+      totalPaymentsSum,
+      totalDonationsSum,
+      equalShare,
+      leaderName
+    };
+  }, [payments, expenses, partnerViewMode]);
+
+  const renderCustomPartnerBarLabel = (props: any) => {
+    const { x, y, width, value, index } = props;
+    if (value === undefined || value === null || value <= 0) return null;
+    const item = partnerContributionsData.items[index];
+    if (!item) return null;
+
+    const theme = PARTNER_THEME[item.name] || PARTNER_THEME.Jorge;
+    const formattedVal = formatCurrency(value);
+    const pct = partnerContributionsData.grandTotal > 0 
+      ? ((value / partnerContributionsData.grandTotal) * 100).toFixed(1) + '%'
+      : '0%';
+
+    return (
+      <g transform={`translate(${x + width / 2}, ${Math.max(16, y - 28)})`}>
+        <rect
+          x="-50"
+          y="-14"
+          width="100"
+          height="32"
+          rx="8"
+          fill="#090d16"
+          stroke={theme.color}
+          strokeWidth="1.2"
+          opacity="0.95"
+        />
+        <text
+          x="0"
+          y="0"
+          fill="#ffffff"
+          textAnchor="middle"
+          fontSize="11"
+          fontWeight="bold"
+          fontFamily="ui-monospace, monospace"
+        >
+          {formattedVal}
+        </text>
+        <text
+          x="0"
+          y="13"
+          fill={theme.color}
+          textAnchor="middle"
+          fontSize="9.5"
+          fontWeight="800"
+        >
+          {pct} {item.isLeader ? '👑' : ''}
+        </text>
+      </g>
+    );
+  };
+
+  const renderCustomPartnerTick = ({ x, y, payload }: any) => {
+    const name = payload?.value;
+    if (!name) return null;
+    const theme = PARTNER_THEME[name] || PARTNER_THEME.Jorge;
+    const item = partnerContributionsData.items.find(i => i.name === name);
+    const isLeader = item?.isLeader;
+
+    return (
+      <g transform={`translate(${x},${y + 14})`}>
+        <circle cx="0" cy="0" r="14" fill={theme.color} opacity="0.2" stroke={theme.color} strokeWidth="1.5" />
+        <text
+          x="0"
+          y="4"
+          textAnchor="middle"
+          fill="#ffffff"
+          fontSize="10"
+          fontWeight="900"
+        >
+          {theme.initials}
+        </text>
+        <text
+          x="0"
+          y="25"
+          textAnchor="middle"
+          fill={isLeader ? theme.color : '#cbd5e1'}
+          fontSize="12"
+          fontWeight={isLeader ? '800' : '600'}
+        >
+          {name}
+        </text>
+      </g>
+    );
+  };
+
+  const CustomPartnerTooltip = ({ active, payload }: any) => {
+    if (!active || !payload || !payload.length) return null;
+    const data = payload[0]?.payload;
+    if (!data) return null;
+
+    const theme = PARTNER_THEME[data.name] || PARTNER_THEME.Jorge;
+
+    return (
+      <div className="bg-slate-900/95 backdrop-blur-2xl border border-slate-700/80 rounded-2xl p-4 shadow-2xl ring-1 ring-white/10 min-w-[250px] space-y-3">
+        <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
+          <div className="flex items-center gap-2.5">
+            <div 
+              className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-black shadow-md"
+              style={{ backgroundColor: theme.color, color: '#020817' }}
+            >
+              {theme.initials}
+            </div>
+            <div>
+              <span className="text-sm font-bold text-white block">{data.name}</span>
+              <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">
+                {data.isLeader ? '👑 Maior Contribuidor' : 'Sócio Cotista'}
+              </span>
+            </div>
+          </div>
+          <span 
+            className="text-xs font-bold px-2 py-0.5 rounded-full border"
+            style={{ 
+              backgroundColor: `${theme.color}20`, 
+              color: theme.color, 
+              borderColor: `${theme.color}40` 
+            }}
+          >
+            {data.percentage.toFixed(1)}% da obra
+          </span>
+        </div>
+
+        <div className="space-y-1.5 text-xs">
+          <div className="flex items-center justify-between text-slate-300">
+            <span className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-blue-400" />
+              Aportes em Dinheiro:
+            </span>
+            <span className="font-mono font-bold text-white">{formatCurrency(data.directPayments)}</span>
+          </div>
+
+          <div className="flex items-center justify-between text-slate-300">
+            <span className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-purple-400" />
+              Doações de Materiais:
+            </span>
+            <span className="font-mono font-bold text-white">{formatCurrency(data.donations)}</span>
+          </div>
+
+          <div className="pt-2 border-t border-slate-800 flex items-center justify-between">
+            <span className="font-bold text-white">Total Contribuído:</span>
+            <span className="font-mono font-bold text-base text-amber-300">{formatCurrency(data.total)}</span>
+          </div>
+        </div>
+
+        <div className="pt-2 border-t border-slate-800/80 text-[11px]">
+          {data.diffFromAverage >= 0 ? (
+            <span className="text-emerald-400 font-semibold flex items-center gap-1">
+              <ArrowUpRight size={13} />
+              +{formatCurrency(data.diffFromAverage)} acima da cota média
+            </span>
+          ) : (
+            <span className="text-amber-400 font-semibold flex items-center gap-1">
+              <Clock size={13} />
+              {formatCurrency(Math.abs(data.diffFromAverage))} para atingir a cota média
+            </span>
+          )}
+        </div>
+      </div>
+    );
+  };
 
   const handleAcknowledgeRefund = async (id: string) => {
     if (!onToggleRefund || processingRefundId) return;
@@ -1730,6 +2086,385 @@ export function Dashboard({
                 );
               })
             )}
+          </div>
+        </Card>
+
+        {/* ======================================================== */}
+        {/* GRÁFICO EM COLUNAS EM ALTA DEFINIÇÃO: CONTRIBUIÇÃO DOS SÓCIOS */}
+        {/* ======================================================== */}
+        <Card 
+          id="card-contribuicao-socios" 
+          className="bg-slate-900/60 backdrop-blur-xl border border-blue-500/25 ring-1 ring-white/10 shadow-2xl rounded-2xl p-4 sm:p-7 flex flex-col hover:shadow-blue-500/10 transition-all lg:col-span-2 space-y-6 relative overflow-hidden"
+        >
+          {/* Luzes difusas de fundo decorativas */}
+          <div className="absolute top-0 right-0 w-96 h-96 bg-gradient-to-bl from-blue-500/10 via-cyan-500/5 to-transparent rounded-full blur-3xl pointer-events-none -mr-20 -mt-20" />
+          <div className="absolute bottom-0 left-0 w-80 h-80 bg-gradient-to-tr from-purple-500/10 via-indigo-500/5 to-transparent rounded-full blur-3xl pointer-events-none -ml-20 -mb-20" />
+
+          {/* Cabeçalho do Card */}
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-5 border-b border-slate-800 relative z-10">
+            <div className="flex items-start sm:items-center gap-3.5">
+              <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-500/20 via-cyan-500/15 to-transparent border border-blue-500/30 flex items-center justify-center text-cyan-400 shrink-0 shadow-lg shadow-blue-500/15">
+                <Trophy size={22} className="stroke-[2.2]" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2.5 flex-wrap">
+                  <h3 className="text-lg sm:text-xl font-bold text-white tracking-tight flex items-center gap-2">
+                    Contribuição dos Sócios para a Obra
+                  </h3>
+                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 shadow-[0_0_10px_rgba(6,182,212,0.2)] flex items-center gap-1">
+                    <Sparkles size={11} /> 4K Ultra HD
+                  </span>
+                </div>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Mensuração contábil em alta definição de aportes financeiros e doações de materiais por sócio
+                </p>
+              </div>
+            </div>
+
+            {/* Badges de Resumo e Ações */}
+            <div className="flex flex-wrap items-center gap-2.5 sm:self-auto">
+              {/* Total Geral da Obra */}
+              <div className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-800/80 border border-slate-700/80 shadow-sm">
+                <span className="text-[11px] font-medium text-slate-400">Total Contribuído:</span>
+                <span className="text-sm font-mono font-bold text-cyan-300">
+                  {formatCurrency(partnerContributionsData.grandTotal)}
+                </span>
+              </div>
+
+              {/* Cota Média Igualitária */}
+              <div className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-amber-500/10 border border-amber-500/25 text-amber-300 shadow-sm">
+                <span className="text-[11px] font-medium text-amber-300/80">Cota Média (1/4):</span>
+                <span className="text-sm font-mono font-bold text-amber-300">
+                  {formatCurrency(partnerContributionsData.equalShare)}
+                </span>
+              </div>
+
+              {/* Botão de Exportação para Imagem PNG */}
+              <button
+                type="button"
+                onClick={(e) => exportAsImage('card-contribuicao-socios', 'Contribuicao-Socios-Casa-do-Lago', e)}
+                className="export-btn flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 text-xs font-semibold shadow-sm hover:shadow transition-all active:scale-95 cursor-pointer shrink-0"
+                title="Exportar gráfico em alta resolução para WhatsApp"
+              >
+                <Download size={14} />
+                <span>Exportar Imagem</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Barra de Filtros e Modos de Visualização */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 relative z-10 bg-slate-950/40 p-2 rounded-xl border border-slate-800/80">
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
+              <span className="text-xs font-semibold text-slate-400 px-2 flex items-center gap-1 shrink-0">
+                <Layers size={13} className="text-cyan-400" /> Visão:
+              </span>
+
+              <button
+                type="button"
+                onClick={() => setPartnerViewMode('consolidado')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all shrink-0 cursor-pointer ${
+                  partnerViewMode === 'consolidado'
+                    ? 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white shadow-lg shadow-cyan-500/20'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+                }`}
+              >
+                Consolidado (Total)
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setPartnerViewMode('aportes')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all shrink-0 cursor-pointer ${
+                  partnerViewMode === 'aportes'
+                    ? 'bg-gradient-to-r from-blue-500 to-indigo-600 text-white shadow-lg shadow-blue-500/20'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+                }`}
+              >
+                Aportes Financeiros
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setPartnerViewMode('doacoes')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all shrink-0 cursor-pointer ${
+                  partnerViewMode === 'doacoes'
+                    ? 'bg-gradient-to-r from-purple-500 to-pink-600 text-white shadow-lg shadow-purple-500/20'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+                }`}
+              >
+                Doações de Materiais
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setPartnerViewMode('detalhado')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all shrink-0 cursor-pointer ${
+                  partnerViewMode === 'detalhado'
+                    ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-lg shadow-emerald-500/20'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+                }`}
+              >
+                Comparativo Empilhado
+              </button>
+            </div>
+
+            {/* Legenda Informativa Rápida */}
+            <div className="flex items-center gap-3 text-[11px] text-slate-400 px-2 shrink-0">
+              <span className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-amber-400 shadow-[0_0_6px_rgba(251,191,36,0.8)]" />
+                Linha pontilhada: Cota Média
+              </span>
+            </div>
+          </div>
+
+          {/* Gráfico em Colunas Ultra HD */}
+          <div className="h-[380px] w-full pt-2 relative z-10">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart
+                data={partnerContributionsData.items}
+                margin={{ top: 35, right: 20, left: 10, bottom: 25 }}
+              >
+                <defs>
+                  {/* Gradiente Jorge (Âmbar Ouro) */}
+                  <linearGradient id="gradJorge" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#fbbf24" stopOpacity={1} />
+                    <stop offset="100%" stopColor="#d97706" stopOpacity={0.85} />
+                  </linearGradient>
+
+                  {/* Gradiente Mccley (Ciano Neon) */}
+                  <linearGradient id="gradMccley" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#22d3ee" stopOpacity={1} />
+                    <stop offset="100%" stopColor="#0284c7" stopOpacity={0.85} />
+                  </linearGradient>
+
+                  {/* Gradiente Jan (Esmeralda Vibrante) */}
+                  <linearGradient id="gradJan" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#34d399" stopOpacity={1} />
+                    <stop offset="100%" stopColor="#059669" stopOpacity={0.85} />
+                  </linearGradient>
+
+                  {/* Gradiente Saulo (Púrpura Neon) */}
+                  <linearGradient id="gradSaulo" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#c084fc" stopOpacity={1} />
+                    <stop offset="100%" stopColor="#7c3aed" stopOpacity={0.85} />
+                  </linearGradient>
+
+                  {/* Gradiente Jane (Rosa Choque) */}
+                  <linearGradient id="gradJane" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#f472b6" stopOpacity={1} />
+                    <stop offset="100%" stopColor="#db2777" stopOpacity={0.85} />
+                  </linearGradient>
+
+                  {/* Gradiente Aportes em Dinheiro (Azul Celeste) */}
+                  <linearGradient id="gradAportes" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#60a5fa" stopOpacity={1} />
+                    <stop offset="100%" stopColor="#2563eb" stopOpacity={0.85} />
+                  </linearGradient>
+
+                  {/* Gradiente Doações de Materiais (Magenta Neon) */}
+                  <linearGradient id="gradDoacoes" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#e879f9" stopOpacity={1} />
+                    <stop offset="100%" stopColor="#9333ea" stopOpacity={0.85} />
+                  </linearGradient>
+                </defs>
+
+                <CartesianGrid 
+                  strokeDasharray="3 3" 
+                  stroke="#334155" 
+                  opacity={0.35} 
+                  vertical={false} 
+                />
+
+                <XAxis 
+                  dataKey="name" 
+                  tick={renderCustomPartnerTick} 
+                  interval={0} 
+                  height={56} 
+                  stroke="#475569" 
+                />
+
+                <YAxis 
+                  stroke="#64748b" 
+                  fontSize={11} 
+                  tickFormatter={(val) => `R$ ${(val / 1000).toFixed(0)}k`} 
+                  tickLine={false} 
+                  axisLine={false} 
+                  width={68} 
+                />
+
+                <Tooltip 
+                  content={<CustomPartnerTooltip />} 
+                  cursor={{ fill: 'rgba(255, 255, 255, 0.04)', radius: 8 }} 
+                />
+
+                <ReferenceLine 
+                  y={partnerContributionsData.equalShare} 
+                  stroke="#f59e0b" 
+                  strokeDasharray="4 4" 
+                  strokeWidth={1.5} 
+                  label={{ 
+                    value: `Cota Média: ${formatCurrency(partnerContributionsData.equalShare)}`, 
+                    fill: '#fbbf24', 
+                    fontSize: 10, 
+                    position: 'top', 
+                    fontWeight: 'bold' 
+                  }} 
+                />
+
+                {partnerViewMode !== 'detalhado' ? (
+                  <Bar 
+                    dataKey="chartValue" 
+                    radius={[10, 10, 0, 0]} 
+                    label={renderCustomPartnerBarLabel} 
+                    animationDuration={1000} 
+                    maxBarSize={72}
+                  >
+                    {partnerContributionsData.items.map((entry, index) => {
+                      const theme = PARTNER_THEME[entry.name] || PARTNER_THEME.Jorge;
+                      return (
+                        <Cell 
+                          key={`cell-partner-${index}`} 
+                          fill={`url(#${theme.gradientId})`} 
+                          stroke={theme.color}
+                          strokeWidth={1}
+                        />
+                      );
+                    })}
+                  </Bar>
+                ) : (
+                  <>
+                    <Bar 
+                      dataKey="directPayments" 
+                      name="Aportes em Dinheiro" 
+                      stackId="stackPartner" 
+                      fill="url(#gradAportes)" 
+                      radius={[0, 0, 0, 0]} 
+                      maxBarSize={72} 
+                    />
+                    <Bar 
+                      dataKey="donations" 
+                      name="Doações de Materiais" 
+                      stackId="stackPartner" 
+                      fill="url(#gradDoacoes)" 
+                      radius={[10, 10, 0, 0]} 
+                      label={renderCustomPartnerBarLabel} 
+                      maxBarSize={72} 
+                    />
+                    <Legend 
+                      verticalAlign="top" 
+                      height={36} 
+                      wrapperStyle={{ paddingBottom: '12px', fontSize: '12px' }} 
+                    />
+                  </>
+                )}
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+
+          {/* Cards Executivos dos Sócios na Base */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-4 border-t border-slate-800 relative z-10">
+            {partnerContributionsData.items.map((partner) => {
+              const theme = PARTNER_THEME[partner.name] || PARTNER_THEME.Jorge;
+              const isAhead = partner.diffFromAverage >= 0;
+
+              return (
+                <div 
+                  key={`partner-card-${partner.name}`}
+                  className={`p-4 rounded-2xl bg-slate-950/50 border ${theme.border} backdrop-blur-md relative overflow-hidden flex flex-col justify-between hover:scale-[1.01] transition-all shadow-md`}
+                >
+                  {/* Faixa sutil no topo do card */}
+                  <div 
+                    className="absolute top-0 left-0 right-0 h-1" 
+                    style={{ backgroundColor: theme.color }} 
+                  />
+
+                  <div>
+                    {/* Topo do Card: Avatar e Títulos */}
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2.5">
+                        <div 
+                          className={`w-9 h-9 rounded-xl flex items-center justify-center text-xs font-black shadow-md ${theme.avatarBg} ${theme.avatarText}`}
+                        >
+                          {theme.initials}
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-sm font-bold text-white">{partner.name}</span>
+                            {partner.isLeader && (
+                              <Crown size={13} className="text-amber-400 fill-amber-400" title="Maior Contribuidor" />
+                            )}
+                          </div>
+                          <span className="text-[10px] text-slate-400 font-medium">
+                            {partner.isLeader ? 'Maior Contribuidor' : 'Sócio Cotista'}
+                          </span>
+                        </div>
+                      </div>
+
+                      <span 
+                        className={`text-xs font-extrabold px-2 py-0.5 rounded-full border ${theme.badge}`}
+                      >
+                        {partner.percentage.toFixed(1)}%
+                      </span>
+                    </div>
+
+                    {/* Valor Total Contribuído */}
+                    <div className="mb-2">
+                      <span className="text-[11px] text-slate-400 font-medium block">Total Contribuído</span>
+                      <span className="text-xl font-mono font-black text-white">
+                        {formatCurrency(partner.total)}
+                      </span>
+                    </div>
+
+                    {/* Barra de Progresso com Cor do Sócio */}
+                    <div className="w-full bg-slate-800/80 rounded-full h-2 mb-3.5 overflow-hidden ring-1 ring-white/5">
+                      <div 
+                        className="h-full rounded-full transition-all duration-700" 
+                        style={{ 
+                          width: `${Math.min(100, Math.max(0, partner.percentage))}%`,
+                          backgroundColor: theme.color 
+                        }} 
+                      />
+                    </div>
+
+                    {/* Breakdown: Aportes vs Doações */}
+                    <div className="space-y-1.5 text-[11px] pb-3 border-b border-slate-800/80">
+                      <div className="flex items-center justify-between text-slate-300">
+                        <span className="text-slate-400 flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-blue-400" /> Aportes:
+                        </span>
+                        <span className="font-mono font-semibold text-slate-200">
+                          {formatCurrency(partner.directPayments)}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center justify-between text-slate-300">
+                        <span className="text-slate-400 flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-purple-400" /> Doações:
+                        </span>
+                        <span className="font-mono font-semibold text-slate-200">
+                          {formatCurrency(partner.donations)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Status em Relação à Cota Média */}
+                  <div className="pt-2.5 text-[11px]">
+                    {isAhead ? (
+                      <span className="text-emerald-400 font-semibold flex items-center gap-1">
+                        <ArrowUpRight size={13} />
+                        +{formatCurrency(partner.diffFromAverage)} da cota
+                      </span>
+                    ) : (
+                      <span className="text-amber-400 font-semibold flex items-center gap-1">
+                        <Clock size={13} />
+                        {formatCurrency(Math.abs(partner.diffFromAverage))} p/ cota
+                      </span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </Card>
       </div>

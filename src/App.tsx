@@ -2996,6 +2996,8 @@ function App() {
             onRefresh={fetchAllData}
             syncStatus={syncStatus}
             expenses={state.expenses}
+            payments={state.payments}
+            incomes={state.incomes}
             onToggleRefund={toggleExpenseRefundStatus}
             isSharedMode={isSharedMode}
             financialSettings={financialSettings}
