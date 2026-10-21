@@ -10,13 +10,16 @@ import {
   Trash2, 
   ExternalLink, 
   AlertCircle,
-  RefreshCw
+  RefreshCw,
+  Building2
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { 
   readFileAsDataUrl, 
   downloadReceiptFile, 
-  openReceiptInDevice 
+  openReceiptInDevice,
+  getReceiptWhatsAppShareText,
+  getCondominioWhatsAppShareText
 } from '../utils/terrenoStorage';
 import { copyAuditIdToClipboard } from '../utils/audit';
 
@@ -24,6 +27,7 @@ export interface TerrenoReceiptModalProps {
   isOpen: boolean;
   onClose: () => void;
   mode: 'view' | 'pay' | 'attach';
+  category?: 'terreno' | 'condominio';
   installment: {
     id: string; // e.g. "2024-02"
     monthName: string;
@@ -52,6 +56,7 @@ export function TerrenoReceiptModal({
   isOpen,
   onClose,
   mode: initialMode,
+  category = 'terreno',
   installment,
   receiptData,
   formatCurrency,
@@ -162,21 +167,31 @@ export function TerrenoReceiptModal({
         {/* Header do Modal */}
         <div className="p-4 sm:p-5 border-b border-slate-800/80 bg-slate-950/60 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
-              {mode === 'view' ? <FileText size={20} /> : <Upload size={20} />}
+            <div className={`w-10 h-10 rounded-2xl border flex items-center justify-center ${
+              category === 'condominio' 
+                ? 'bg-blue-500/10 border-blue-500/20 text-blue-400' 
+                : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
+            }`}>
+              {category === 'condominio' ? (
+                <Building2 size={20} />
+              ) : mode === 'view' ? (
+                <FileText size={20} />
+              ) : (
+                <Upload size={20} />
+              )}
             </div>
             <div>
               <h3 className="text-base sm:text-lg font-bold text-white flex items-center gap-2">
-                {mode === 'view' 
-                  ? 'Comprovante de Pagamento' 
-                  : mode === 'attach' 
-                    ? 'Anexar Comprovante à Parcela' 
-                    : 'Confirmar Pagamento da Parcela'}
+                {category === 'condominio' 
+                  ? (mode === 'view' ? 'Comprovante — Taxa de Condomínio' : mode === 'attach' ? 'Anexar Comprovante do Condomínio' : 'Confirmar Pagamento do Condomínio')
+                  : (mode === 'view' ? 'Comprovante de Pagamento' : mode === 'attach' ? 'Anexar Comprovante à Parcela' : 'Confirmar Pagamento da Parcela')}
               </h3>
               <p className="text-xs text-slate-400">
                 <span className="capitalize font-semibold text-slate-200">{installment.monthName} {installment.year}</span>
                 {' • '}
-                <span className="font-mono text-emerald-400 font-bold">{formatCurrency(installment.value)}</span>
+                <span className={`font-mono font-bold ${category === 'condominio' ? 'text-blue-400' : 'text-emerald-400'}`}>
+                  {formatCurrency(installment.value)}
+                </span>
               </p>
             </div>
           </div>
@@ -201,17 +216,21 @@ export function TerrenoReceiptModal({
 
         {/* Corpo do Modal */}
         <div className="p-4 sm:p-6 overflow-y-auto space-y-5">
-          {/* Card Resumo da Parcela */}
+          {/* Card Resumo */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3 p-3.5 bg-slate-950/40 rounded-2xl border border-slate-800/80 text-xs">
             <div>
-              <span className="text-slate-500 block text-[10px] uppercase font-semibold">Vencimento</span>
-              <span className="font-medium text-slate-200">
-                25/{String(installment.date.getMonth() + 1).padStart(2, '0')}/{installment.year}
+              <span className="text-slate-500 block text-[10px] uppercase font-semibold">Competência</span>
+              <span className="font-medium text-slate-200 capitalize">
+                {installment.monthName} {installment.year}
               </span>
             </div>
             <div>
-              <span className="text-slate-500 block text-[10px] uppercase font-semibold">Valor da Parcela</span>
-              <span className="font-bold text-emerald-400 font-mono">{formatCurrency(installment.value)}</span>
+              <span className="text-slate-500 block text-[10px] uppercase font-semibold">
+                {category === 'condominio' ? 'Taxa Condomínio' : 'Valor da Parcela'}
+              </span>
+              <span className={`font-bold font-mono ${category === 'condominio' ? 'text-blue-400' : 'text-emerald-400'}`}>
+                {formatCurrency(installment.value)}
+              </span>
             </div>
             <div>
               <span className="text-slate-500 block text-[10px] uppercase font-semibold">Identificador</span>
@@ -221,7 +240,7 @@ export function TerrenoReceiptModal({
               <span className="text-slate-500 block text-[10px] uppercase font-semibold">Status</span>
               <span className="inline-flex items-center gap-1 font-semibold text-emerald-400">
                 <CheckCircle2 size={12} />
-                {mode === 'pay' ? 'Em pagamento' : 'Liquidada'}
+                {mode === 'pay' ? 'Em pagamento' : 'Liquidado'}
               </span>
             </div>
           </div>
@@ -248,12 +267,12 @@ export function TerrenoReceiptModal({
                     </div>
                   )}
 
-                  {/* BOTÕES DE AÇÃO: SOMENTE BAIXAR E VISUALIZAR NO DISPOSITIVO (PRIORIZANDO SMARTPHONE) */}
+                  {/* BOTÕES DE AÇÃO: BAIXAR, VISUALIZAR E COMPARTILHAR NO WHATSAPP */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
                     <button
                       type="button"
                       onClick={handleDownload}
-                      className="w-full flex items-center justify-center gap-2.5 py-3.5 px-4 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-sm font-bold shadow-lg shadow-emerald-500/20 active:scale-95 transition-all"
+                      className="w-full flex items-center justify-center gap-2.5 py-3.5 px-4 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-sm font-bold shadow-lg shadow-emerald-500/20 active:scale-95 transition-all cursor-pointer"
                     >
                       <Download size={18} />
                       <span>Baixar no Dispositivo</span>
@@ -262,12 +281,37 @@ export function TerrenoReceiptModal({
                     <button
                       type="button"
                       onClick={handleOpenInDevice}
-                      className="w-full flex items-center justify-center gap-2.5 py-3.5 px-4 rounded-2xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-100 text-sm font-bold shadow-sm active:scale-95 transition-all"
+                      className="w-full flex items-center justify-center gap-2.5 py-3.5 px-4 rounded-2xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-100 text-sm font-bold shadow-sm active:scale-95 transition-all cursor-pointer"
                     >
                       <ExternalLink size={18} className="text-blue-400" />
                       <span>Visualizar no Dispositivo</span>
                     </button>
                   </div>
+
+                  {/* Botão de WhatsApp */}
+                  <a
+                    href={`https://wa.me/?text=${
+                      category === 'condominio'
+                        ? getCondominioWhatsAppShareText(
+                            `${installment.monthName} ${installment.year}`,
+                            formatCurrency(installment.value),
+                            installment.auditId,
+                            receiptData?.notes
+                          )
+                        : getReceiptWhatsAppShareText(
+                            `${installment.monthName} ${installment.year}`,
+                            formatCurrency(installment.value),
+                            installment.auditId,
+                            receiptData?.notes
+                          )
+                    }`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full flex items-center justify-center gap-2.5 py-2.5 px-4 rounded-2xl bg-emerald-950/40 hover:bg-emerald-900/40 border border-emerald-500/30 text-emerald-300 text-xs font-semibold shadow-sm transition-all"
+                  >
+                    <Share2 size={15} />
+                    <span>Compartilhar Comprovante no WhatsApp</span>
+                  </a>
 
                   {/* Ações Administrativas (somente se não estiver em modo vendedor) */}
                   {!isVendorMode && (
@@ -275,7 +319,7 @@ export function TerrenoReceiptModal({
                       <button
                         type="button"
                         onClick={() => setMode('attach')}
-                        className="text-xs text-blue-400 hover:text-blue-300 inline-flex items-center gap-1.5 font-semibold py-1.5 px-3 rounded-xl hover:bg-blue-500/10 transition-all"
+                        className="text-xs text-blue-400 hover:text-blue-300 inline-flex items-center gap-1.5 font-semibold py-1.5 px-3 rounded-xl hover:bg-blue-500/10 transition-all cursor-pointer"
                       >
                         <RefreshCw size={13} />
                         Substituir Comprovante
@@ -286,12 +330,12 @@ export function TerrenoReceiptModal({
                           <button
                             type="button"
                             onClick={() => {
-                              if (confirm('Deseja remover apenas o comprovante anexado, mantendo a parcela como paga?')) {
+                              if (confirm(`Deseja remover apenas o comprovante anexado, mantendo ${category === 'condominio' ? 'o condomínio' : 'a parcela'} como pago?`)) {
                                 onRemoveReceipt();
                                 onClose();
                               }
                             }}
-                            className="text-xs text-amber-400 hover:text-amber-300 inline-flex items-center gap-1 font-semibold py-1.5 px-3 rounded-xl hover:bg-amber-500/10 transition-all"
+                            className="text-xs text-amber-400 hover:text-amber-300 inline-flex items-center gap-1 font-semibold py-1.5 px-3 rounded-xl hover:bg-amber-500/10 transition-all cursor-pointer"
                           >
                             <Trash2 size={13} />
                             Remover Anexo
@@ -301,14 +345,14 @@ export function TerrenoReceiptModal({
                           <button
                             type="button"
                             onClick={() => {
-                              if (confirm(`Deseja desmarcar o pagamento da parcela ${installment.monthName} ${installment.year}?`)) {
+                              if (confirm(`Deseja desmarcar o pagamento ${category === 'condominio' ? 'do condomínio' : 'da parcela'} de ${installment.monthName} ${installment.year}?`)) {
                                 onUnmarkPayment();
                                 onClose();
                               }
                             }}
-                            className="text-xs text-red-400 hover:text-red-300 inline-flex items-center gap-1 font-semibold py-1.5 px-3 rounded-xl hover:bg-red-500/10 transition-all"
+                            className="text-xs text-red-400 hover:text-red-300 inline-flex items-center gap-1 font-semibold py-1.5 px-3 rounded-xl hover:bg-red-500/10 transition-all cursor-pointer"
                           >
-                            Desmarcar Parcela
+                            {category === 'condominio' ? 'Desmarcar Condomínio' : 'Desmarcar Parcela'}
                           </button>
                         )}
                       </div>
@@ -316,7 +360,7 @@ export function TerrenoReceiptModal({
                   )}
                 </div>
               ) : (
-                /* Caso a parcela esteja paga mas ainda não tenha comprovante */
+                /* Caso esteja pago mas ainda não tenha comprovante */
                 <div className="text-center py-8 space-y-4">
                   <div className="w-14 h-14 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center mx-auto">
                     <AlertCircle size={28} />
@@ -324,7 +368,9 @@ export function TerrenoReceiptModal({
                   <div>
                     <h4 className="text-sm font-bold text-slate-200">Nenhum comprovante anexado ainda</h4>
                     <p className="text-xs text-slate-400 max-w-sm mx-auto mt-1">
-                      Esta parcela foi marcada como paga, mas ainda não possui o arquivo do comprovante anexado.
+                      {category === 'condominio'
+                        ? 'Este condomínio foi marcado como pago, mas ainda não possui o arquivo do comprovante anexado.'
+                        : 'Esta parcela foi marcada como paga, mas ainda não possui o arquivo do comprovante anexado.'}
                     </p>
                   </div>
 

@@ -26,6 +26,9 @@ import {
   getStoredTerrenoReceipts, 
   saveStoredTerrenoReceipt, 
   deleteStoredTerrenoReceipt, 
+  getStoredCondominioReceipts,
+  saveStoredCondominioReceipt,
+  deleteStoredCondominioReceipt,
   ensureTerrenoInstallmentsSchema,
   ensureExpensesSchema,
   getTerrenoReceiptFileUrl
@@ -56,6 +59,7 @@ import {
   saveStoredFinancialSettings,
   applyCondominioAdjustment,
   sanitizeFinancialSettings,
+  getCondominioCostForMonth,
   PB_SETTINGS_RECORD_KEY,
   FINANCIAL_SETTINGS_STORAGE_KEY
 } from './utils/financialSettings';
@@ -170,6 +174,12 @@ const INITIAL_PAID_TERRENO = [
   '2026-01', '2026-02'
 ];
 
+const INITIAL_PAID_CONDOMINIO = [
+  '2024-02', '2024-03', '2024-04', '2024-05', '2024-06', '2024-07', '2024-08', '2024-09', '2024-10', '2024-11', '2024-12',
+  '2025-01', '2025-02', '2025-03', '2025-04', '2025-05', '2025-06', '2025-07', '2025-08', '2025-09', '2025-10', '2025-11', '2025-12',
+  '2026-01', '2026-02'
+];
+
 function App() {
   const [activeTab, setActiveTab] = useState('inicio');
   const [reportsSubTab, setReportsSubTab] = useState<'geral' | 'extrato' | 'doacoes' | 'apagar' | 'faturas'>('geral');
@@ -241,7 +251,9 @@ function App() {
     incomes: [], 
     payments: [], 
     terrenoPaidInstallments: INITIAL_PAID_TERRENO,
-    terrenoInstallmentsData: {}
+    terrenoInstallmentsData: {},
+    condominioPaidInstallments: INITIAL_PAID_CONDOMINIO,
+    condominioInstallmentsData: {}
   });
   const [categories, setCategories] = useState<string[]>(() => getStoredCategories());
   const [financialSettings, setFinancialSettings] = useState<FinancialSettings>(() => getStoredFinancialSettings());
@@ -438,10 +450,12 @@ function App() {
 
       const localReceipts = getStoredTerrenoReceipts();
       const terrenoDetailsMap: Record<string, TerrenoInstallmentRecord> = {};
+      const localCondoReceipts = getStoredCondominioReceipts();
+      const condoDetailsMap: Record<string, TerrenoInstallmentRecord> = {};
 
-      // Inserir comprovantes locais (ignorando registros de configuração)
+      // Inserir comprovantes locais de terreno (ignorando registros de configuração e condomínio)
       Object.entries(localReceipts).forEach(([mId, data]) => {
-        if (!mId.startsWith('cfg_')) {
+        if (!mId.startsWith('cfg_') && !mId.startsWith('condo_')) {
           terrenoDetailsMap[mId] = {
             id: data.id || mId,
             month_id: mId,
@@ -453,27 +467,59 @@ function App() {
         }
       });
 
+      // Inserir comprovantes locais de condomínio
+      Object.entries(localCondoReceipts).forEach(([mId, data]) => {
+        const cleanId = mId.replace(/^condo_/, '');
+        condoDetailsMap[cleanId] = {
+          id: data.id || `condo_${cleanId}`,
+          month_id: cleanId,
+          receipt_url: data.receipt_url,
+          receipt_name: data.receipt_name,
+          notes: data.notes,
+          paid_at: data.paid_at
+        };
+      });
+
       // Mesclar registros do PocketBase (filtrando registros de configuração)
       const terrenoIds: string[] = [];
+      const condoIds: string[] = [];
+
       (terrenoData as any[]).forEach(t => {
-        const mId = t.month_id || t.original_id || t.id;
-        if (mId && !mId.startsWith('cfg_')) {
-          terrenoIds.push(mId);
-          const computedUrl = t.receipt_file ? getTerrenoReceiptFileUrl(t) : (t.receipt_url || terrenoDetailsMap[mId]?.receipt_url);
-          terrenoDetailsMap[mId] = {
+        const rawId = t.month_id || t.original_id || t.id;
+        if (!rawId || rawId.startsWith('cfg_')) return;
+
+        if (rawId.startsWith('condo_')) {
+          const cleanId = rawId.replace(/^condo_/, '');
+          condoIds.push(cleanId);
+          const computedUrl = t.receipt_file ? getTerrenoReceiptFileUrl(t) : (t.receipt_url || condoDetailsMap[cleanId]?.receipt_url);
+          condoDetailsMap[cleanId] = {
             id: t.id,
-            month_id: mId,
+            month_id: cleanId,
             original_id: t.original_id,
             receipt_file: t.receipt_file,
             receipt_url: computedUrl,
-            receipt_name: t.receipt_name || terrenoDetailsMap[mId]?.receipt_name,
-            notes: t.notes || terrenoDetailsMap[mId]?.notes,
-            paid_at: t.paid_at || t.created || terrenoDetailsMap[mId]?.paid_at
+            receipt_name: t.receipt_name || condoDetailsMap[cleanId]?.receipt_name,
+            notes: t.notes || condoDetailsMap[cleanId]?.notes,
+            paid_at: t.paid_at || t.created || condoDetailsMap[cleanId]?.paid_at
+          };
+        } else {
+          terrenoIds.push(rawId);
+          const computedUrl = t.receipt_file ? getTerrenoReceiptFileUrl(t) : (t.receipt_url || terrenoDetailsMap[rawId]?.receipt_url);
+          terrenoDetailsMap[rawId] = {
+            id: t.id,
+            month_id: rawId,
+            original_id: t.original_id,
+            receipt_file: t.receipt_file,
+            receipt_url: computedUrl,
+            receipt_name: t.receipt_name || terrenoDetailsMap[rawId]?.receipt_name,
+            notes: t.notes || terrenoDetailsMap[rawId]?.notes,
+            paid_at: t.paid_at || t.created || terrenoDetailsMap[rawId]?.paid_at
           };
         }
       });
 
       const finalPaidIds = Array.from(new Set([...(terrenoIds.length > 0 ? terrenoIds : INITIAL_PAID_TERRENO)]));
+      const finalCondoPaidIds = Array.from(new Set([...(condoIds.length > 0 ? condoIds : INITIAL_PAID_CONDOMINIO)]));
 
       setState(prev => ({
         ...prev,
@@ -481,7 +527,9 @@ function App() {
         incomes: normalizedIncomes as unknown as Income[],
         payments: normalizedPayments as unknown as Payment[],
         terrenoPaidInstallments: finalPaidIds,
-        terrenoInstallmentsData: terrenoDetailsMap
+        terrenoInstallmentsData: terrenoDetailsMap,
+        condominioPaidInstallments: finalCondoPaidIds,
+        condominioInstallmentsData: condoDetailsMap
       }));
     } catch (e) {
       console.error("General error in fetchAllData:", e);
@@ -624,22 +672,26 @@ function App() {
 
           if (recId && !recentActionIdsRef.current.has(recId)) {
             if (e.action === 'delete') {
+              const isCondo = String(recId).startsWith('condo_');
+              const cleanId = String(recId).replace(/^condo_/, '');
               auditLogger.logDelete({
-                entity: 'Terreno',
+                entity: isCondo ? 'Condomínio' : 'Terreno',
                 recordId: recId,
-                auditId: formatAuditId('TER', recId),
+                auditId: formatAuditId(isCondo ? 'CND' : 'TER', cleanId),
                 user: 'Remoto',
-                actionLabel: 'Parcela Terreno Desmarcada (Remoto)',
-                details: `Parcela ${recId} desmarcada em outro dispositivo`
+                actionLabel: isCondo ? 'Condomínio Desmarcado (Remoto)' : 'Parcela Terreno Desmarcada (Remoto)',
+                details: `${isCondo ? 'Condomínio' : 'Parcela'} ${cleanId} desmarcada em outro dispositivo`
               });
             }
           }
           const records = await pb.collection('terreno_installments').getFullList({ requestKey: null });
           const localReceipts = getStoredTerrenoReceipts();
           const terrenoDetailsMap: Record<string, TerrenoInstallmentRecord> = {};
+          const localCondoReceipts = getStoredCondominioReceipts();
+          const condoDetailsMap: Record<string, TerrenoInstallmentRecord> = {};
 
           Object.entries(localReceipts).forEach(([mId, data]) => {
-            if (!mId.startsWith('cfg_')) {
+            if (!mId.startsWith('cfg_') && !mId.startsWith('condo_')) {
               terrenoDetailsMap[mId] = {
                 id: data.id || mId,
                 month_id: mId,
@@ -651,32 +703,61 @@ function App() {
             }
           });
 
-          const ids = records
-            .filter((t: any) => {
-              const mId = t.month_id || t.original_id || t.id;
-              return mId && !mId.startsWith('cfg_');
-            })
-            .map((t: any) => {
-              const mId = t.month_id || t.original_id || t.id;
-              const computedUrl = t.receipt_file ? getTerrenoReceiptFileUrl(t) : (t.receipt_url || terrenoDetailsMap[mId]?.receipt_url);
-              terrenoDetailsMap[mId] = {
+          Object.entries(localCondoReceipts).forEach(([mId, data]) => {
+            const cleanId = mId.replace(/^condo_/, '');
+            condoDetailsMap[cleanId] = {
+              id: data.id || `condo_${cleanId}`,
+              month_id: cleanId,
+              receipt_url: data.receipt_url,
+              receipt_name: data.receipt_name,
+              notes: data.notes,
+              paid_at: data.paid_at
+            };
+          });
+
+          const terrenoIds: string[] = [];
+          const condoIds: string[] = [];
+
+          records.forEach((t: any) => {
+            const rawId = t.month_id || t.original_id || t.id;
+            if (!rawId || rawId.startsWith('cfg_')) return;
+
+            if (rawId.startsWith('condo_')) {
+              const cleanId = rawId.replace(/^condo_/, '');
+              condoIds.push(cleanId);
+              const computedUrl = t.receipt_file ? getTerrenoReceiptFileUrl(t) : (t.receipt_url || condoDetailsMap[cleanId]?.receipt_url);
+              condoDetailsMap[cleanId] = {
                 id: t.id,
-                month_id: mId,
+                month_id: cleanId,
                 original_id: t.original_id,
                 receipt_file: t.receipt_file,
                 receipt_url: computedUrl,
-                receipt_name: t.receipt_name || terrenoDetailsMap[mId]?.receipt_name,
-                notes: t.notes || terrenoDetailsMap[mId]?.notes,
-                paid_at: t.paid_at || t.created || terrenoDetailsMap[mId]?.paid_at
+                receipt_name: t.receipt_name || condoDetailsMap[cleanId]?.receipt_name,
+                notes: t.notes || condoDetailsMap[cleanId]?.notes,
+                paid_at: t.paid_at || t.created || condoDetailsMap[cleanId]?.paid_at
               };
-              return mId;
-            })
-            .filter(Boolean);
+            } else {
+              terrenoIds.push(rawId);
+              const computedUrl = t.receipt_file ? getTerrenoReceiptFileUrl(t) : (t.receipt_url || terrenoDetailsMap[rawId]?.receipt_url);
+              terrenoDetailsMap[rawId] = {
+                id: t.id,
+                month_id: rawId,
+                original_id: t.original_id,
+                receipt_file: t.receipt_file,
+                receipt_url: computedUrl,
+                receipt_name: t.receipt_name || terrenoDetailsMap[rawId]?.receipt_name,
+                notes: t.notes || terrenoDetailsMap[rawId]?.notes,
+                paid_at: t.paid_at || t.created || terrenoDetailsMap[rawId]?.paid_at
+              };
+            }
+          });
 
           setState(prev => ({ 
             ...prev, 
-            terrenoPaidInstallments: ids,
-            terrenoInstallmentsData: terrenoDetailsMap
+            terrenoPaidInstallments: terrenoIds,
+            terrenoInstallmentsData: terrenoDetailsMap,
+            condominioPaidInstallments: condoIds,
+            condominioInstallmentsData: condoDetailsMap
           }));
         });
       } catch (err) {
@@ -2184,6 +2265,300 @@ function App() {
     }
   };
 
+  const handleToggleCondominioPayment = async (
+    id: string, 
+    paymentData?: { file?: File; receipt_url?: string; receipt_name?: string; notes?: string }
+  ) => {
+    const condoKey = `condo_${id}`;
+    recentActionIdsRef.current.add(condoKey);
+    setTimeout(() => recentActionIdsRef.current.delete(condoKey), 10000);
+
+    const currentPaid = state.condominioPaidInstallments || [];
+    const isPaid = currentPaid.includes(id);
+    const willBePaid = !isPaid;
+    const newPaid = willBePaid 
+      ? [...currentPaid, id]
+      : currentPaid.filter(i => i !== id);
+
+    // Salva ou remove no cache local imediatamente (Optimistic UI)
+    if (willBePaid) {
+      saveStoredCondominioReceipt(id, {
+        month_id: id,
+        receipt_url: paymentData?.receipt_url,
+        receipt_name: paymentData?.receipt_name,
+        notes: paymentData?.notes,
+        paid_at: new Date().toISOString()
+      });
+    } else {
+      deleteStoredCondominioReceipt(id);
+    }
+
+    setState(prev => {
+      const updatedDetails = { ...(prev.condominioInstallmentsData || {}) };
+      if (willBePaid) {
+        updatedDetails[id] = {
+          id: condoKey,
+          month_id: id,
+          receipt_url: paymentData?.receipt_url,
+          receipt_name: paymentData?.receipt_name,
+          notes: paymentData?.notes,
+          paid_at: new Date().toISOString()
+        };
+      } else {
+        delete updatedDetails[id];
+      }
+      return {
+        ...prev,
+        condominioPaidInstallments: newPaid,
+        condominioInstallmentsData: updatedDetails
+      };
+    });
+
+    const auditId = formatAuditId('CND', id);
+    const condoCost = getCondominioCostForMonth(id, financialSettings);
+
+    if (!willBePaid) {
+      auditLogger.logDelete({
+        entity: 'Condomínio',
+        recordId: condoKey,
+        auditId,
+        user: getUserName(),
+        actionLabel: 'Condomínio Desmarcado',
+        details: `Estorno/Desmarcado: Taxa de condomínio ${id} de R$ ${condoCost.toFixed(2)} foi desmarcada`,
+        previousValue: 'Paga'
+      });
+      toast.success(`Condomínio de ${id} desmarcado com sucesso.`);
+    } else {
+      const obsInfo = paymentData?.notes ? ` (${paymentData.notes})` : '';
+      const receiptInfo = (paymentData?.file || paymentData?.receipt_url) ? ' [Com comprovante anexado]' : '';
+      auditLogger.log({
+        action: 'PAYMENT',
+        actionLabel: 'Condomínio Pago',
+        entity: 'Condomínio',
+        recordId: condoKey,
+        auditId,
+        user: getUserName(),
+        details: `Pagamento de Condomínio: Taxa de condomínio ${id} de R$ ${condoCost.toFixed(2)} confirmada${obsInfo}${receiptInfo}`,
+        newValue: 'Paga'
+      });
+      toast.success(`Condomínio de ${id} marcado como pago!`);
+    }
+
+    if (ENABLE_POCKETBASE_SYNC) {
+      if (isOffline) {
+        saveToOfflineQueue('TOGGLE_TERRENO', { 
+          action: willBePaid ? 'insert' : 'delete',
+          receipt_url: paymentData?.receipt_url,
+          receipt_name: paymentData?.receipt_name,
+          notes: paymentData?.notes
+        }, condoKey);
+        toast.success("Ação salva offline. Será sincronizada na próxima conexão.");
+        return;
+      }
+      try {
+        if (!willBePaid) {
+          try {
+            const existing = await pb.collection('terreno_installments').getFirstListItem(`month_id="${condoKey}" || original_id="${condoKey}"`);
+            if (existing) {
+              await pb.collection('terreno_installments').delete(existing.id);
+            }
+          } catch (e: any) {
+            if (e.status !== 404) throw e;
+          }
+        } else {
+          try {
+            const existing = await pb.collection('terreno_installments').getFirstListItem(`month_id="${condoKey}" || original_id="${condoKey}"`).catch(() => null);
+            let savedRecord: any = null;
+
+            if (paymentData?.file) {
+              const formData = new FormData();
+              formData.append('month_id', condoKey);
+              formData.append('original_id', condoKey);
+              formData.append('receipt_file', paymentData.file);
+              if (paymentData.receipt_name) formData.append('receipt_name', paymentData.receipt_name);
+              if (paymentData.notes) formData.append('notes', paymentData.notes);
+
+              if (existing) {
+                savedRecord = await pb.collection('terreno_installments').update(existing.id, formData);
+              } else {
+                savedRecord = await pb.collection('terreno_installments').create(formData);
+              }
+            } else {
+              const payload: any = {
+                month_id: condoKey,
+                original_id: condoKey
+              };
+              if (paymentData?.receipt_name) payload.receipt_name = paymentData.receipt_name;
+              if (paymentData?.notes) payload.notes = paymentData.notes;
+              if (paymentData?.receipt_url && !paymentData.receipt_url.startsWith('data:')) {
+                payload.receipt_url = paymentData.receipt_url;
+              }
+
+              if (existing) {
+                try {
+                  savedRecord = await pb.collection('terreno_installments').update(existing.id, payload);
+                } catch {
+                  savedRecord = await pb.collection('terreno_installments').update(existing.id, { month_id: condoKey });
+                }
+              } else {
+                try {
+                  savedRecord = await pb.collection('terreno_installments').create(payload);
+                } catch {
+                  savedRecord = await pb.collection('terreno_installments').create({
+                    month_id: condoKey,
+                    original_id: condoKey
+                  });
+                }
+              }
+            }
+
+            if (savedRecord) {
+              const finalUrl = savedRecord.receipt_file 
+                ? getTerrenoReceiptFileUrl(savedRecord) 
+                : (paymentData?.receipt_url || '');
+
+              saveStoredCondominioReceipt(id, {
+                id: savedRecord.id,
+                month_id: id,
+                receipt_file: savedRecord.receipt_file,
+                receipt_url: finalUrl,
+                receipt_name: savedRecord.receipt_name || paymentData?.receipt_name,
+                notes: savedRecord.notes || paymentData?.notes,
+                paid_at: savedRecord.created || new Date().toISOString()
+              });
+
+              setState(prev => ({
+                ...prev,
+                condominioInstallmentsData: {
+                  ...(prev.condominioInstallmentsData || {}),
+                  [id]: {
+                    id: savedRecord.id,
+                    month_id: id,
+                    receipt_file: savedRecord.receipt_file,
+                    receipt_url: finalUrl,
+                    receipt_name: savedRecord.receipt_name || paymentData?.receipt_name,
+                    notes: savedRecord.notes || paymentData?.notes,
+                    paid_at: savedRecord.created || new Date().toISOString()
+                  }
+                }
+              }));
+            }
+          } catch (e: any) {
+            console.error("Erro ao sincronizar condomínio no PocketBase:", e);
+          }
+        }
+      } catch (error: any) {
+        console.error("Error syncing condomínio payment: ", error);
+        setState(prev => ({ ...prev, condominioPaidInstallments: currentPaid }));
+        toast.error(`Erro ao sincronizar condomínio: ${error.message || "Falha na comunicação."}`);
+      }
+    }
+  };
+
+  const handleRemoveCondominioPayment = async (id: string) => {
+    return handleToggleCondominioPayment(id);
+  };
+
+  const handleUpdateCondominioReceipt = async (
+    id: string, 
+    receiptData: { file?: File; receipt_url?: string; receipt_name?: string; notes?: string }
+  ) => {
+    const condoKey = `condo_${id}`;
+    saveStoredCondominioReceipt(id, {
+      month_id: id,
+      receipt_url: receiptData.receipt_url,
+      receipt_name: receiptData.receipt_name,
+      notes: receiptData.notes
+    });
+
+    setState(prev => {
+      const updatedDetails = { ...(prev.condominioInstallmentsData || {}) };
+      updatedDetails[id] = {
+        ...(updatedDetails[id] || { id: condoKey, month_id: id }),
+        receipt_url: receiptData.receipt_url,
+        receipt_name: receiptData.receipt_name,
+        notes: receiptData.notes
+      };
+      return {
+        ...prev,
+        condominioInstallmentsData: updatedDetails
+      };
+    });
+
+    auditLogger.log({
+      action: 'UPDATE',
+      actionLabel: 'Comprovante Condomínio Atualizado',
+      entity: 'Condomínio',
+      recordId: condoKey,
+      auditId: formatAuditId('CND', id),
+      user: getUserName(),
+      details: `Comprovante de condomínio ${id} atualizado${(receiptData.file || receiptData.receipt_url) ? ' com novo anexo' : ' (anexo removido)'}`
+    });
+
+    if (ENABLE_POCKETBASE_SYNC && !isOffline) {
+      try {
+        const existing = await pb.collection('terreno_installments').getFirstListItem(`month_id="${condoKey}" || original_id="${condoKey}"`).catch(() => null);
+        if (existing) {
+          let updatedRecord: any = null;
+          if (receiptData.file) {
+            const formData = new FormData();
+            formData.append('receipt_file', receiptData.file);
+            if (receiptData.receipt_name) formData.append('receipt_name', receiptData.receipt_name);
+            if (receiptData.notes !== undefined) formData.append('notes', receiptData.notes);
+            updatedRecord = await pb.collection('terreno_installments').update(existing.id, formData);
+          } else if (receiptData.receipt_url === '') {
+            updatedRecord = await pb.collection('terreno_installments').update(existing.id, {
+              receipt_file: null,
+              receipt_url: '',
+              receipt_name: '',
+              notes: receiptData.notes || ''
+            });
+          } else {
+            const payload: any = {
+              receipt_name: receiptData.receipt_name || '',
+              notes: receiptData.notes || ''
+            };
+            if (receiptData.receipt_url && !receiptData.receipt_url.startsWith('data:')) {
+              payload.receipt_url = receiptData.receipt_url;
+            }
+            try {
+              updatedRecord = await pb.collection('terreno_installments').update(existing.id, payload);
+            } catch {
+              // Ignora erro se coluna não existir
+            }
+          }
+
+          if (updatedRecord) {
+            const finalUrl = updatedRecord.receipt_file ? getTerrenoReceiptFileUrl(updatedRecord) : (receiptData.receipt_url || '');
+            saveStoredCondominioReceipt(id, {
+              id: updatedRecord.id,
+              month_id: id,
+              receipt_file: updatedRecord.receipt_file,
+              receipt_url: finalUrl,
+              receipt_name: updatedRecord.receipt_name,
+              notes: updatedRecord.notes
+            });
+            setState(prev => ({
+              ...prev,
+              condominioInstallmentsData: {
+                ...(prev.condominioInstallmentsData || {}),
+                [id]: {
+                  ...(prev.condominioInstallmentsData?.[id] || { id: updatedRecord.id, month_id: id }),
+                  receipt_file: updatedRecord.receipt_file,
+                  receipt_url: finalUrl,
+                  receipt_name: updatedRecord.receipt_name,
+                  notes: updatedRecord.notes
+                }
+              }
+            }));
+          }
+        }
+      } catch (err) {
+        console.warn("Aviso ao sincronizar comprovante de condomínio:", err);
+      }
+    }
+  };
+
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
   };
@@ -3054,6 +3429,12 @@ function App() {
             onTogglePayment={handleToggleTerrenoPayment}
             onRemovePayment={handleRemoveTerrenoPayment}
             onUpdateReceipt={handleUpdateTerrenoReceipt}
+            condominioPaidInstallments={state.condominioPaidInstallments}
+            condominioInstallmentsData={state.condominioInstallmentsData}
+            onToggleCondominioPayment={handleToggleCondominioPayment}
+            onRemoveCondominioPayment={handleRemoveCondominioPayment}
+            onUpdateCondominioReceipt={handleUpdateCondominioReceipt}
+            financialSettings={financialSettings}
             formatCurrency={formatCurrency} 
             isVendorMode={isVendorMode}
           />

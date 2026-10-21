@@ -59,4 +59,6 @@ export interface AppState {
   payments: Payment[];
   terrenoPaidInstallments: string[];
   terrenoInstallmentsData?: Record<string, TerrenoInstallmentRecord>;
+  condominioPaidInstallments?: string[];
+  condominioInstallmentsData?: Record<string, TerrenoInstallmentRecord>;
 }

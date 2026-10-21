@@ -17,6 +17,7 @@ import { formatAuditId, copyAuditIdToClipboard } from '../utils/audit';
 import { TerrenoReceiptModal } from './TerrenoReceiptModal';
 import { TerrenoVendorShareModal } from './TerrenoVendorShareModal';
 import type { TerrenoInstallmentRecord } from '../types';
+import { getCondominioCostForMonth, FinancialSettings } from '../utils/financialSettings';
 
 interface TerrenoInstallment {
   id: string; // e.g., "2024-02"
@@ -30,6 +31,12 @@ interface TerrenoTabProps {
   onTogglePayment: (id: string, paymentData?: { file?: File; receipt_url?: string; receipt_name?: string; notes?: string }) => void;
   onRemovePayment?: (id: string) => void;
   onUpdateReceipt?: (id: string, receiptData: { file?: File; receipt_url?: string; receipt_name?: string; notes?: string }) => void;
+  condominioPaidInstallments?: string[];
+  condominioInstallmentsData?: Record<string, TerrenoInstallmentRecord>;
+  onToggleCondominioPayment?: (id: string, paymentData?: { file?: File; receipt_url?: string; receipt_name?: string; notes?: string }) => void;
+  onRemoveCondominioPayment?: (id: string) => void;
+  onUpdateCondominioReceipt?: (id: string, receiptData: { file?: File; receipt_url?: string; receipt_name?: string; notes?: string }) => void;
+  financialSettings?: FinancialSettings;
   formatCurrency: (v: number) => string;
   isVendorMode?: boolean;
 }
@@ -40,15 +47,22 @@ export function TerrenoTab({
   onTogglePayment, 
   onRemovePayment,
   onUpdateReceipt,
+  condominioPaidInstallments = [],
+  condominioInstallmentsData = {},
+  onToggleCondominioPayment,
+  onRemoveCondominioPayment,
+  onUpdateCondominioReceipt,
+  financialSettings,
   formatCurrency,
   isVendorMode = false
 }: TerrenoTabProps) {
   const [showPaid, setShowPaid] = useState(false);
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   
-  // Modal de Comprovante
+  // Modal de Comprovante (Terreno ou Condomínio)
   const [receiptModalOpen, setReceiptModalOpen] = useState(false);
   const [receiptModalMode, setReceiptModalMode] = useState<'view' | 'pay' | 'attach'>('view');
+  const [receiptModalCategory, setReceiptModalCategory] = useState<'terreno' | 'condominio'>('terreno');
   const [activeInstallment, setActiveInstallment] = useState<{
     id: string;
     monthName: string;
@@ -78,6 +92,7 @@ export function TerrenoTab({
   }
 
   const safePaidInstallments = paidInstallments || [];
+  const safeCondoPaidInstallments = condominioPaidInstallments || [];
   
   const totalPaid = installments
     .filter(i => safePaidInstallments.includes(i.id))
@@ -96,6 +111,7 @@ export function TerrenoTab({
     const year = installment.date.getFullYear();
     const auditId = formatAuditId('TER', installment.id);
 
+    setReceiptModalCategory('terreno');
     setActiveInstallment({
       id: installment.id,
       monthName,
@@ -108,37 +124,93 @@ export function TerrenoTab({
     setReceiptModalOpen(true);
   };
 
+  const handleOpenCondominioReceiptModal = (
+    installment: TerrenoInstallment, 
+    mode: 'view' | 'pay' | 'attach'
+  ) => {
+    const monthName = installment.date.toLocaleString('pt-BR', { month: 'long' });
+    const year = installment.date.getFullYear();
+    const condoValue = getCondominioCostForMonth(installment.id, financialSettings);
+    const auditId = formatAuditId('CND', installment.id);
+
+    setReceiptModalCategory('condominio');
+    setActiveInstallment({
+      id: installment.id,
+      monthName,
+      year,
+      date: installment.date,
+      value: condoValue,
+      auditId
+    });
+    setReceiptModalMode(mode);
+    setReceiptModalOpen(true);
+  };
+
   const handleConfirmPaymentWithData = (data: { file?: File; receipt_url?: string; receipt_name?: string; notes?: string }) => {
     if (!activeInstallment) return;
-    onTogglePayment(activeInstallment.id, data);
-  };
-
-  const handleConfirmWithoutReceipt = () => {
-    if (!activeInstallment) return;
-    onTogglePayment(activeInstallment.id);
-  };
-
-  const handleSaveUpdateReceipt = (data: { file?: File; receipt_url?: string; receipt_name?: string; notes?: string }) => {
-    if (!activeInstallment) return;
-    if (onUpdateReceipt) {
-      onUpdateReceipt(activeInstallment.id, data);
+    if (receiptModalCategory === 'condominio') {
+      onToggleCondominioPayment?.(activeInstallment.id, data);
     } else {
       onTogglePayment(activeInstallment.id, data);
     }
   };
 
+  const handleConfirmWithoutReceipt = () => {
+    if (!activeInstallment) return;
+    if (receiptModalCategory === 'condominio') {
+      onToggleCondominioPayment?.(activeInstallment.id);
+    } else {
+      onTogglePayment(activeInstallment.id);
+    }
+  };
+
+  const handleSaveUpdateReceipt = (data: { file?: File; receipt_url?: string; receipt_name?: string; notes?: string }) => {
+    if (!activeInstallment) return;
+    if (receiptModalCategory === 'condominio') {
+      if (onUpdateCondominioReceipt) {
+        onUpdateCondominioReceipt(activeInstallment.id, data);
+      } else {
+        onToggleCondominioPayment?.(activeInstallment.id, data);
+      }
+    } else {
+      if (onUpdateReceipt) {
+        onUpdateReceipt(activeInstallment.id, data);
+      } else {
+        onTogglePayment(activeInstallment.id, data);
+      }
+    }
+  };
+
   const handleRemoveReceiptOnly = () => {
     if (!activeInstallment) return;
-    if (onUpdateReceipt) {
-      onUpdateReceipt(activeInstallment.id, { receipt_url: '', receipt_name: '' });
+    if (receiptModalCategory === 'condominio') {
+      onUpdateCondominioReceipt?.(activeInstallment.id, { receipt_url: '', receipt_name: '' });
+    } else {
+      onUpdateReceipt?.(activeInstallment.id, { receipt_url: '', receipt_name: '' });
     }
   };
 
   const handleUnmarkInstallment = (id: string) => {
-    if (onRemovePayment) {
-      onRemovePayment(id);
+    if (receiptModalCategory === 'condominio') {
+      if (onRemoveCondominioPayment) {
+        onRemoveCondominioPayment(id);
+      } else {
+        onToggleCondominioPayment?.(id);
+      }
     } else {
-      onTogglePayment(id);
+      if (onRemovePayment) {
+        onRemovePayment(id);
+      } else {
+        onTogglePayment(id);
+      }
+    }
+  };
+
+  const handleUnmarkCondominioDirect = (id: string) => {
+    if (onRemoveCondominioPayment) {
+      onRemoveCondominioPayment(id);
+    } else {
+      onToggleCondominioPayment?.(id);
     }
   };
 
@@ -146,16 +218,24 @@ export function TerrenoTab({
     const monthName = installment.date.toLocaleString('pt-BR', { month: 'long' });
     const year = installment.date.getFullYear();
     const auditId = formatAuditId('TER', installment.id);
+    const condoAuditId = formatAuditId('CND', installment.id);
     const receiptData = installmentsData[installment.id];
     const hasReceipt = Boolean(receiptData?.receipt_url || receiptData?.receipt_file);
+
+    // Condomínio
+    const condoValue = getCondominioCostForMonth(installment.id, financialSettings);
+    const isCondoPaid = safeCondoPaidInstallments.includes(installment.id);
+    const condoReceiptData = condominioInstallmentsData[installment.id];
+    const hasCondoReceipt = Boolean(condoReceiptData?.receipt_url || condoReceiptData?.receipt_file);
     
     return (
       <div 
         key={installment.id} 
-        className="flex items-center justify-between px-3 py-2.5 sm:px-4 sm:py-3 rounded-xl border border-slate-800/80 hover:border-slate-700 bg-slate-950/40 hover:bg-slate-800/40 transition-all gap-2 sm:gap-4 group ring-1 ring-white/5"
+        className="flex flex-col sm:flex-row sm:items-center justify-between p-3 sm:px-4 sm:py-3 rounded-2xl border border-slate-800/80 hover:border-slate-700 bg-slate-950/40 hover:bg-slate-800/40 transition-all gap-3 sm:gap-4 group ring-1 ring-white/5"
       >
+        {/* Lado Esquerdo: Número, Mês/Ano, Badges de Auditoria e Vencimento */}
         <div className="flex items-center gap-2.5 sm:gap-3.5 min-w-0">
-          <div className="flex-shrink-0 w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-slate-800/90 border border-slate-700 flex items-center justify-center text-xs font-bold text-slate-300 shadow-sm">
+          <div className="flex-shrink-0 w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-slate-800/90 border border-slate-700 flex items-center justify-center text-xs font-bold text-slate-300 shadow-sm">
             {index + 1}
           </div>
           <div className="min-w-0">
@@ -166,105 +246,200 @@ export function TerrenoTab({
               <button
                 type="button"
                 onClick={(e) => copyAuditIdToClipboard(auditId, e)}
-                title="Clique para copiar ID de auditoria"
-                className="font-mono text-[9px] sm:text-[10px] text-blue-400 bg-blue-500/10 hover:bg-blue-500/25 border border-blue-500/20 px-1.5 py-0.5 rounded transition-all active:scale-95 inline-flex items-center"
+                title="Copiar ID de auditoria do Terreno"
+                className="font-mono text-[9px] sm:text-[10px] text-blue-400 bg-blue-500/10 hover:bg-blue-500/25 border border-blue-500/20 px-1.5 py-0.5 rounded transition-all active:scale-95 inline-flex items-center cursor-pointer"
               >
                 {auditId}
               </button>
+              {!isVendorMode && (
+                <button
+                  type="button"
+                  onClick={(e) => copyAuditIdToClipboard(condoAuditId, e)}
+                  title="Copiar ID de auditoria do Condomínio"
+                  className="font-mono text-[9px] sm:text-[10px] text-indigo-400 bg-indigo-500/10 hover:bg-indigo-500/25 border border-indigo-500/20 px-1.5 py-0.5 rounded transition-all active:scale-95 inline-flex items-center cursor-pointer"
+                >
+                  {condoAuditId}
+                </button>
+              )}
             </div>
-            <div className="flex items-center gap-2 mt-0.5">
+            <div className="flex items-center gap-2 mt-0.5 flex-wrap">
               <p className="text-[10px] sm:text-xs text-slate-500 font-medium">
                 Venc. 25/{String(installment.date.getMonth() + 1).padStart(2, '0')}/{year}
               </p>
               {receiptData?.notes && (
-                <span className="hidden sm:inline-block text-[10px] text-slate-400 italic truncate max-w-[140px]" title={receiptData.notes}>
+                <span className="hidden md:inline-block text-[10px] text-slate-400 italic truncate max-w-[130px]" title={`Terreno: ${receiptData.notes}`}>
                   • {receiptData.notes}
+                </span>
+              )}
+              {condoReceiptData?.notes && (
+                <span className="hidden md:inline-block text-[10px] text-blue-400/80 italic truncate max-w-[130px]" title={`Condo: ${condoReceiptData.notes}`}>
+                  • Condo: {condoReceiptData.notes}
                 </span>
               )}
             </div>
           </div>
         </div>
         
-        <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-          <span className="font-mono font-bold text-slate-200 text-xs sm:text-sm">
-            {formatCurrency(installment.value)}
-          </span>
+        {/* Lado Direito: CONDOMÍNIO AO LADO DO TERRENO */}
+        <div className="flex items-center gap-2 sm:gap-3 shrink-0 self-end sm:self-center flex-wrap sm:flex-nowrap justify-end">
+          
+          {/* BLOCO DO CONDOMÍNIO (Ao lado do terreno, como solicitado na imagem) */}
+          {!isVendorMode && (
+            <div className={`flex items-center gap-1.5 sm:gap-2 px-2.5 py-1.5 rounded-xl border transition-all ${
+              isCondoPaid 
+                ? 'bg-slate-900/80 border-slate-800' 
+                : 'bg-slate-900/40 border-slate-800/60'
+            }`}>
+              <div className="flex items-center gap-1 text-[11px] sm:text-xs">
+                <Building2 size={13} className="text-blue-400 shrink-0" />
+                <span className="font-mono font-bold text-blue-300">
+                  {formatCurrency(condoValue)}
+                </span>
+              </div>
 
-          {/* Botão de Comprovante */}
-          {isPaid && (
-            <>
-              {hasReceipt ? (
+              {/* Botão de Comprovante do Condomínio */}
+              {isCondoPaid && (
+                <>
+                  {hasCondoReceipt ? (
+                    <button
+                      type="button"
+                      onClick={() => handleOpenCondominioReceiptModal(installment, 'view')}
+                      className="flex items-center gap-1 text-blue-300 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 px-2 py-0.5 rounded-lg transition-all text-[10px] sm:text-[11px] font-bold active:scale-95 shadow-sm cursor-pointer"
+                      title="Visualizar comprovante do condomínio"
+                    >
+                      <FileText size={11} className="text-blue-400 shrink-0" />
+                      <span>Ver</span>
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => handleOpenCondominioReceiptModal(installment, 'attach')}
+                      className="flex items-center gap-1 text-slate-400 hover:text-blue-400 bg-slate-800/60 hover:bg-blue-500/10 border border-slate-700/60 hover:border-blue-500/30 px-2 py-0.5 rounded-lg transition-all text-[10px] font-medium active:scale-95 cursor-pointer"
+                      title="Anexar comprovante do condomínio"
+                    >
+                      <Upload size={10} className="shrink-0" />
+                      <span>+ Anexo</span>
+                    </button>
+                  )}
+                </>
+              )}
+
+              {/* Status do Condomínio */}
+              {isCondoPaid ? (
                 <button
                   type="button"
-                  onClick={() => handleOpenReceiptModal(installment, 'view')}
-                  className="flex items-center gap-1 sm:gap-1.5 text-blue-300 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 px-2 sm:px-2.5 py-1 rounded-lg transition-all text-[11px] sm:text-xs font-bold active:scale-95 shadow-sm"
-                  title="Visualizar e baixar comprovante"
+                  onClick={() => {
+                    if (confirm(`Deseja desmarcar o pagamento do condomínio de ${monthName} ${year}?`)) {
+                      handleUnmarkCondominioDirect(installment.id);
+                    }
+                  }}
+                  title="Condomínio pago (clique para desmarcar)"
+                  className="flex items-center gap-1 text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 px-2 py-0.5 rounded-lg border border-emerald-500/20 transition-all text-[10px] sm:text-[11px] font-semibold active:scale-95 cursor-pointer"
                 >
-                  <FileText size={13} className="shrink-0 text-emerald-400" />
-                  <span className="hidden xs:inline">Comprovante</span>
-                  <span className="xs:hidden">Ver</span>
+                  <CheckCircle size={13} className="shrink-0" />
+                  <span>Pago</span>
                 </button>
               ) : (
-                !isVendorMode && (
-                  <button
-                    type="button"
-                    onClick={() => handleOpenReceiptModal(installment, 'attach')}
-                    className="flex items-center gap-1 text-slate-400 hover:text-blue-400 bg-slate-800/40 hover:bg-blue-500/10 border border-slate-700/60 hover:border-blue-500/30 px-2 py-1 rounded-lg transition-all text-[11px] font-medium active:scale-95"
-                    title="Anexar comprovante a esta parcela"
-                  >
-                    <Upload size={12} className="shrink-0" />
-                    <span className="hidden sm:inline">+ Anexo</span>
-                  </button>
-                )
+                <button
+                  type="button"
+                  onClick={() => handleOpenCondominioReceiptModal(installment, 'pay')}
+                  title="Registrar pagamento do condomínio"
+                  className="flex items-center gap-1 text-slate-400 hover:text-emerald-400 bg-slate-800/70 hover:bg-emerald-500/10 px-2 py-0.5 rounded-lg transition-all border border-slate-700/80 hover:border-emerald-500/30 text-[10px] sm:text-[11px] font-semibold active:scale-95 cursor-pointer"
+                >
+                  <Circle size={13} className="shrink-0" />
+                  <span>Pagar</span>
+                </button>
               )}
-            </>
+            </div>
           )}
 
-          {/* Status / Botão de Ação */}
-          {isPaid ? (
-            isVendorMode ? (
-              <button
-                type="button"
-                onClick={() => hasReceipt ? handleOpenReceiptModal(installment, 'view') : null}
-                className={`flex items-center gap-1 sm:gap-1.5 text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-lg border border-emerald-500/20 text-[11px] sm:text-xs font-semibold ${hasReceipt ? 'hover:bg-emerald-500/20 active:scale-95 cursor-pointer' : ''}`}
-                title={hasReceipt ? "Visualizar comprovante desta parcela" : "Parcela liquidada"}
-              >
-                <CheckCircle size={14} className="shrink-0" />
-                <span>Pago</span>
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={() => {
-                  if (confirm(`Deseja desmarcar o pagamento da parcela ${monthName} ${year}?`)) {
-                    handleUnmarkInstallment(installment.id);
-                  }
-                }}
-                title="Clique para desmarcar parcela"
-                className="flex items-center gap-1 sm:gap-1.5 text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 px-2 sm:px-2.5 py-1 rounded-lg border border-emerald-500/20 transition-all text-[11px] sm:text-xs font-semibold active:scale-95"
-              >
-                <CheckCircle size={14} className="shrink-0" />
-                <span>Pago</span>
-              </button>
-            )
-          ) : (
-            isVendorMode ? (
-              <span className="flex items-center gap-1 sm:gap-1.5 text-slate-400 bg-slate-800/40 px-2.5 py-1 rounded-lg border border-slate-700/60 text-[11px] sm:text-xs font-medium">
-                <Circle size={13} className="shrink-0" />
-                <span>A Vencer</span>
-              </span>
-            ) : (
-              <button
-                type="button"
-                onClick={() => handleOpenReceiptModal(installment, 'pay')}
-                className="flex items-center gap-1 sm:gap-1.5 text-slate-400 hover:text-emerald-400 bg-slate-800/60 hover:bg-emerald-500/10 px-2 sm:px-2.5 py-1 rounded-lg transition-all border border-slate-700/80 hover:border-emerald-500/30 text-[11px] sm:text-xs font-semibold active:scale-95"
-                title="Registrar pagamento desta parcela"
-              >
-                <Circle size={14} className="shrink-0" />
-                <span>Pagar</span>
-              </button>
-            )
+          {/* Divisor vertical sutil entre Condomínio e Terreno no Desktop */}
+          {!isVendorMode && (
+            <div className="hidden sm:block w-px h-6 bg-slate-800" />
           )}
+
+          {/* BLOCO DO TERRENO */}
+          <div className="flex items-center gap-1.5 sm:gap-2 px-2.5 py-1.5 rounded-xl bg-slate-900/80 border border-slate-800">
+            <span className="font-mono font-bold text-slate-200 text-xs sm:text-sm">
+              {formatCurrency(installment.value)}
+            </span>
+
+            {/* Botão de Comprovante do Terreno */}
+            {isPaid && (
+              <>
+                {hasReceipt ? (
+                  <button
+                    type="button"
+                    onClick={() => handleOpenReceiptModal(installment, 'view')}
+                    className="flex items-center gap-1 sm:gap-1.5 text-blue-300 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 px-2 py-0.5 rounded-lg transition-all text-[10px] sm:text-[11px] font-bold active:scale-95 shadow-sm cursor-pointer"
+                    title="Visualizar e baixar comprovante do terreno"
+                  >
+                    <FileText size={11} className="shrink-0 text-emerald-400" />
+                    <span>Ver</span>
+                  </button>
+                ) : (
+                  !isVendorMode && (
+                    <button
+                      type="button"
+                      onClick={() => handleOpenReceiptModal(installment, 'attach')}
+                      className="flex items-center gap-1 text-slate-400 hover:text-blue-400 bg-slate-800/60 hover:bg-blue-500/10 border border-slate-700/60 hover:border-blue-500/30 px-2 py-0.5 rounded-lg transition-all text-[10px] font-medium active:scale-95 cursor-pointer"
+                      title="Anexar comprovante a esta parcela do terreno"
+                    >
+                      <Upload size={10} className="shrink-0" />
+                      <span>+ Anexo</span>
+                    </button>
+                  )
+                )}
+              </>
+            )}
+
+            {/* Status / Botão de Ação do Terreno */}
+            {isPaid ? (
+              isVendorMode ? (
+                <button
+                  type="button"
+                  onClick={() => hasReceipt ? handleOpenReceiptModal(installment, 'view') : null}
+                  className={`flex items-center gap-1 text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-lg border border-emerald-500/20 text-[10px] sm:text-[11px] font-semibold ${hasReceipt ? 'hover:bg-emerald-500/20 active:scale-95 cursor-pointer' : ''}`}
+                  title={hasReceipt ? "Visualizar comprovante desta parcela" : "Parcela liquidada"}
+                >
+                  <CheckCircle size={13} className="shrink-0" />
+                  <span>Pago</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (confirm(`Deseja desmarcar o pagamento da parcela ${monthName} ${year}?`)) {
+                      handleUnmarkInstallment(installment.id);
+                    }
+                  }}
+                  title="Clique para desmarcar parcela do terreno"
+                  className="flex items-center gap-1 text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 px-2 py-0.5 rounded-lg border border-emerald-500/20 transition-all text-[10px] sm:text-[11px] font-semibold active:scale-95 cursor-pointer"
+                >
+                  <CheckCircle size={13} className="shrink-0" />
+                  <span>Pago</span>
+                </button>
+              )
+            ) : (
+              isVendorMode ? (
+                <span className="flex items-center gap-1 text-slate-400 bg-slate-800/40 px-2 py-0.5 rounded-lg border border-slate-700/60 text-[10px] sm:text-[11px] font-medium">
+                  <Circle size={12} className="shrink-0" />
+                  <span>A Vencer</span>
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => handleOpenReceiptModal(installment, 'pay')}
+                  className="flex items-center gap-1 text-slate-400 hover:text-emerald-400 bg-slate-800/70 hover:bg-emerald-500/10 px-2 py-0.5 rounded-lg transition-all border border-slate-700/80 hover:border-emerald-500/30 text-[10px] sm:text-[11px] font-semibold active:scale-95 cursor-pointer"
+                  title="Registrar pagamento desta parcela do terreno"
+                >
+                  <Circle size={13} className="shrink-0" />
+                  <span>Pagar</span>
+                </button>
+              )
+            )}
+          </div>
+
         </div>
       </div>
     );
@@ -484,8 +659,9 @@ export function TerrenoTab({
           isOpen={receiptModalOpen}
           onClose={() => setReceiptModalOpen(false)}
           mode={receiptModalMode}
+          category={receiptModalCategory}
           installment={activeInstallment}
-          receiptData={installmentsData[activeInstallment.id]}
+          receiptData={receiptModalCategory === 'condominio' ? condominioInstallmentsData[activeInstallment.id] : installmentsData[activeInstallment.id]}
           formatCurrency={formatCurrency}
           onConfirmPayment={handleConfirmPaymentWithData}
           onConfirmWithoutReceipt={handleConfirmWithoutReceipt}

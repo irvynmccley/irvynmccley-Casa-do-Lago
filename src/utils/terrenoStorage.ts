@@ -315,3 +315,73 @@ export function getReceiptWhatsAppShareText(
     `\n\n🔗 Acompanhe o saldo devedor e todos os comprovantes no portal:\n${vendorUrl}`
   );
 }
+
+const CONDOMINIO_STORAGE_KEY = 'casadolago_condominio_receipts';
+
+/**
+ * Retorna comprovantes e metadados de condomínio armazenados localmente (cache)
+ */
+export function getStoredCondominioReceipts(): Record<string, Partial<TerrenoInstallmentRecord>> {
+  try {
+    const raw = localStorage.getItem(CONDOMINIO_STORAGE_KEY);
+    if (!raw) return {};
+    return JSON.parse(raw);
+  } catch (err) {
+    console.warn('Erro ao carregar recibos locais do condomínio:', err);
+    return {};
+  }
+}
+
+/**
+ * Salva ou atualiza os dados/comprovante de condomínio no cache local
+ */
+export function saveStoredCondominioReceipt(
+  monthId: string,
+  data: Partial<TerrenoInstallmentRecord>
+): void {
+  try {
+    const current = getStoredCondominioReceipts();
+    current[monthId] = {
+      ...(current[monthId] || {}),
+      ...data,
+      month_id: monthId,
+      paid_at: data.paid_at || current[monthId]?.paid_at || new Date().toISOString()
+    };
+    localStorage.setItem(CONDOMINIO_STORAGE_KEY, JSON.stringify(current));
+  } catch (err) {
+    console.warn('Erro ao salvar recibo do condomínio no cache local:', err);
+  }
+}
+
+/**
+ * Remove o comprovante/registro de condomínio do cache local
+ */
+export function deleteStoredCondominioReceipt(monthId: string): void {
+  try {
+    const current = getStoredCondominioReceipts();
+    delete current[monthId];
+    localStorage.setItem(CONDOMINIO_STORAGE_KEY, JSON.stringify(current));
+  } catch (err) {
+    console.warn('Erro ao remover recibo do condomínio do cache local:', err);
+  }
+}
+
+/**
+ * Monta o texto para compartilhar um comprovante individual de condomínio via WhatsApp
+ */
+export function getCondominioWhatsAppShareText(
+  installmentTitle: string,
+  valueFormatted: string,
+  auditId: string,
+  notes?: string
+): string {
+  const obsText = notes ? `\n📝 Observação: ${notes}` : '';
+  return encodeURIComponent(
+    `🏢 *Comprovante de Pagamento — Taxa de Condomínio Casa do Lago*\n\n` +
+    `📌 Mês/Competência: ${installmentTitle}\n` +
+    `💰 Valor: ${valueFormatted}\n` +
+    `🔖 Código de Auditoria: ${auditId}` +
+    obsText +
+    `\n\n_Casa do Lago — Gestão Financeira da Obra_`
+  );
+}
