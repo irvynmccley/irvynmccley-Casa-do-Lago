@@ -964,9 +964,6 @@ function App() {
     if (next.observation !== undefined && next.observation !== previous.observation) {
       changes.push(`Obs: "${previous.observation || ''}" → "${next.observation || ''}"`);
     }
-    if (next.rateioType !== undefined && next.rateioType !== previous.rateioType) {
-      changes.push(`Rateio: ${previous.rateioType || 'Rateio Normal'} → ${next.rateioType}`);
-    }
 
     const localName = next.local || previous.local;
     const details = changes.length > 0 
@@ -1097,7 +1094,7 @@ function App() {
          recordId: tempId,
          auditId: formatAuditId('EXP', tempId),
          user: getUserName(),
-         details: `${expense.local} - R$ ${expense.value.toFixed(2)} (${expense.paymentMethod})${expense.rateioType === 'Parc. Fixa Saulo' ? ' [Parc. Saulo (3)]' : ''}${isReimb ? ` [A Devolver p/ ${expense.reimburseTo}]` : ''}`
+         details: `${expense.local} - R$ ${expense.value.toFixed(2)} (${expense.paymentMethod})${isReimb ? ` [A Devolver p/ ${expense.reimburseTo}]` : ''}`
        });
        toast.success("Salvo offline. Rastreando até reconectar.");
        return;
@@ -1124,7 +1121,7 @@ function App() {
         recordId: record.id,
         auditId: formatAuditId('EXP', record.id),
         user: getUserName(),
-        details: `${expense.local} - R$ ${expense.value.toFixed(2)} (${expense.paymentMethod})${expense.rateioType === 'Parc. Fixa Saulo' ? ' [Parc. Saulo (3)]' : ''}${isReimb ? ` [A Devolver p/ ${expense.reimburseTo}]` : ''}`
+        details: `${expense.local} - R$ ${expense.value.toFixed(2)} (${expense.paymentMethod})${isReimb ? ` [A Devolver p/ ${expense.reimburseTo}]` : ''}`
       });
       toast.success("Lançamento com Sucesso");
     } catch (error: any) {
@@ -1200,19 +1197,6 @@ function App() {
     const cleanExpense = Object.fromEntries(Object.entries(cleanBase).filter(([_, v]) => v !== undefined));
     if (pbStatus !== undefined) cleanExpense.status = pbStatus;
     if (donorVal !== undefined) cleanExpense.donor = donorVal;
-
-    // Tag na observação para resiliência contábil universal
-    if (cleanExpense.rateioType === 'Parc. Fixa Saulo') {
-      const currentObs = String(cleanExpense.observation !== undefined ? cleanExpense.observation : (previous?.observation || ''));
-      if (!currentObs.includes('[Parc. Fixa Saulo]')) {
-        cleanExpense.observation = currentObs ? `${currentObs} [Parc. Fixa Saulo]` : '[Parc. Fixa Saulo]';
-      }
-    } else if (cleanExpense.rateioType === 'Rateio Normal') {
-      const currentObs = String(cleanExpense.observation !== undefined ? cleanExpense.observation : (previous?.observation || ''));
-      if (currentObs.includes('[Parc. Fixa Saulo]')) {
-        cleanExpense.observation = currentObs.replace(/\s*\[Parc\. Fixa Saulo\]/g, '').trim();
-      }
-    }
 
     if (isOffline) {
        saveToOfflineQueue('EDIT_EXPENSE', cleanExpense, id);

@@ -2269,49 +2269,33 @@ export function ReportsTab({
                                 <th className="px-4 py-2.5">Data Compra</th>
                                 <th className="px-4 py-2.5">Local</th>
                                 <th className="px-4 py-2.5 text-center">Parcela</th>
-                                <th className="px-4 py-2.5 text-center">Rateio</th>
                                 <th className="px-4 py-2.5 text-right">Valor Parcela</th>
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-800/60 text-xs">
-                              {[...(item.items || [])].sort((a, b) => (b.date || '').localeCompare(a.date || '')).map((detail, idx) => {
-                                const isSauloSplit = detail.originalExp?.rateioType === 'Parc. Fixa Saulo' || 
-                                  detail.originalExp?.observation?.includes('[Parc. Fixa Saulo]');
-                                return (
-                                  <tr key={`${detail.id}-${idx}`} className="hover:bg-slate-800/30 transition-colors">
-                                    <td className="px-4 py-2.5 text-slate-400 whitespace-nowrap font-mono">
-                                      {detail.date ? detail.date.split('-').reverse().join('/') : '-'}
-                                    </td>
-                                    <td className="px-4 py-2.5 font-medium text-slate-200">
-                                      {detail.local}
-                                      {detail.originalExp?.observation && (
-                                        <div className="text-[10px] text-slate-500 italic mt-0.5 truncate max-w-[240px]" title={detail.originalExp.observation}>
-                                          {detail.originalExp.observation}
-                                        </div>
-                                      )}
-                                    </td>
-                                    <td className="px-4 py-2.5 text-center text-slate-400">
-                                      <span className="bg-slate-800 px-2 py-0.5 rounded text-[11px] font-mono border border-slate-700/60">
-                                        {detail.installment}
-                                      </span>
-                                    </td>
-                                    <td className="px-4 py-2.5 text-center whitespace-nowrap">
-                                      {isSauloSplit ? (
-                                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30">
-                                          Parc. Saulo (3)
-                                        </span>
-                                      ) : (
-                                        <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700/60">
-                                          4 Sócios
-                                        </span>
-                                      )}
-                                    </td>
-                                    <td className="px-4 py-2.5 font-mono font-bold text-slate-200 text-right whitespace-nowrap">
-                                      {formatCurrency(detail.value)}
-                                    </td>
-                                  </tr>
-                                );
-                              })}
+                              {[...(item.items || [])].sort((a, b) => (b.date || '').localeCompare(a.date || '')).map((detail, idx) => (
+                                <tr key={`${detail.id}-${idx}`} className="hover:bg-slate-800/30 transition-colors">
+                                  <td className="px-4 py-2.5 text-slate-400 whitespace-nowrap font-mono">
+                                    {detail.date ? detail.date.split('-').reverse().join('/') : '-'}
+                                  </td>
+                                  <td className="px-4 py-2.5 font-medium text-slate-200">
+                                    {detail.local}
+                                    {detail.originalExp?.observation && (
+                                      <div className="text-[10px] text-slate-500 italic mt-0.5 truncate max-w-[240px]" title={detail.originalExp.observation}>
+                                        {detail.originalExp.observation}
+                                      </div>
+                                    )}
+                                  </td>
+                                  <td className="px-4 py-2.5 text-center text-slate-400">
+                                    <span className="bg-slate-800 px-2 py-0.5 rounded text-[11px] font-mono border border-slate-700/60">
+                                      {detail.installment}
+                                    </span>
+                                  </td>
+                                  <td className="px-4 py-2.5 font-mono font-bold text-slate-200 text-right whitespace-nowrap">
+                                    {formatCurrency(detail.value)}
+                                  </td>
+                                </tr>
+                              ))}
                             </tbody>
                           </table>
                         </div>

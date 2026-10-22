@@ -1466,15 +1466,12 @@ export function Dashboard({
                             <th className="px-3 sm:px-4 py-2 text-[10px] font-bold uppercase text-slate-400">Data</th>
                             <th className="px-3 sm:px-4 py-2 text-[10px] font-bold uppercase text-slate-400">Local</th>
                             <th className="px-3 sm:px-4 py-2 text-[10px] font-bold uppercase text-slate-400 text-center">Parcela</th>
-                            <th className="px-3 sm:px-4 py-2 text-[10px] font-bold uppercase text-slate-400 text-center">Rateio</th>
                             <th className="px-3 sm:px-4 py-2 text-[10px] font-bold uppercase text-slate-400 text-right">Valor</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-700/50">
                           {[...(selectedInvoiceData.items || [])].sort((a, b) => (b.date || '').localeCompare(a.date || '')).map((detail, idx) => {
                             const auditId = formatAuditId('EXP', detail.id);
-                            const isSauloSplit = detail.originalExp?.rateioType === 'Parc. Fixa Saulo' || 
-                              detail.originalExp?.observation?.includes('[Parc. Fixa Saulo]');
                             return (
                               <tr key={`${detail.id}-${idx}`} className="hover:bg-slate-800/50 transition-colors">
                                 <td className="px-3 sm:px-4 py-2 text-xs whitespace-nowrap">
@@ -1500,17 +1497,6 @@ export function Dashboard({
                                 </td>
                                 <td className="px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium text-center text-slate-400">
                                   {detail.installment}
-                                </td>
-                                <td className="px-3 sm:px-4 py-2 text-xs sm:text-sm text-center whitespace-nowrap">
-                                  {isSauloSplit ? (
-                                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30">
-                                      Parc. Saulo (3)
-                                    </span>
-                                  ) : (
-                                    <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700/60">
-                                      4 Sócios
-                                    </span>
-                                  )}
                                 </td>
                                 <td className="px-3 sm:px-4 py-2 text-xs sm:text-sm font-mono font-bold text-slate-200 text-right whitespace-nowrap">
                                   {formatCurrency(detail.value)}
@@ -1593,15 +1579,12 @@ export function Dashboard({
                                     <th className="px-3 py-2">Data</th>
                                     <th className="px-3 py-2">Local</th>
                                     <th className="px-3 py-2 text-center">Parcela</th>
-                                    <th className="px-3 py-2 text-center">Rateio</th>
                                     <th className="px-3 py-2 text-right">Valor</th>
                                   </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-700/50 text-xs">
                                   {[...(item.items || [])].sort((a, b) => (b.date || '').localeCompare(a.date || '')).map((detail, idx) => {
                                     const auditId = formatAuditId('EXP', detail.id);
-                                    const isSauloSplit = detail.originalExp?.rateioType === 'Parc. Fixa Saulo' || 
-                                      detail.originalExp?.observation?.includes('[Parc. Fixa Saulo]');
                                     return (
                                       <tr key={`acc-item-${detail.id}-${idx}`} className="hover:bg-slate-800/40">
                                         <td className="px-3 py-1.5">
@@ -1621,17 +1604,6 @@ export function Dashboard({
                                         </td>
                                         <td className="px-3 py-1.5 text-center text-slate-400">
                                           {detail.installment}
-                                        </td>
-                                        <td className="px-3 py-1.5 text-center whitespace-nowrap">
-                                          {isSauloSplit ? (
-                                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30">
-                                              Parc. Saulo (3)
-                                            </span>
-                                          ) : (
-                                            <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700/60">
-                                              4 Sócios
-                                            </span>
-                                          )}
                                         </td>
                                         <td className="px-3 py-1.5 text-right font-mono font-bold text-slate-200">
                                           {formatCurrency(detail.value)}
