@@ -16,7 +16,7 @@ import {
 } from 'recharts';
 import { 
   Banknote, TrendingUp, CreditCard, BarChart as BarChartIcon, User, Users,
-  RefreshCw, Wallet, ChevronDown, ChevronUp, Download, RotateCcw, 
+  RefreshCw, Wallet, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, ChevronsRight, Download, RotateCcw, 
   CheckCircle2, Clock, ShieldCheck, Check, Pencil, Building2, Heart, 
   Trophy, Sparkles, ArrowUpRight, FileText, ArrowLeftRight, Calendar,
   Crown, Award, Layers
@@ -566,6 +566,48 @@ export function Dashboard({
   const FIXED_COSTS = activeTerrenoCost + activeCondominioCost;
   const FIXED_PER_PERSON = FIXED_COSTS / PEOPLE_COUNT;
 
+  // Linha do tempo do card "A Pagar (Mensal por Pessoa)":
+  // Sempre inicia no mês atual (offset = 0), permitindo voltar ao mês anterior (<) ou avançar para os meses seguintes (>)
+  const [apagarTimelineOffset, setApagarTimelineOffset] = React.useState<number>(0);
+
+  const buildApagarMonthItem = React.useCallback((offsetFromCurrent: number) => {
+    const now = new Date();
+    const targetDate = new Date(now.getFullYear(), now.getMonth() + offsetFromCurrent, 1);
+    const monthKey = format(targetDate, 'yyyy-MM');
+    const shortLabelRaw = format(targetDate, 'MMM/yy', { locale: ptBR });
+    const fullLabelRaw = format(targetDate, 'MMMM yyyy', { locale: ptBR });
+    const monthData = allCardInstallments?.find(m => m.month === monthKey);
+    const cardInstallmentItem = cardInstallments?.find(m => m.month === monthKey);
+    const total = monthData ? monthData.total : (cardInstallmentItem ? cardInstallmentItem.total : 0);
+    const items = monthData?.items || [];
+
+    return {
+      offset: offsetFromCurrent,
+      month: monthKey,
+      shortLabel: shortLabelRaw.charAt(0).toUpperCase() + shortLabelRaw.slice(1),
+      fullLabel: fullLabelRaw.charAt(0).toUpperCase() + fullLabelRaw.slice(1),
+      total,
+      items,
+      isCurrent: offsetFromCurrent === 0,
+      isPrevious: offsetFromCurrent === -1,
+      isPast: offsetFromCurrent < 0,
+      isFuture: offsetFromCurrent > 0
+    };
+  }, [allCardInstallments, cardInstallments]);
+
+  // Os 3 meses exibidos nos cards principais a partir do ponto atual da linha do tempo
+  const apagarVisibleMonths = React.useMemo(() => {
+    return [0, 1, 2].map(step => buildApagarMonthItem(apagarTimelineOffset + step));
+  }, [apagarTimelineOffset, buildApagarMonthItem]);
+
+  // Nós da trilha visual da linha do tempo (1 mês anterior à janela + 3 visíveis + 2 seguintes)
+  const apagarTimelineTrack = React.useMemo(() => {
+    return [-1, 0, 1, 2, 3, 4].map(rel => buildApagarMonthItem(apagarTimelineOffset + rel));
+  }, [apagarTimelineOffset, buildApagarMonthItem]);
+
+  const prevStepMonth = React.useMemo(() => buildApagarMonthItem(apagarTimelineOffset - 1), [apagarTimelineOffset, buildApagarMonthItem]);
+  const nextStepMonth = React.useMemo(() => buildApagarMonthItem(apagarTimelineOffset + 1), [apagarTimelineOffset, buildApagarMonthItem]);
+
   const previousMonthInfo = React.useMemo(() => {
     const now = new Date();
     const prevMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
@@ -944,149 +986,233 @@ export function Dashboard({
               </div>
             </div>
 
+            {/* Controles de Navegação da Linha do Tempo */}
             <div className="flex flex-wrap items-center gap-2">
-              <div className="text-[10px] text-blue-300 font-bold uppercase tracking-wider bg-blue-500/10 border border-blue-500/20 px-3 py-1.5 rounded-full">
-                Jorge, Mccley, Jan, Saulo
-              </div>
-              {previousMonthValue !== null && (
-                <div 
-                  className="text-xs font-bold text-red-400 bg-red-500/10 px-3 py-1.5 rounded-xl border border-red-500/20 shadow-sm"
-                  title={previousMonthValue.hasActivePartnerFixed
-                    ? `Parcelas Fixas ativas | Total Fatura: ${formatCurrency(previousMonthValue.totalInvoice)}`
-                    : (previousMonthValue.hasSauloSplitExpense 
-                      ? `Jorge, Mccley, Jan: ${formatCurrency(previousMonthValue.dues?.Jorge?.totalDue || 0)} | Saulo: ${formatCurrency(previousMonthValue.dues?.Saulo?.totalDue || 0)}`
-                      : `Total por pessoa: ${formatCurrency(previousMonthValue.dues?.Jorge?.totalDue || 0)}`)}
+              {apagarTimelineOffset !== 0 && (
+                <button
+                  type="button"
+                  onClick={() => setApagarTimelineOffset(0)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-500/15 hover:bg-blue-500/25 border border-blue-500/30 text-blue-300 text-xs font-bold transition-all active:scale-95 cursor-pointer shadow-sm"
+                  title="Voltar para o mês atual"
                 >
-                  {previousMonthInfo.name}: {previousMonthValue.hasActivePartnerFixed ? (
-                    <span className="flex items-center gap-1">
-                      <span>Demais: <strong className="text-white font-mono">{formatCurrency(previousMonthValue.dues?.Jorge?.totalDue || 0)}</strong></span>
-                      <span className="text-red-300">/</span>
-                      <span>Fixa: <strong className="text-cyan-300 font-mono">{formatCurrency(previousMonthValue.dues?.Saulo?.totalDue || 0)}</strong></span>
-                    </span>
-                  ) : previousMonthValue.hasSauloSplitExpense ? (
-                    <span className="flex items-center gap-1">
-                      <span>3 Sócios: <strong className="text-white font-mono">{formatCurrency(previousMonthValue.dues?.Jorge?.totalDue || 0)}</strong></span>
-                      <span className="text-red-300">/</span>
-                      <span>Saulo: <strong className="text-red-200 font-mono">{formatCurrency(previousMonthValue.dues?.Saulo?.totalDue || 0)}</strong></span>
-                    </span>
-                  ) : (
-                    <span>{formatCurrency(previousMonthValue.dues?.Jorge?.totalDue || 0)}</span>
-                  )}
-                </div>
+                  <RotateCcw size={13} />
+                  <span>Mês Atual</span>
+                </button>
               )}
+
+              <div className="flex items-center gap-1.5 bg-slate-950/70 p-1 rounded-xl border border-slate-800/80 shadow-inner">
+                <button
+                  type="button"
+                  onClick={() => setApagarTimelineOffset(prev => prev - 1)}
+                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-900/90 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-700/60 hover:border-blue-500/40 text-xs font-semibold transition-all active:scale-95 cursor-pointer"
+                  title={`Rever mês anterior (${prevStepMonth.fullLabel})`}
+                >
+                  <ChevronLeft size={15} className="text-blue-400" />
+                  <span className="hidden sm:inline">{prevStepMonth.shortLabel}</span>
+                </button>
+
+                <div className="px-2.5 py-1 text-[11px] font-bold text-slate-200 font-mono whitespace-nowrap">
+                  {apagarVisibleMonths[0].shortLabel} — {apagarVisibleMonths[2].shortLabel}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setApagarTimelineOffset(prev => prev + 1)}
+                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-900/90 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-700/60 hover:border-blue-500/40 text-xs font-semibold transition-all active:scale-95 cursor-pointer"
+                  title={`Ver próximo mês (${nextStepMonth.fullLabel})`}
+                >
+                  <span className="hidden sm:inline">{nextStepMonth.shortLabel}</span>
+                  <ChevronRight size={15} className="text-blue-400" />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setApagarTimelineOffset(prev => prev + 3)}
+                  className="flex items-center justify-center p-1.5 rounded-lg bg-slate-900/90 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-700/60 hover:border-blue-500/40 text-xs font-semibold transition-all active:scale-95 cursor-pointer"
+                  title="Avançar 3 meses seguintes"
+                >
+                  <ChevronsRight size={15} className="text-cyan-400" />
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Trilha Visual da Linha do Tempo (Sempre iniciando no Mês Atual, com navegação para anterior e seguintes) */}
+          <div className="mb-4 px-3 py-2.5 rounded-2xl bg-slate-950/50 border border-slate-800/80 flex items-center justify-between gap-2 overflow-x-auto custom-scrollbar">
+            <button
+              type="button"
+              onClick={() => setApagarTimelineOffset(prev => prev - 1)}
+              className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold text-slate-400 hover:text-white hover:bg-slate-800/80 border border-transparent hover:border-slate-700 transition-all shrink-0 cursor-pointer"
+              title="Rever mês anterior"
+            >
+              <ChevronLeft size={14} className="text-amber-400" />
+              <span>Anterior</span>
+            </button>
+
+            <div className="flex items-center gap-1.5 sm:gap-2 flex-1 justify-center min-w-max px-1">
+              {apagarTimelineTrack.map((node, idx) => {
+                const isFirstVisible = node.offset === apagarTimelineOffset;
+                const isInVisibleWindow = node.offset >= apagarTimelineOffset && node.offset <= apagarTimelineOffset + 2;
+
+                return (
+                  <React.Fragment key={node.month}>
+                    <button
+                      type="button"
+                      onClick={() => setApagarTimelineOffset(node.offset)}
+                      className={`group relative flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-[11px] font-mono font-bold transition-all cursor-pointer shrink-0 border ${
+                        isFirstVisible
+                          ? 'bg-blue-500/20 text-white border-blue-400/50 shadow-sm shadow-blue-500/20 ring-1 ring-blue-400/30'
+                          : isInVisibleWindow
+                            ? 'bg-slate-800/90 text-slate-200 border-slate-600/80 hover:border-blue-400/40'
+                            : node.isPast
+                              ? 'bg-slate-900/50 text-amber-300/80 border-amber-500/20 hover:bg-amber-500/10 hover:text-amber-200'
+                              : 'bg-slate-900/40 text-slate-400 border-slate-800 hover:bg-slate-800/60 hover:text-slate-200'
+                      }`}
+                      title={`Iniciar visualização em ${node.fullLabel}`}
+                    >
+                      <span
+                        className={`w-2 h-2 rounded-full shrink-0 ${
+                          node.isCurrent
+                            ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.9)] animate-pulse'
+                            : isFirstVisible
+                              ? 'bg-blue-400 shadow-[0_0_6px_rgba(96,165,250,0.8)]'
+                              : isInVisibleWindow
+                                ? 'bg-sky-400/80'
+                                : node.isPast
+                                  ? 'bg-amber-400/70'
+                                  : 'bg-slate-600'
+                        }`}
+                      />
+                      <span>{node.shortLabel}</span>
+                      {node.isCurrent && (
+                        <span className="text-[9px] font-sans font-extrabold uppercase tracking-wider px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                          Atual
+                        </span>
+                      )}
+                    </button>
+                    {idx < apagarTimelineTrack.length - 1 && (
+                      <div
+                        className={`w-3 sm:w-5 h-[2px] rounded-full shrink-0 transition-colors ${
+                          node.offset >= apagarTimelineOffset && node.offset < apagarTimelineOffset + 2
+                            ? 'bg-blue-500/50'
+                            : 'bg-slate-800'
+                        }`}
+                      />
+                    )}
+                  </React.Fragment>
+                );
+              })}
+            </div>
+
+            <div className="flex items-center gap-1 shrink-0">
+              <button
+                type="button"
+                onClick={() => setApagarTimelineOffset(prev => prev + 1)}
+                className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold text-slate-400 hover:text-white hover:bg-slate-800/80 border border-transparent hover:border-slate-700 transition-all shrink-0 cursor-pointer"
+                title="Ver mês seguinte"
+              >
+                <span>Seguintes</span>
+                <ChevronRight size={14} className="text-blue-400" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setApagarTimelineOffset(prev => prev + 3)}
+                className="flex items-center justify-center p-1 rounded-lg text-slate-400 hover:text-cyan-300 hover:bg-slate-800/80 border border-transparent hover:border-slate-700 transition-all shrink-0 cursor-pointer"
+                title="Avançar 3 meses"
+              >
+                <ChevronsRight size={14} />
+              </button>
             </div>
           </div>
           
-          <div className="overflow-y-auto max-h-[350px] pr-2 custom-scrollbar">
-            {cardInstallments.length > 0 ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-                {cardInstallments.map((item) => {
-                  const monthData = allCardInstallments?.find(m => m.month === item.month);
-                  const monthItems = monthData?.items || [];
-                  const duesResult = calculateMonthlyPartnerDues(item.month, item.total, activeSettings, monthItems);
-                  const { hasActivePartnerFixed, hasSauloSplitExpense, dues } = duesResult;
-                  const fixedPerPersonThisMonth = duesResult.fixedCostPerPerson;
-                  const cardPerPersonNormal = item.total / PEOPLE_COUNT;
-                  const standardTotal = cardPerPersonNormal + fixedPerPersonThisMonth;
+          <div className="overflow-y-auto max-h-[380px] pr-1 custom-scrollbar">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+              {apagarVisibleMonths.map((item) => {
+                const duesResult = calculateMonthlyPartnerDues(item.month, item.total, activeSettings, item.items);
+                const { hasActivePartnerFixed, hasSauloSplitExpense, dues } = duesResult;
 
-                  return (
-                    <div key={item.month} className="flex flex-col justify-between p-3.5 sm:p-4 bg-slate-800/40 rounded-2xl border border-slate-700/50 hover:bg-slate-800/60 hover:border-slate-600 transition-colors">
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="text-sm font-bold text-slate-200 capitalize">
-                          {format(new Date(parseInt(item.month.split('-')[0]), parseInt(item.month.split('-')[1]) - 1, 1), 'MMMM yyyy', { locale: ptBR })}
+                return (
+                  <div
+                    key={item.month}
+                    className={`flex flex-col justify-between p-3.5 sm:p-4 rounded-2xl border transition-all ${
+                      item.isCurrent
+                        ? 'bg-slate-800/60 border-blue-500/40 ring-1 ring-blue-500/20 shadow-lg shadow-blue-500/5'
+                        : item.isPast
+                          ? 'bg-slate-800/35 border-amber-500/25 hover:border-amber-500/40'
+                          : 'bg-slate-800/40 border-slate-700/50 hover:bg-slate-800/60 hover:border-slate-600'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-2 mb-2.5">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <div className="text-sm font-bold text-slate-100 capitalize truncate">
+                          {item.fullLabel}
                         </div>
-                        <div className="flex items-center gap-1">
-                          {hasActivePartnerFixed && (
-                            <span 
-                              className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-cyan-500/15 text-cyan-300 border border-cyan-500/30"
-                              title="Parcela fixa com abatimento do saldo na fatura dos demais sócios"
-                            >
-                              Parcelas Fixas
-                            </span>
-                          )}
-                          {hasSauloSplitExpense && !hasActivePartnerFixed && (
-                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30">
-                              Parc. Saulo
-                            </span>
-                          )}
-                        </div>
+                        {item.isCurrent && (
+                          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 shrink-0">
+                            Mês Atual
+                          </span>
+                        )}
+                        {item.isPrevious && (
+                          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30 shrink-0">
+                            Mês Anterior
+                          </span>
+                        )}
+                        {item.isPast && !item.isPrevious && (
+                          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-slate-700/60 text-slate-300 border border-slate-600/60 shrink-0">
+                            Histórico
+                          </span>
+                        )}
                       </div>
-
-                      {hasActivePartnerFixed ? (
-                        <div className="flex flex-col gap-1.5 w-full mt-auto pt-1">
-                          {(['Jorge', 'Mccley', 'Jan', 'Saulo'] as Person[]).map((p) => {
-                            const due = dues[p];
-                            return (
-                              <div key={p} className="flex items-center justify-between text-[11px] bg-slate-900/70 px-2.5 py-1.5 rounded-xl border border-slate-800">
-                                <div>
-                                  <span className="font-bold text-slate-200">{p}</span>
-                                  {due.isFixed ? (
-                                    <span 
-                                      className="text-[9px] text-cyan-300 block font-medium"
-                                      title={`Parcela Fixa: ${formatCurrency(due.totalDue)}. Cobre ${formatCurrency(due.fixedCostShare)} de fixos e abate ${formatCurrency(due.surplus || 0)} da fatura dos demais.`}
-                                    >
-                                      Parcela Fixa Mensal
-                                    </span>
-                                  ) : (
-                                    <span className="text-[9px] text-slate-400 block font-mono">
-                                      {due.cardShare < 0 
-                                        ? `Fixo ${formatCurrency(due.fixedCostShare)} - Abat. ${formatCurrency(Math.abs(due.cardShare))}`
-                                        : `Fixo ${formatCurrency(due.fixedCostShare)} + Cartão ${formatCurrency(due.cardShare)}`}
-                                    </span>
-                                  )}
-                                </div>
-                                <span className={`text-sm font-mono font-extrabold ${due.isFixed ? 'text-cyan-300' : 'text-white'}`}>
-                                  {formatCurrency(due.totalDue)}
-                                </span>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      ) : hasSauloSplitExpense ? (
-                        <div className="flex flex-col gap-1.5 w-full mt-auto pt-1">
-                          <div className="flex items-center justify-between text-[11px] bg-slate-900/70 px-2.5 py-1.5 rounded-xl border border-slate-700/60">
-                            <div>
-                              <span className="font-bold text-slate-200">Mccley, Jan, Jorge</span>
-                              <span className="text-[9px] text-slate-400 block font-mono">
-                                Cartão {formatCurrency(dues.Jorge.cardShare)} + Fixo
-                              </span>
-                            </div>
-                            <span className="text-sm font-mono font-extrabold text-amber-300">
-                              {formatCurrency(dues.Jorge.totalDue)}
-                            </span>
-                          </div>
-                          <div className="flex items-center justify-between text-[11px] bg-slate-900/40 px-2.5 py-1 rounded-xl border border-slate-800">
-                            <div>
-                              <span className="font-semibold text-slate-300">Saulo</span>
-                              <span className="text-[9px] text-slate-500 block font-mono">
-                                Cartão {formatCurrency(dues.Saulo.cardShare)} + Fixo
-                              </span>
-                            </div>
-                            <span className="text-sm font-mono font-bold text-slate-300">
-                              {formatCurrency(dues.Saulo.totalDue)}
-                            </span>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="flex items-end justify-between gap-2 mt-auto pt-1">
-                          <div className="text-[10px] text-slate-400 font-semibold uppercase tracking-tighter">
-                            Cartão: {formatCurrency(cardPerPersonNormal)} <br/> Fixo: {formatCurrency(fixedPerPersonThisMonth)}
-                          </div>
-                          <div className="text-base sm:text-lg font-mono font-bold text-white bg-slate-900/60 px-3 py-1.5 rounded-xl shadow-inner border border-slate-700/60 shrink-0">
-                            {formatCurrency(standardTotal)}
-                          </div>
-                        </div>
-                      )}
+                      <div className="flex items-center gap-1 shrink-0">
+                        {hasActivePartnerFixed && (
+                          <span 
+                            className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-cyan-500/15 text-cyan-300 border border-cyan-500/30"
+                            title="Parcela fixa com abatimento do saldo na fatura dos demais sócios"
+                          >
+                            Parcelas Fixas
+                          </span>
+                        )}
+                        {hasSauloSplitExpense && !hasActivePartnerFixed && (
+                          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30">
+                            Parc. Saulo
+                          </span>
+                        )}
+                      </div>
                     </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="flex flex-col items-center justify-center py-12 text-slate-400 italic text-sm bg-slate-800/30 rounded-2xl border border-dashed border-slate-700">
-                <p className="font-medium">Nenhum gasto fixo ou parcelado identificado.</p>
-                <p className="text-xs mt-1 text-slate-500">Lançamentos no cartão aparecerão aqui.</p>
-              </div>
-            )}
+
+                    <div className="flex flex-col gap-1.5 w-full mt-auto pt-1">
+                      {(['Jorge', 'Mccley', 'Jan', 'Saulo'] as Person[]).map((p) => {
+                        const due = dues[p];
+                        return (
+                          <div key={p} className="flex items-center justify-between text-[11px] bg-slate-900/70 px-2.5 py-1.5 rounded-xl border border-slate-800">
+                            <div>
+                              <span className="font-bold text-slate-200">{p}</span>
+                              {due.isFixed ? (
+                                <span 
+                                  className="text-[9px] text-cyan-300 block font-medium"
+                                  title={`Parcela Fixa: ${formatCurrency(due.totalDue)}. Cobre ${formatCurrency(due.fixedCostShare)} de fixos e abate ${formatCurrency(due.surplus || 0)} da fatura dos demais.`}
+                                >
+                                  Parcela Fixa Mensal
+                                </span>
+                              ) : (
+                                <span className="text-[9px] text-slate-400 block font-mono">
+                                  {due.cardShare < 0 
+                                    ? `Fixo ${formatCurrency(due.fixedCostShare)} - Abat. ${formatCurrency(Math.abs(due.cardShare))}`
+                                    : `Fixo ${formatCurrency(due.fixedCostShare)} + Cartão ${formatCurrency(due.cardShare)}`}
+                                </span>
+                              )}
+                            </div>
+                            <span className={`text-sm font-mono font-extrabold ${due.isFixed ? 'text-cyan-300' : 'text-white'}`}>
+                              {formatCurrency(due.totalDue)}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
 
           <div className="mt-6 pt-4 border-t border-slate-700/50 flex flex-wrap gap-x-6 gap-y-3">
