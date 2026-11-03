@@ -605,9 +605,6 @@ export function Dashboard({
     return [-1, 0, 1, 2, 3, 4].map(rel => buildApagarMonthItem(apagarTimelineOffset + rel));
   }, [apagarTimelineOffset, buildApagarMonthItem]);
 
-  const prevStepMonth = React.useMemo(() => buildApagarMonthItem(apagarTimelineOffset - 1), [apagarTimelineOffset, buildApagarMonthItem]);
-  const nextStepMonth = React.useMemo(() => buildApagarMonthItem(apagarTimelineOffset + 1), [apagarTimelineOffset, buildApagarMonthItem]);
-
   const previousMonthInfo = React.useMemo(() => {
     const now = new Date();
     const prevMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
@@ -986,55 +983,17 @@ export function Dashboard({
               </div>
             </div>
 
-            {/* Controles de Navegação da Linha do Tempo */}
-            <div className="flex flex-wrap items-center gap-2">
-              {apagarTimelineOffset !== 0 && (
-                <button
-                  type="button"
-                  onClick={() => setApagarTimelineOffset(0)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-500/15 hover:bg-blue-500/25 border border-blue-500/30 text-blue-300 text-xs font-bold transition-all active:scale-95 cursor-pointer shadow-sm"
-                  title="Voltar para o mês atual"
-                >
-                  <RotateCcw size={13} />
-                  <span>Mês Atual</span>
-                </button>
-              )}
-
-              <div className="flex items-center gap-1.5 bg-slate-950/70 p-1 rounded-xl border border-slate-800/80 shadow-inner">
-                <button
-                  type="button"
-                  onClick={() => setApagarTimelineOffset(prev => prev - 1)}
-                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-900/90 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-700/60 hover:border-blue-500/40 text-xs font-semibold transition-all active:scale-95 cursor-pointer"
-                  title={`Rever mês anterior (${prevStepMonth.fullLabel})`}
-                >
-                  <ChevronLeft size={15} className="text-blue-400" />
-                  <span className="hidden sm:inline">{prevStepMonth.shortLabel}</span>
-                </button>
-
-                <div className="px-2.5 py-1 text-[11px] font-bold text-slate-200 font-mono whitespace-nowrap">
-                  {apagarVisibleMonths[0].shortLabel} — {apagarVisibleMonths[2].shortLabel}
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => setApagarTimelineOffset(prev => prev + 1)}
-                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-900/90 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-700/60 hover:border-blue-500/40 text-xs font-semibold transition-all active:scale-95 cursor-pointer"
-                  title={`Ver próximo mês (${nextStepMonth.fullLabel})`}
-                >
-                  <span className="hidden sm:inline">{nextStepMonth.shortLabel}</span>
-                  <ChevronRight size={15} className="text-blue-400" />
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setApagarTimelineOffset(prev => prev + 3)}
-                  className="flex items-center justify-center p-1.5 rounded-lg bg-slate-900/90 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-700/60 hover:border-blue-500/40 text-xs font-semibold transition-all active:scale-95 cursor-pointer"
-                  title="Avançar 3 meses seguintes"
-                >
-                  <ChevronsRight size={15} className="text-cyan-400" />
-                </button>
-              </div>
-            </div>
+            {apagarTimelineOffset !== 0 && (
+              <button
+                type="button"
+                onClick={() => setApagarTimelineOffset(0)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-500/15 hover:bg-blue-500/25 border border-blue-500/30 text-blue-300 text-xs font-bold transition-all active:scale-95 cursor-pointer shadow-sm self-start sm:self-auto"
+                title="Voltar para o mês atual"
+              >
+                <RotateCcw size={13} />
+                <span>Mês Atual</span>
+              </button>
+            )}
           </div>
 
           {/* Trilha Visual da Linha do Tempo (Sempre iniciando no Mês Atual, com navegação para anterior e seguintes) */}
